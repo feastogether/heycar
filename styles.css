@@ -207,3 +207,177 @@
     padding: 14px;
   }
 }
+/* ==========================================================================
+   追加優化樣式：解決登入配色、小卡改版與後台 RWD 難用問題
+   ========================================================================== */
+
+/* 1. 登入介面微調：英雄區塊移除雜亂文字後的白底極簡與和諧漸層 */
+.login-panel {
+  border: none !important;
+  box-shadow: 0 15px 40px rgba(24, 32, 51, 0.1) !important;
+  grid-template-columns: 1fr 1fr !important;
+}
+.login-hero {
+  background: #ffffff !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 40px !important;
+  border-right: 1px solid var(--line) !important;
+}
+.login-hero img {
+  background: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  width: 100% !important;
+  max-width: 200px !important;
+}
+
+/* 2. 登入後配色優化：讓頂部導覽列看起來更和諧乾淨 */
+.topbar {
+  background: #ffffff !important;
+  box-shadow: 0 2px 12px rgba(24, 32, 51, 0.04) !important;
+}
+.brand-title {
+  color: var(--ink) !important;
+}
+
+/* 4. 每個功能的顯示方式改為精緻大氣的「小卡網格 (Pretty Cards)」 */
+.luxury-card-grid {
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+  gap: 16px !important;
+  width: 100% !important;
+}
+
+.pretty-luxury-card {
+  background: #ffffff !important;
+  border: 1px solid var(--line) !important;
+  border-radius: 12px !important;
+  padding: 20px !important;
+  box-shadow: 0 4px 16px rgba(24, 32, 51, 0.04) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: space-between !important;
+  min-height: 150px !important;
+  position: relative !important;
+}
+.pretty-luxury-card.is-muted {
+  background: #f8fafc !important;
+  opacity: 0.65 !important;
+}
+.lux-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  border-bottom: 1px dashed var(--line) !important;
+  padding-bottom: 10px !important;
+  margin-bottom: 12px !important;
+}
+.lux-title {
+  font-size: 16px !important;
+  font-weight: 800 !important;
+  color: var(--ink) !important;
+  line-height: 1.4 !important;
+}
+.lux-meta {
+  font-size: 12.5px !important;
+  color: var(--muted) !important;
+  margin-top: 4px !important;
+}
+.lux-body {
+  font-size: 14px !important;
+  color: #334155 !important;
+  line-height: 1.6 !important;
+  margin-bottom: 14px !important;
+  white-space: pre-line !important;
+}
+.lux-badge {
+  display: inline-block !important;
+  background: #eff6ff !important;
+  color: var(--blue) !important;
+  padding: 3px 8px !important;
+  border-radius: 4px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  margin-bottom: 8px !important;
+}
+.lux-footer {
+  display: flex !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+  padding-top: 10px !important;
+  border-top: 1px solid #f1f5f9 !important;
+  margin-top: auto !important;
+}
+
+/* 5. 管理後台手機版超難用？徹底重塑 RWD 自適應表格結構 */
+@media (max-width: 900px) {
+  .login-panel {
+    grid-template-columns: 1fr !important;
+  }
+  .admin-layout {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+  }
+  .side-nav {
+    display: flex !important;
+    flex-direction: row !important;
+    overflow-x: auto !important;
+    padding: 6px !important;
+    gap: 6px !important;
+    position: static !important;
+  }
+  .side-nav button {
+    flex: 0 0 auto !important;
+    padding: 8px 14px !important;
+    font-size: 13.5px !important;
+    white-space: nowrap !important;
+  }
+
+  .rwd-smart-table, 
+  .rwd-smart-table thead, 
+  .rwd-smart-table tbody, 
+  .rwd-smart-table th, 
+  .rwd-smart-table td, 
+  .rwd-smart-table tr {
+    display: block !important;
+  }
+  .rwd-smart-table thead {
+    display: none !important;
+  }
+  .rwd-smart-table tr {
+    background: #ffffff !important;
+    border: 1px solid var(--line) !important;
+    border-radius: var(--radius) !important;
+    margin-bottom: 12px !important;
+    padding: 14px !important;
+    box-shadow: 0 4px 14px rgba(24, 32, 51, 0.03) !important;
+  }
+  .rwd-smart-table td {
+    border-bottom: 1px dashed #f1f5f9 !important;
+    padding: 8px 0 !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    text-align: right !important;
+    font-size: 13.5px !important;
+  }
+  .rwd-smart-table td:last-child {
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+    padding-top: 10px !important;
+    justify-content: flex-end !important;
+  }
+  .rwd-smart-table td::before {
+    content: attr(data-label) !important;
+    float: left !important;
+    font-weight: 700 !important;
+    color: var(--muted) !important;
+    font-size: 12.5px !important;
+  }
+  .admin-layout .actions {
+    justify-content: flex-end !important;
+    width: 100% !important;
+  }
+}
