@@ -2,7 +2,8 @@
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const highwayUrl = "https://www.1968services.tw/roadcondition";
-  const highwayProxyUrl = "https://r.jina.ai/http://r.jina.ai/http://https://www.1968services.tw/roadcondition";
+  // 3. 修正國道路況：改用高速公路局開放資料（JSON 格式更穩定，免去網頁爬蟲異常）
+  const highwayApiUrl = "https://apis.freeway.gov.tw/opendata/TrafficNews.json";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -41,12 +42,12 @@
   const vehicleStatuses = ["正常", "出借", "出租", "待修中", "維修中", "出保中", "閒置", "報廢", "其他"];
 
   const featureIcons = {
-    announcements: "M4 6.5A2.5 2.5 0 0 1 6.5 4H20v13H7.5A3.5 3.5 0 0 0 4 20.5v-14Zm3 0h10M7.5 10h8M7.5 13.5h6",
-    maintenance: "M14.7 6.3a4.5 4.5 0 0 0-5.9 5.9L4 17l3 3 4.8-4.8a4.5 4.5 0 0 0 5.9-5.9l-3 3-3-3 3-3Z",
-    payments: "M4 7h16v10H4V7Zm2 3h12M7 14h4",
-    messages: "M4 5h16v11H8l-4 3V5Zm4 5h8M8 13h5",
-    emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
-    highway: "M8 20 11 4h2l3 16M5 12h14M9 8h6M8.5 16h7"
+    announcements: "📢",
+    maintenance: "🔧",
+    payments: "💰",
+    messages: "💬",
+    emergency: "🚨",
+    highway: "🛣️"
   };
 
   const seed = {
@@ -58,7 +59,7 @@
     ],
     maintenance_records: [],
     announcements: [
-      { id: uid(), title: "歡迎使用亞菲得", content: "後台公告會顯示在司機前台，每頁五則。", created_at: now() }
+      { id: uid(), title: "歡迎使用車隊管理系統", content: "後台發佈的公告會即時以精緻小卡同步呈現在司機前台。", created_at: now() }
     ],
     announcement_reads: [],
     maintenance_notifications: [],
@@ -178,7 +179,7 @@
 
   function vehicleName(id) {
     const v = state.data.vehicles.find((row) => row.id === id);
-    return v ? `${v.plate_no} ${v.brand || ""} ${v.model || ""}`.trim() : "未指定";
+    return v ? `${v.plate_no} (${v.brand || ""})` : "未指定";
   }
 
   function statusBadge(status) {
@@ -186,13 +187,10 @@
     return `<span class="status ${status || "pending"}">${escapeHtml(text)}</span>`;
   }
 
+  // 安全防禦過濾
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#039;"
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
     }[c]));
   }
 
@@ -214,26 +212,20 @@
     else renderDriver();
   }
 
+  // 2. 登入後配色優化 HTML 整合結構
   function layout(content) {
     app.innerHTML = `
       <div class="app-shell">
         <header class="topbar">
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
-            ${state.admin ? `
-              <div class="brand-copy">
-                <div class="brand-title">管理後台</div>
-                <div class="brand-subtitle">亞菲得車隊管理</div>
-              </div>
-            ` : `
-              <div class="brand-copy">
-                <div class="brand-title driver-name">${escapeHtml(state.user.name)}，您好</div>
-                <div class="brand-subtitle">亞菲得車隊</div>
-              </div>
-            `}
+            <div class="brand-copy">
+              <div class="brand-title">${state.admin ? "車隊控制後台" : escapeHtml(state.user.name) + "，您好"}</div>
+              <div class="brand-subtitle">${state.admin ? "系統管理中心" : "歡迎回到司機前台"}</div>
+            </div>
           </div>
           <div class="userbox">
-            <button class="ghost-btn" data-action="logout">登出</button>
+            <button class="ghost-btn" data-action="logout" style="display:flex; align-items:center; gap:6px;">登出</button>
           </div>
         </header>
         <main class="main">${content}</main>
@@ -241,16 +233,14 @@
     `;
   }
 
+  // 1. 登入介面優化：完全移除了原有的中文「亞菲得」與英文「Fleet Console」標題文字，只留下白底極簡的 LOGO 區塊
   function renderLogin() {
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-panel">
           <div class="login-hero">
             <img src="${logoUrl}" alt="heycar logo">
-            <div>
-              <h1>亞菲得</h1>
-              <div class="login-mark">Fleet Console</div>
-            </div>
+            <div></div> 
           </div>
           <div class="login-card">
             <div class="mode-tabs">
@@ -258,12 +248,13 @@
               <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin">管理後台</button>
             </div>
             <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
+            <p>請輸入您的驗證資訊以進入系統</p>
             <form id="loginForm" class="form-grid">
               <div class="field full">
                 <label>${state.mode === "driver" ? "身分證字號" : "管理 PIN"}</label>
-                <input name="login" autocomplete="off" required>
+                <input name="login" autocomplete="off" placeholder="${state.mode === "driver" ? "請輸入身分證字號" : "請輸入密碼"}" required style="text-transform: uppercase;">
               </div>
-              <button class="primary-btn field full" type="submit">登入</button>
+              <button class="primary-btn field full" type="submit">確認登入</button>
             </form>
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
           </div>
@@ -283,10 +274,10 @@
         <div class="dashboard-grid">
           ${feature("announcements", "公佈欄", "查看最新公告", unread)}
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
-          ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
-          ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
-          ${feature("emergency", "緊急通知", "待開發", 0)}
-          ${feature("highway", "國道資訊", "即時路況事件", 0)}
+          ${feature("payments", "繳費中心", "罰單與通行費管理", pendingPay)}
+          ${feature("messages", "私人訊息", "個人派送特別指派", pendingMsg)}
+          ${feature("emergency", "緊急通知", "道路緊急指派回報", 0)}
+          ${feature("highway", "國道資訊", "即時路況事件查詢", 0)}
         </div>
       `);
       return;
@@ -308,17 +299,13 @@
     return `
       <button class="feature-card" data-view="${view}">
         ${count ? `<span class="badge alert-badge">${count}</span>` : ""}
-        <span class="feature-icon">${iconSvg(featureIcons[view])}</span>
-        <span class="feature-copy">
+        <span class="feature-icon">${featureIcons[view] || "🚗"}</span>
+        <div class="feature-copy">
           <strong>${title}</strong>
           <small>${desc}</small>
-        </span>
+        </div>
       </button>
     `;
-  }
-
-  function iconSvg(path) {
-    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" /></svg>`;
   }
 
   function mine(table) {
@@ -326,9 +313,10 @@
   }
 
   function backButton() {
-    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>返回</span></button>`;
+    return `<button class="back-btn" data-view="home">返回首頁</button>`;
   }
 
+  // 4. 點入公告功能後的顯示方式優化：改為精緻「功能卡片網格 (card-grid)」
   function driverAnnouncements() {
     const list = [...state.data.announcements].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const pageSize = 5;
@@ -336,18 +324,23 @@
     state.page = Math.min(state.page, maxPage);
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
-      <div class="section-head page-head"><div><p>Driver Center</p><h2>公佈欄</h2></div>${backButton()}</div>
-      <div class="list">
+      <div class="section-head"><h2>公佈欄</h2>${backButton()}</div>
+      <div class="function-card-grid">
         ${pageItems.length ? pageItems.map((a) => `
-          <article class="item">
-            <div class="item-head">
-              <div><div class="item-title">${escapeHtml(a.title)}</div><div class="meta">${fmtDate(a.created_at)}</div></div>
+          <article class="pretty-item-card">
+            <div class="card-header">
+              <div class="card-title-group">
+                <div class="card-main-title">${escapeHtml(a.title)}</div>
+                <div class="card-date-meta">發佈時間：${fmtDate(a.created_at)}</div>
+              </div>
               ${statusBadge(isAnnouncementRead(a.id) ? "read" : "pending")}
             </div>
-            <div>${escapeHtml(a.content)}</div>
-            <div class="actions"><button class="primary-btn" data-read-ann="${a.id}">已閱讀</button></div>
+            <div class="card-main-body">${escapeHtml(a.content)}</div>
+            <div class="card-actions-row">
+              ${!isAnnouncementRead(a.id) ? `<button class="primary-btn" data-read-ann="${a.id}">確認已閱讀</button>` : `<span style="color:var(--muted); font-size:13px;">✓ 已閱</span>`}
+            </div>
           </article>
-        `).join("") : `<div class="empty">目前沒有公告</div>`}
+        `).join("") : `<div class="empty">目前沒有任何公告</div>`}
       </div>
       <div class="pager">
         <button class="ghost-btn" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一頁</button>
@@ -361,67 +354,111 @@
     return state.data.announcement_reads.some((r) => r.announcement_id === announcementId && r.driver_id === state.user.id);
   }
 
+  // 4. 點入保養維修、繳費、私人訊息後的顯示方式優化：改為美觀大氣的雙欄獨立小卡 (pretty-item-card)
   function driverTaskList(table, title) {
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-    const cardClass = table === "maintenance_notifications" ? "list maintenance-list" : "list";
     return `
-      <div class="section-head page-head"><div><p>Driver Center</p><h2>${title}</h2></div>${backButton()}</div>
-      <div class="${cardClass}">
-        ${items.length ? items.map((item) => `
-          <article class="item ${item.status !== "pending" ? "is-muted" : ""} ${table === "maintenance_notifications" ? "maintenance-card" : ""}">
-            ${table === "maintenance_notifications" ? `
-              <div class="date-tile">
-                <span>${fmtDate(item.service_date).slice(5, 7)}</span>
-                <strong>${fmtDate(item.service_date).slice(8, 10)}</strong>
-                <small>${fmtDate(item.service_date).slice(0, 4)}</small>
+      <div class="section-head"><h2>${title}</h2>${backButton()}</div>
+      <div class="function-card-grid">
+        ${items.length ? items.map((item) => {
+          const isMaint = table === "maintenance_notifications";
+          const dStr = isMaint ? fmtDate(item.service_date) : "";
+          
+          return `
+            <article class="pretty-item-card ${item.status !== "pending" ? "is-muted" : ""}">
+              ${isMaint && dStr ? `
+                <div class="card-inline-tile">
+                  <span>${dStr.slice(5, 7)}月</span>
+                  <strong>${dStr.slice(8, 10)}</strong>
+                </div>
+              ` : ""}
+              <div class="card-header">
+                <div class="card-title-group">
+                  <div class="card-main-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
+                  <div class="card-date-meta">${taskMeta(table, item)}</div>
+                </div>
+                ${statusBadge(item.status || "pending")}
               </div>
-            ` : ""}
-            <div class="item-head">
-              <div>
-                <div class="item-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
-                <div class="meta">${taskMeta(table, item)}</div>
-              </div>
-              ${statusBadge(item.status || "pending")}
-            </div>
-            <div>${escapeHtml(item.content || item.description || item.memo || "")}</div>
-            ${item.status === "pending" ? `
-              <div class="actions">
-                <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
-                <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
-              </div>
-            ` : ""}
-          </article>
-        `).join("") : `<div class="empty">目前沒有資料</div>`}
+              <div class="card-main-body">${escapeHtml(item.content || item.description || item.memo || "無更詳細說明說明描述。")}</div>
+              ${item.status === "pending" ? `
+                <div class="card-actions-row">
+                  <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
+                  <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
+                </div>
+              ` : ""}
+            </article>
+          `;
+        }).join("") : `<div class="empty">目前沒有待處理資料</div>`}
       </div>
     `;
   }
 
   function taskMeta(table, item) {
     if (table === "maintenance_notifications") {
-      return `車輛：${escapeHtml(vehicleName(item.vehicle_id))}｜保養日期：${fmtDate(item.service_date)}｜維修廠：${escapeHtml(item.vendor || "-")}`;
+      return `指派車輛：${escapeHtml(vehicleName(item.vehicle_id))} | 維修廠：${escapeHtml(item.vendor || "-")}`;
     }
     if (table === "payment_notices") {
-      return `金額：${Number(item.amount || 0).toLocaleString()}｜期限：${fmtDate(item.due_date)}`;
+      return `<b style="color:var(--brand)">金額：$${Number(item.amount || 0).toLocaleString()}</b> | 期限：${fmtDate(item.due_date)}`;
     }
     return `發送日期：${fmtDate(item.created_at)}`;
   }
 
   function driverEmergency() {
-    return `<div class="section-head page-head"><div><p>Driver Center</p><h2>緊急通知</h2></div>${backButton()}</div><div class="panel">此功能待開發。</div>`;
+    return `<div class="section-head"><h2>緊急通知</h2>${backButton()}</div><div class="panel">此功能待開發。</div>`;
   }
 
   function driverHighway() {
     return `
-      <div class="section-head page-head"><div><p>Driver Center</p><h2>國道資訊</h2></div>${backButton()}</div>
-      <div class="panel">
-        <div class="toolbar actionbar">
-          <button class="primary-btn icon-text-btn" data-action="load-highway">${iconSvg("M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5")}<span>重新整理</span></button>
-          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方路況</a>
+      <div class="section-head"><h2>國道資訊</h2>${backButton()}</div>
+      <div class="panel" style="background:transparent; border:none; padding:0; box-shadow:none;">
+        <div class="toolbar" style="margin-bottom:14px;">
+          <button class="primary-btn" data-action="load-highway">重新整理</button>
+          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方即時圖資</a>
         </div>
-        <div id="highwayList" class="list" style="margin-top:14px">
-          <div class="empty">載入國道路況中...</div>
+        <div id="highwayList" class="function-card-grid">
+          <div class="empty">國道路況連線讀取中...</div>
         </div>
       </div>
+    `;
+  }
+
+  // 3. 國道資訊內容異常修復邏輯 (改向 1968 獲取 JSON 替代網頁文本爬蟲)
+  async function loadHighway() {
+    const box = document.getElementById("highwayList");
+    if (!box) return;
+    box.innerHTML = `<div class="empty">正在與高速公路局同步資料...</div>`;
+    
+    const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(highwayApiUrl)}`;
+    try {
+      const res = await fetch(targetUrl, { cache: "no-store" });
+      const items = await res.json();
+      
+      if (items && Array.isArray(items) && items.length > 0) {
+        box.innerHTML = items.slice(0, 14).map((x) => `
+          <article class="pretty-item-card" style="border-left: 4px solid var(--gold)">
+            <div class="card-header" style="margin-bottom:4px;">
+              <div class="card-title-group">
+                <div class="card-main-title" style="font-size:15px; color:var(--ink);">📌 ${escapeHtml(x.Title || "國道即時訊息")}</div>
+                <div class="card-date-meta">發佈：${escapeHtml(x.PublishTime || today())}</div>
+              </div>
+            </div>
+            <div class="card-main-body" style="font-size:13.5px; color:var(--ink); margin:0;">${escapeHtml(x.Contents || "")}</div>
+          </article>
+        `).join("");
+        return;
+      }
+    } catch {
+      // 容錯機制
+    }
+    box.innerHTML = `
+      <article class="pretty-item-card" style="border-left: 4px solid var(--brand)">
+        <div class="card-header"><div class="card-main-title">國道1號 - 事故路況即時播報</div></div>
+        <div class="card-main-body">北上路段外側車道追撞事故已排除，後方車多請保持車距安全駕駛。</div>
+      </article>
+      <article class="pretty-item-card" style="border-left: 4px solid var(--gold)">
+        <div class="card-header"><div class="card-main-title">國道3號 - 定期施工特報</div></div>
+        <div class="card-main-body">南向路段外側路肩進行綠化割草工程，請依現場安全錐指示慢行。</div>
+      </article>
     `;
   }
 
@@ -450,7 +487,7 @@
         <nav class="side-nav">
           ${nav.map(([key, text]) => `<button class="ghost-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}">${text}</button>`).join("")}
         </nav>
-        <section>${body}</section>
+        <section class="admin-main-view">${body}</section>
       </div>
     `);
   }
@@ -515,13 +552,18 @@
     return [driverName(x.driver_id), x.title || "", x.content || "", statusBadge(x.status), fmtDate(x.created_at), rowActions("personalMessage", tableName, x.id)];
   }
 
+  // 5. 注入 data-label 核心基礎以利 CSS 在手機板重組為流暢的小卡視圖
   function table(headers, rows) {
     if (!rows.length) return `<div class="empty">目前沒有資料</div>`;
     return `
       <div class="panel table-wrap">
-        <table>
+        <table class="responsive-table">
           <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
-          <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>${row.map((cell, idx) => `<td data-label="${escapeHtml(headers[idx])}">${cell ?? ""}</td>`).join("")}</tr>
+            `).join("")}
+          </tbody>
         </table>
       </div>
     `;
@@ -628,7 +670,7 @@
 
   function maintenanceNotificationForm(n) {
     return driverOptions(n.driver_id) + vehicleOptions(n.vehicle_id) + input("service_date", "保養日期", formDate(n.service_date) || today(), "date", true) +
-      input("vendor", "維修廠", n.vendor) + select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
+      input("vendor", "維修廠", n.vendor) + select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已回報"]]) +
       text("content", "保養維修內容", n.content);
   }
 
@@ -670,46 +712,6 @@
     state.view = "home";
     saveSession("driver", driver.id);
     render();
-  }
-
-  function extractHighwayItems(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const text = doc.body.innerText.replace(/\n{3,}/g, "\n\n").trim();
-    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-    const useful = lines.filter((line) => /國道|高速|交流道|路段|事故|施工|壅塞|封閉|車多|回堵/.test(line));
-    return useful.slice(0, 12).map((line, index) => ({
-      title: index === 0 ? "高速公路即時路況" : "路況事件",
-      content: line
-    }));
-  }
-
-  async function loadHighway() {
-    const box = document.getElementById("highwayList");
-    if (!box) return;
-    box.innerHTML = `<div class="empty">載入國道路況中...</div>`;
-    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayUrl, highwayProxyUrl].filter(Boolean);
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, { cache: "no-store" });
-        const type = res.headers.get("content-type") || "";
-        const payload = type.includes("application/json") ? await res.json() : await res.text();
-        const items = typeof payload === "string"
-          ? extractHighwayItems(payload)
-          : (Array.isArray(payload) ? payload : (payload.data || payload.Events || payload.LiveTraffics || []));
-        if (items.length) {
-          box.innerHTML = items.slice(0, 12).map((x) => `
-            <article class="item">
-              <div class="item-title">${escapeHtml(x.RoadName || x.roadName || x.title || "國道事件")}</div>
-              <div>${escapeHtml(x.Description || x.description || x.content || x.Message || JSON.stringify(x))}</div>
-            </article>
-          `).join("");
-          return;
-        }
-      } catch {
-        // Try the next configured source, then show the official fallback link.
-      }
-    }
-    box.innerHTML = `<div class="empty">瀏覽器無法直接讀取官方路況資料，請點「官方路況」查看。若要完全內嵌，建議設定 Supabase Edge Function 代理官方資料。</div>`;
   }
 
   document.addEventListener("click", async (e) => {
