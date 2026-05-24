@@ -2,7 +2,6 @@
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const highwayUrl = "https://www.1968services.tw/roadcondition";
-  // 3. 國道資訊修正：改用高公局官方開放 JSON API
   const highwayApiUrl = "https://apis.freeway.gov.tw/opendata/TrafficNews.json";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
@@ -179,7 +178,7 @@
 
   function vehicleName(id) {
     const v = state.data.vehicles.find((row) => row.id === id);
-    return v ? `${v.plate_no} ${v.brand || ""} ${v.model || ""}`.trim() : "未指定";
+    return v ? `${v.plate_no} (${v.brand || ""})` : "未指定";
   }
 
   function statusBadge(status) {
@@ -193,6 +192,7 @@
     }[c]));
   }
 
+  // 格式化日期為：2026-05-24
   function fmtDate(value) {
     if (!value) return "-";
     return String(value).slice(0, 10);
@@ -211,7 +211,7 @@
     else renderDriver();
   }
 
-  // 2. 登入後頂部配色與佈局美化
+  // 2. 登入後頂部配色優化：移除雜亂文字，乾淨和諧的頂部
   function layout(content) {
     app.innerHTML = `
       <div class="app-shell">
@@ -219,42 +219,42 @@
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
             <div class="brand-copy">
-              <div class="brand-title">${state.admin ? "管理後台控制中心" : escapeHtml(state.user.name) + "，您好"}</div>
-              <div class="brand-subtitle">${state.admin ? "車隊雲端管理" : "亞菲得精緻前台"}</div>
+              <div class="brand-title">${state.admin ? "車隊控制管理後台" : escapeHtml(state.user.name) + "，您好"}</div>
+              <div class="brand-subtitle">${state.admin ? "Control Console" : "亞菲得隨身前台"}</div>
             </div>
           </div>
           <div class="userbox">
-            <button class="ghost-btn" data-action="logout">登出</button>
+            <button class="ghost-btn" data-action="logout" style="font-size:14px; padding:6px 12px;">登出</button>
           </div>
         </header>
-        <main class="main">${content}</main>
+        <div class="main">${content}</div>
       </div>
     `;
   }
 
-  // 1. 登入介面優化：徹底移除中文「亞菲得」與英文「Fleet Console」標題文字，只留下白底極簡的 LOGO
+  // 1. 登入介面優化：完全拔除中英文文字亞菲得，只保留正中央大 LOGO
   function renderLogin() {
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-panel">
-          <div class="login-hero" style="justify-content: center; align-items: center; gap: 0;">
-            <img src="${logoUrl}" alt="heycar logo">
-            </div>
-          <div class="login-card">
+          <div class="login-hero" style="background: #ffffff; padding: 40px; display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--line);">
+            <img src="${logoUrl}" alt="heycar logo" style="width: 100%; max-width: 200px; background: none; padding: 0;">
+          </div>
+          <div class="login-card" style="padding: 40px;">
             <div class="mode-tabs">
               <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver">司機前台</button>
               <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin">管理後台</button>
             </div>
-            <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
-            <p>歡迎使用車隊管理系統，請輸入驗證代碼</p>
+            <h2 style="font-weight: 900; color: var(--ink); margin-bottom: 6px;">${state.mode === "driver" ? "司機登入" : "後台控制中心"}</h2>
+            <p style="margin-bottom: 24px; font-size: 14px;">請輸入您的驗證代碼以安全進入系統</p>
             <form id="loginForm" class="form-grid">
               <div class="field full">
-                <label>${state.mode === "driver" ? "身分證字號" : "管理 PIN"}</label>
-                <input name="login" autocomplete="off" placeholder="${state.mode === "driver" ? "請輸入身分證字號" : "請輸入密碼"}" required style="text-transform: uppercase;">
+                <label style="color: var(--muted); font-weight: 700;">${state.mode === "driver" ? "身分證字號" : "管理者安全 PIN"}</label>
+                <input name="login" autocomplete="off" placeholder="${state.mode === "driver" ? "請輸入身分證字號" : "請輸入 PIN 密碼"}" required style="text-transform: uppercase; font-size: 16px; padding: 12px;">
               </div>
-              <button class="primary-btn field full" type="submit">登入</button>
+              <button class="primary-btn field full" type="submit" style="padding: 12px; font-weight: 700; font-size: 16px; border-radius: var(--radius);">安全登入</button>
             </form>
-            ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
+            ${state.error ? `<div class="error" style="margin-top:16px;">⚠️ ${escapeHtml(state.error)}</div>` : ""}
           </div>
         </section>
       </div>
@@ -271,10 +271,10 @@
       layout(`
         <div class="dashboard-grid">
           ${feature("announcements", "公佈欄", "查看最新公告", unread)}
-          ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
-          ${feature("payments", "繳費中心", "罰單與通行費管理", pendingPay)}
-          ${feature("messages", "私人訊息", "個人指派任務通知", pendingMsg)}
-          ${feature("emergency", "緊急通知", "待開發功能模組", 0)}
+          ${feature("maintenance", "保養維修", "保養與維修指派", pendingMaint)}
+          ${feature("payments", "繳費中心", "交通罰單與通行費", pendingPay)}
+          ${feature("messages", "私人訊息", "控制中心派送訊息", pendingMsg)}
+          ${feature("emergency", "緊急通知", "道路狀況危急回報", 0)}
           ${feature("highway", "國道資訊", "即時高速公路路況", 0)}
         </div>
       `);
@@ -311,10 +311,10 @@
   }
 
   function backButton() {
-    return `<button class="back-btn" data-view="home">返回首頁</button>`;
+    return `<button class="back-btn" data-view="home">⬅ 返回首頁</button>`;
   }
 
-  // 4. 點入公告：完美套用舊 CSS 的 .list 和 .item，並優化內部元素，呈現精緻獨立小卡
+  // 4. 點入公告功能：獨立美化 RWD 小卡 (New Card Grid)
   function driverAnnouncements() {
     const list = [...state.data.announcements].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const pageSize = 5;
@@ -322,27 +322,27 @@
     state.page = Math.min(state.page, maxPage);
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
-      <div class="section-head"><h2>公佈欄</h2>${backButton()}</div>
-      <div class="list">
+      <div class="section-head"><h2>📢 系統公佈欄</h2>${backButton()}</div>
+      <div class="modern-card-container">
         ${pageItems.length ? pageItems.map((a) => `
-          <article class="item">
-            <div class="item-head">
-              <div>
-                <div class="item-title" style="font-size:16px; margin-bottom:4px;">${escapeHtml(a.title)}</div>
-                <div class="meta">發佈日期：${fmtDate(a.created_at)}</div>
+          <article class="luxury-ui-card">
+            <div class="lux-card-header">
+              <div class="lux-title-area">
+                <div class="lux-main-title">${escapeHtml(a.title)}</div>
+                <div class="lux-subtitle">⏰ 發布日期：${fmtDate(a.created_at)}</div>
               </div>
               ${statusBadge(isAnnouncementRead(a.id) ? "read" : "pending")}
             </div>
-            <div style="font-size:14px; color:var(--ink); line-height:1.6; padding:4px 0 10px;">${escapeHtml(a.content)}</div>
-            <div class="actions">
-              ${!isAnnouncementRead(a.id) ? `<button class="primary-btn" data-read-ann="${a.id}">確認已閱</button>` : `<span style="color:var(--muted); font-size:13px;">✓ 已閱讀</span>`}
+            <div class="lux-card-body">${escapeHtml(a.content)}</div>
+            <div class="lux-card-footer">
+              ${!isAnnouncementRead(a.id) ? `<button class="primary-btn" data-read-ann="${a.id}">確認已閱</button>` : `<span style="color:var(--green); font-weight:700; font-size:14px;">✓ 已經閱讀過</span>`}
             </div>
           </article>
         `).join("") : `<div class="empty">目前沒有公告</div>`}
       </div>
       <div class="pager">
         <button class="ghost-btn" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一頁</button>
-        <span>${state.page} / ${maxPage}</span>
+        <span style="font-weight:700;">第 ${state.page} / ${maxPage} 頁</span>
         <button class="ghost-btn" data-page="${state.page + 1}" ${state.page >= maxPage ? "disabled" : ""}>下一頁</button>
       </div>
     `;
@@ -352,82 +352,75 @@
     return state.data.announcement_reads.some((r) => r.announcement_id === announcementId && r.driver_id === state.user.id);
   }
 
-  // 4. 點入每個功能：套用舊 CSS 的 .maintenance-list 與 .maintenance-card 複合樣式，達成高質感、左側帶有精美日期方塊或立體邊緣的小卡
+  // 4. 點入每個功能（保養、繳費、私人訊息）：徹底打碎原有 CSS 變形排版，全數轉換成現代獨立高級感小卡
   function driverTaskList(table, title) {
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const isMaint = table === "maintenance_notifications";
     
-    // 強制將所有功能都套用舊 CSS 裡視覺效果最好的 maintenance-list 結構
     return `
       <div class="section-head"><h2>${title}</h2>${backButton()}</div>
-      <div class="list maintenance-list">
+      <div class="modern-card-container">
         ${items.length ? items.map((item) => {
           const dStr = isMaint ? fmtDate(item.service_date) : fmtDate(item.created_at || item.due_date);
           
           return `
-            <article class="item ${item.status !== "pending" ? "is-muted" : ""} maintenance-card" style="position:relative;">
-              <div class="date-tile">
-                <span>${dStr.slice(5, 7)}月</span>
-                <strong>${dStr.slice(8, 10)}</strong>
-                <small>${dStr.slice(0, 4)}</small>
-              </div>
-              <div style="display:flex; flex-direction:column; justify-content:space-between; min-height:92px;">
-                <div class="item-head">
-                  <div>
-                    <div class="item-title" style="font-size:16px; margin-bottom:4px;">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
-                    <div class="meta">${taskMeta(table, item)}</div>
-                  </div>
-                  ${statusBadge(item.status || "pending")}
+            <article class="luxury-ui-card ${item.status !== "pending" ? "is-muted" : ""}">
+              <div class="lux-card-header">
+                <div class="lux-title-area">
+                  <div class="lux-main-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
+                  <div class="lux-subtitle">${taskMeta(table, item)}</div>
                 </div>
-                <div style="font-size:14px; color:var(--ink); line-height:1.5; padding:8px 0;">${escapeHtml(item.content || item.description || item.memo || "無詳細描述內容。")}</div>
-                ${item.status === "pending" ? `
-                  <div class="actions" style="margin-top:auto;">
-                    <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
-                    <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
-                  </div>
-                ` : ""}
+                ${statusBadge(item.status || "pending")}
               </div>
+              <div class="lux-card-body">
+                ${isMaint ? `<div class="lux-date-badge">🗓️ 預定日期：${dStr}</div>` : ""}
+                ${escapeHtml(item.content || item.description || item.memo || "無進一步詳細說明描述。")}
+              </div>
+              ${item.status === "pending" ? `
+                <div class="lux-card-footer">
+                  <button class="danger-btn" data-task-status="${table}:${item.id}:returned" style="padding: 6px 14px; font-size:13px;">回報異常</button>
+                  <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}" style="padding: 6px 16px; font-size:13px;">${table === "payment_notices" ? "確認已繳" : "任務完成"}</button>
+                </div>
+              ` : ""}
             </article>
           `;
-        }).join("") : `<div class="empty">目前沒有資料</div>`}
+        }).join("") : `<div class="empty">目前沒有任何指派資料</div>`}
       </div>
     `;
   }
 
   function taskMeta(table, item) {
     if (table === "maintenance_notifications") {
-      return `車輛：${escapeHtml(vehicleName(item.vehicle_id))} ｜ 維修廠：${escapeHtml(item.vendor || "-")}`;
+      return `車牌：${escapeHtml(vehicleName(item.vehicle_id))} ｜ 指定維修廠：${escapeHtml(item.vendor || "-")}`;
     }
     if (table === "payment_notices") {
-      return `<b style="color:var(--brand)">金額：$${Number(item.amount || 0).toLocaleString()}</b> ｜ 期限：${fmtDate(item.due_date)}`;
+      return `<span style="color:var(--brand); font-weight:bold;">應繳金額：$${Number(item.amount || 0).toLocaleString()}</span> ｜ 繳費期限：${fmtDate(item.due_date)}`;
     }
-    return `發送日期：${fmtDate(item.created_at)}`;
+    return `派發時間：${fmtDate(item.created_at)}`;
   }
 
   function driverEmergency() {
-    return `<div class="section-head"><h2>緊急通知</h2>${backButton()}</div><div class="panel">此功能待開發。</div>`;
+    return `<div class="section-head"><h2>緊急通知</h2>${backButton()}</div><div class="panel">此功能維護開發中。</div>`;
   }
 
   function driverHighway() {
     return `
-      <div class="section-head"><h2>國道資訊</h2>${backButton()}</div>
-      <div class="panel" style="box-shadow:none; background:transparent; padding:0; border:none;">
-        <div class="toolbar" style="margin-bottom:14px;">
-          <button class="primary-btn" data-action="load-highway">重新整理路況</button>
-          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方即時路況</a>
-        </div>
-        <div id="highwayList" class="list">
-          <div class="empty">載入國道路況中...</div>
-        </div>
+      <div class="section-head"><h2>🛣️ 國道即時資訊</h2>${backButton()}</div>
+      <div style="margin-bottom:16px; display:flex; gap:8px;">
+        <button class="primary-btn" data-action="load-highway">🔄 重新整理</button>
+        <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方詳細圖資</a>
+      </div>
+      <div id="highwayList" class="modern-card-container">
+        <div class="empty">與高速公路局同步中...</div>
       </div>
     `;
   }
 
-  // 3. 修正國道路況內容異常：精準介接高公局官方 JSON 欄位並轉化為精美小卡
+  // 3. 國道資訊內容異常修復邏輯
   async function loadHighway() {
     const box = document.getElementById("highwayList");
     if (!box) return;
-    box.innerHTML = `<div class="empty">智慧路況中心聯網中...</div>`;
+    box.innerHTML = `<div class="empty">正在獲取最新高速公路事件數據...</div>`;
     
     const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(highwayApiUrl)}`;
     try {
@@ -436,29 +429,29 @@
       
       if (items && Array.isArray(items) && items.length > 0) {
         box.innerHTML = items.slice(0, 12).map((x) => `
-          <article class="item" style="border-left: 4px solid var(--gold);">
-            <div class="item-head">
-              <div>
-                <div class="item-title" style="color:var(--ink); font-size:15px;">📌 ${escapeHtml(x.Title || "即時路況特報")}</div>
-                <div class="meta">發佈時間：${escapeHtml(x.PublishTime || today())}</div>
+          <article class="luxury-ui-card" style="border-left: 5px solid var(--gold);">
+            <div class="lux-card-header" style="margin-bottom: 4px; border-bottom: none; padding-bottom: 0;">
+              <div class="lux-title-area">
+                <div class="lux-main-title" style="font-size: 15px; color: var(--ink);">⚠️ ${escapeHtml(x.Title || "即時路況")}</div>
+                <div class="lux-subtitle">發布時間：${escapeHtml(x.PublishTime || today())}</div>
               </div>
             </div>
-            <div style="font-size:13.5px; color:var(--ink); line-height:1.5; margin:0;">${escapeHtml(x.Contents || "")}</div>
+            <div class="lux-card-body" style="font-size: 14px; margin-top: 8px; color: #2d3748;">${escapeHtml(x.Contents || "")}</div>
           </article>
         `).join("");
         return;
       }
     } catch {
-      // 容錯降級保底
+      // 容錯降級
     }
     box.innerHTML = `
-      <article class="item" style="border-left: 4px solid var(--brand);">
-        <div class="item-head"><div class="item-title">國道1號 - 即時事故特報</div><div class="meta">${today()}</div></div>
-        <div style="font-size:14px;">北上 178K 處外側車道追撞事故已排除，後方車多回堵，請駕駛人慢行保持車距。</div>
+      <article class="luxury-ui-card" style="border-left: 5px solid var(--brand);">
+        <div class="lux-card-header" style="border:none;"><div class="lux-main-title">國道1號 - 事故路況</div></div>
+        <div class="lux-card-body">北上路段 178K 處追撞事故已排除，後方車流緩慢，請駕駛人慢行。</div>
       </article>
-      <article class="item" style="border-left: 4px solid var(--gold);">
-        <div class="item-head"><div class="item-title">國道3號 - 例行施工公告</div><div class="meta">${today()}</div></div>
-        <div style="font-size:14px;">南向 105K 處進行內側路肩割草工程，佔用內側路肩，請依現場交維指示變換車道。</div>
+      <article class="luxury-ui-card" style="border-left: 5px solid var(--gold);">
+        <div class="lux-card-header" style="border:none;"><div class="lux-main-title">國道3號 - 施工特報</div></div>
+        <div class="lux-card-body">南下路段外側路肩進行割草清潔維護，請依指示變換車道。</div>
       </article>
     `;
   }
@@ -553,12 +546,12 @@
     return [driverName(x.driver_id), x.title || "", x.content || "", statusBadge(x.status), fmtDate(x.created_at), rowActions("personalMessage", tableName, x.id)];
   }
 
-  // 5. 後台 RWD 核心：透過動態寫入的 style 和 data-label，在不改動 styles.css 的前提下讓手機完美操控
+  // 5. 後台 RWD 核心表格：注入 data-label
   function table(headers, rows) {
     if (!rows.length) return `<div class="empty">目前沒有資料</div>`;
     return `
-      <div class="panel table-wrap">
-        <table class="rwd-smart-table">
+      <div class="panel table-wrap" style="padding:0; overflow:hidden;">
+        <table class="rwd-luxury-table">
           <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
           <tbody>
             ${rows.map((row) => `
@@ -629,8 +622,9 @@
     return `<div class="field"><label>${label}</label><input name="${name}" type="${type}" value="${escapeHtml(value)}" ${required ? "required" : ""}></div>`;
   }
 
+  // 表單內文字域優化
   function text(name, label, value = "") {
-    return `<div class="field full"><label>${label}</label><textarea name="${name}">${escapeHtml(value)}</textarea></div>`;
+    return `<div class="field full"><label>${label}</label><textarea name="${name}" style="min-height:92px; padding:10px; border-radius:7px; border:1px solid var(--line);">${escapeHtml(value)}</textarea></div>`;
   }
 
   function select(name, label, value, options) {
@@ -641,6 +635,7 @@
     return select("driver_id", "指定駕駛", value || "", [["", "請選擇"], ...state.data.drivers.map((d) => [d.id, d.name])]);
   }
 
+  // 表單選項
   function vehicleOptions(value) {
     return select("vehicle_id", "指定車輛", value || "", [["", "請選擇"], ...state.data.vehicles.map((v) => [v.id, vehicleName(v.id)])]);
   }
@@ -715,27 +710,117 @@
     render();
   }
 
-  // 5. 行動端補強樣式動態注入 (優化手機網格及自適應表格，完全不破壞 styles.css)
-  const patchStyle = document.createElement('style');
-  patchStyle.textContent = `
-    .list.maintenance-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
-    @media (max-width: 900px) {
-      .admin-layout { grid-template-columns: 1fr; }
-      .side-nav { display: flex !important; flex-direction: row !important; overflow-x: auto; padding: 6px; gap: 6px; position: static; }
-      .side-nav button { flex: 0 0 auto; white-space: nowrap; }
-      .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; }
-      .rwd-smart-table thead { display: none; }
-      .rwd-smart-table tr { background: white; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; padding: 12px; box-shadow: 0 4px 12px rgba(24,32,51,0.02); }
-      .rwd-smart-table td { border-bottom: 1px dashed #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; text-align: right; font-size: 13.5px; }
-      .rwd-smart-table td:last-child { border-bottom: none; padding-bottom: 0; justify-content: flex-end; }
-      .rwd-smart-table td::before { content: attr(data-label); float: left; font-weight: 700; color: var(--muted); font-size: 12.5px; }
+  // ==========================================================================
+  // 終極大絕招：用最高層級特權 CSS 完全碾壓舊樣式引起的變形醜態
+  // ==========================================================================
+  const highPriorityStyle = document.createElement('style');
+  highPriorityStyle.textContent = `
+    /* 強制阻斷原有 CSS 綁死雙欄導致的公告變形 */
+    .modern-card-container {
+      display: grid !important;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)) !important;
+      gap: 16px !important;
+      width: 100% !important;
     }
-    @media (max-width: 560px) {
-      .list.maintenance-list { grid-template-columns: 1fr; }
-      .maintenance-card { grid-template-columns: 68px 1fr !important; }
+    .luxury-ui-card {
+      background: #ffffff !important;
+      border: 1px solid var(--line) !important;
+      border-radius: 12px !important;
+      padding: 20px !important;
+      box-shadow: 0 4px 16px rgba(24,32,51,0.04) !important;
+      display: flex !important;
+      flex-direction: column !important;
+      justify-content: space-between !important;
+      min-height: 140px !important;
+      position: relative !important;
+    }
+    .luxury-ui-card.is-muted {
+      background: #f8fafc !important;
+      opacity: 0.65 !important;
+    }
+    .lux-card-header {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: flex-start !important;
+      gap: 12px !important;
+      border-bottom: 1px dashed var(--line) !important;
+      padding-bottom: 10px !important;
+      margin-bottom: 12px !important;
+    }
+    .lux-main-title {
+      font-size: 16px !important;
+      font-weight: 800 !important;
+      color: var(--ink) !important;
+      line-height: 1.4 !important;
+    }
+    .lux-subtitle {
+      font-size: 12.5px !important;
+      color: var(--muted) !important;
+      margin-top: 4px !important;
+    }
+    .lux-card-body {
+      font-size: 14px !important;
+      color: #334155 !important;
+      line-height: 1.6 !important;
+      margin-bottom: 14px !important;
+      white-space: pre-line !important;
+    }
+    .lux-date-badge {
+      display: inline-block !important;
+      background: #eff6ff !important;
+      color: var(--blue) !important;
+      padding: 3px 8px !important;
+      border-radius: 4px !important;
+      font-size: 12px !important;
+      font-weight: 700 !important;
+      margin-bottom: 8px !important;
+    }
+    .lux-card-footer {
+      display: flex !important;
+      justify-content: flex-end !important;
+      gap: 8px !important;
+      padding-top: 10px !important;
+      border-top: 1px solid #f1f5f9 !important;
+    }
+
+    /* 5. 後台 RWD 手機卡片化徹底修正 */
+    @media (max-width: 900px) {
+      .admin-layout { grid-template-columns: 1fr !important; gap: 16px !important; }
+      .side-nav { display: flex !important; flex-direction: row !important; overflow-x: auto !important; padding: 6px !important; gap: 6px !important; position: static !important; }
+      .side-nav button { flex: 0 0 auto !important; white-space: nowrap !important; }
+      
+      .rwd-luxury-table, .rwd-luxury-table thead, .rwd-luxury-table tbody, .rwd-luxury-table th, .rwd-luxury-table td, .rwd-luxury-table tr {
+        display: block !important;
+      }
+      .rwd-luxury-table thead { display: none !important; }
+      .rwd-luxury-table tr {
+        background: white !important;
+        border: 1px solid var(--line) !important;
+        border-radius: var(--radius) !important;
+        margin-bottom: 12px !important;
+        padding: 14px !important;
+        box-shadow: 0 4px 14px rgba(24,32,51,0.03) !important;
+      }
+      .rwd-luxury-table td {
+        border-bottom: 1px dashed #f1f5f9 !important;
+        padding: 8px 0 !important;
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        text-align: right !important;
+        font-size: 13.5px !important;
+      }
+      .rwd-luxury-table td:last-child { border-bottom: none !important; padding-bottom: 0 !important; justify-content: flex-end !important; }
+      .rwd-luxury-table td::before {
+        content: attr(data-label) !important;
+        float: left !important;
+        font-weight: 700 !important;
+        color: var(--muted) !important;
+      }
+      .admin-layout .actions { justify-content: flex-end !important; width: 100% !important; }
     }
   `;
-  document.head.appendChild(patchStyle);
+  document.head.appendChild(highPriorityStyle);
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
