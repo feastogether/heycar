@@ -1,6 +1,8 @@
 (function () {
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
+  const highwayUrl = "https://www.1968services.tw/roadcondition";
+  const highwayProxyUrl = "https://r.jina.ai/http://r.jina.ai/http://https://www.1968services.tw/roadcondition";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -17,8 +19,14 @@
   };
 
   const tables = [
-    "drivers", "vehicles", "maintenance_records", "announcements",
-    "announcement_reads", "maintenance_notifications", "personal_messages", "payment_notices"
+    "drivers",
+    "vehicles",
+    "maintenance_records",
+    "announcements",
+    "announcement_reads",
+    "maintenance_notifications",
+    "personal_messages",
+    "payment_notices"
   ];
 
   const labels = {
@@ -32,6 +40,15 @@
 
   const vehicleStatuses = ["正常", "出借", "出租", "待修中", "維修中", "出保中", "閒置", "報廢", "其他"];
 
+  const featureIcons = {
+    announcements: "公",
+    maintenance: "修",
+    payments: "費",
+    messages: "訊",
+    emergency: "急",
+    highway: "道"
+  };
+
   const seed = {
     drivers: [
       { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", license_expiry: "2027-12-31", notes: "示範司機" }
@@ -41,7 +58,7 @@
     ],
     maintenance_records: [],
     announcements: [
-      { id: uid(), title: "歡迎使用亞菲得", content: "後台公告會顯示在這裡，每頁五則。", created_at: now() }
+      { id: uid(), title: "歡迎使用亞菲得", content: "後台公告會顯示在司機前台，每頁五則。", created_at: now() }
     ],
     announcement_reads: [],
     maintenance_notifications: [],
@@ -72,6 +89,36 @@
 
   function localSave() {
     localStorage.setItem("afide-data", JSON.stringify(state.data));
+  }
+
+  function saveSession(type, id) {
+    localStorage.setItem("afide-session", JSON.stringify({ type, id }));
+  }
+
+  function clearSession() {
+    localStorage.removeItem("afide-session");
+  }
+
+  function restoreSession() {
+    const raw = localStorage.getItem("afide-session");
+    if (!raw) return;
+    try {
+      const saved = JSON.parse(raw);
+      if (saved.type === "admin") {
+        state.admin = true;
+        state.user = null;
+        return;
+      }
+      const driver = state.data.drivers.find((d) => d.id === saved.id);
+      if (driver) {
+        state.user = driver;
+        state.admin = false;
+      } else {
+        clearSession();
+      }
+    } catch {
+      clearSession();
+    }
   }
 
   async function loadAll() {
@@ -141,7 +188,11 @@
 
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;"
     }[c]));
   }
 
@@ -167,12 +218,8 @@
     app.innerHTML = `
       <div class="app-shell">
         <header class="topbar">
-          <div class="brand">
+          <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
-            <div>
-              <div class="brand-title">亞菲得車隊管理系統</div>
-              <div class="meta">${hasSupabase ? "Supabase 已連線" : "示範模式：資料存在本機瀏覽器"}</div>
-            </div>
           </div>
           <div class="userbox">
             <strong>${escapeHtml(state.admin ? "管理員" : state.user.name)}</strong>
@@ -192,7 +239,6 @@
             <img src="${logoUrl}" alt="heycar logo">
             <div>
               <h1>亞菲得</h1>
-              <p>司機通知、車輛履歷、保養繳費與公告集中管理。</p>
             </div>
           </div>
           <div class="login-card">
@@ -201,15 +247,13 @@
               <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin">管理後台</button>
             </div>
             <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
-            <p>${state.mode === "driver" ? "輸入身分證字號即可登入。" : "輸入管理 PIN 進入後台。"}</p>
             <form id="loginForm" class="form-grid">
               <div class="field full">
                 <label>${state.mode === "driver" ? "身分證字號" : "管理 PIN"}</label>
-                <input name="login" autocomplete="off" required placeholder="${state.mode === "driver" ? "例如 A123456789" : "預設 123456"}">
+                <input name="login" autocomplete="off" required>
               </div>
               <button class="primary-btn field full" type="submit">登入</button>
             </form>
-            <div class="hint">第一次使用可先用示範司機 A123456789。正式上線請先到後台新增駕駛資料，並在 Supabase 啟用 RLS 政策。</div>
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
           </div>
         </section>
@@ -225,14 +269,19 @@
 
     if (state.view === "home") {
       layout(`
-        <div class="section-head"><h2>${escapeHtml(state.user.name)}，您好</h2></div>
+        <div class="driver-hero">
+          <div>
+            <p>亞菲得車隊</p>
+            <h2>${escapeHtml(state.user.name)}，您好</h2>
+          </div>
+        </div>
         <div class="dashboard-grid">
-          ${feature("announcements", "公佈欄", "查看後台公告", unread)}
-          ${feature("maintenance", "保養維修", "被指派的保養或維修", pendingMaint)}
-          ${feature("payments", "繳費中心", "罰單、通行費與其他費用", pendingPay)}
-          ${feature("messages", "私人訊息", "後台派送的個人訊息", pendingMsg)}
+          ${feature("announcements", "公佈欄", "查看最新公告", unread)}
+          ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
+          ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
+          ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
           ${feature("emergency", "緊急通知", "待開發", 0)}
-          ${feature("highway", "國道資訊", "國道緊急事件", 0)}
+          ${feature("highway", "國道資訊", "即時路況事件", 0)}
         </div>
       `);
       return;
@@ -247,16 +296,16 @@
       highway: driverHighway
     };
     layout(views[state.view]());
+    if (state.view === "highway") loadHighway();
   }
 
   function feature(view, title, desc, count) {
     return `
       <button class="feature-card" data-view="${view}">
-        <div class="item-head">
-          <strong>${title}</strong>
-          ${count ? `<span class="badge">${count}</span>` : ""}
-        </div>
-        <span>${desc}</span>
+        ${count ? `<span class="badge alert-badge">${count}</span>` : ""}
+        <span class="feature-icon">${featureIcons[view] || "車"}</span>
+        <strong>${title}</strong>
+        <small>${desc}</small>
       </button>
     `;
   }
@@ -339,7 +388,7 @@
   }
 
   function driverEmergency() {
-    return `<div class="section-head"><h2>緊急通知</h2>${backButton()}</div><div class="panel">此功能待開發，可後續串接簡訊、LINE Notify 或 Supabase Edge Function 推播。</div>`;
+    return `<div class="section-head"><h2>緊急通知</h2>${backButton()}</div><div class="panel">此功能待開發。</div>`;
   }
 
   function driverHighway() {
@@ -347,11 +396,11 @@
       <div class="section-head"><h2>國道資訊</h2>${backButton()}</div>
       <div class="panel">
         <div class="toolbar">
-          <button class="primary-btn" data-action="load-highway">更新國道事件</button>
-          <a class="ghost-btn" href="https://tdx.transportdata.tw/" target="_blank" rel="noreferrer">TDX 平台</a>
+          <button class="primary-btn" data-action="load-highway">重新整理</button>
+          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方路況</a>
         </div>
         <div id="highwayList" class="list" style="margin-top:14px">
-          <div class="empty">可於 config.example.js 設定 HIGHWAY_EVENTS_URL，建議用 Supabase Edge Function 代理 TDX 道路事件 API，避免在前端暴露 API 金鑰。</div>
+          <div class="empty">載入國道路況中...</div>
         </div>
       </div>
     `;
@@ -359,9 +408,13 @@
 
   function renderAdmin() {
     const nav = [
-      ["drivers", "駕駛管理"], ["vehicles", "車輛管理"], ["maintenanceRecords", "保養管理"],
-      ["maintenanceNotifications", "保養通知"], ["announcements", "公告管理"],
-      ["personalMessages", "個人訊息"], ["payments", "繳費通知"]
+      ["drivers", "駕駛管理"],
+      ["vehicles", "車輛管理"],
+      ["maintenanceRecords", "保養管理"],
+      ["maintenanceNotifications", "保養通知"],
+      ["announcements", "公告管理"],
+      ["personalMessages", "個人訊息"],
+      ["payments", "繳費通知"]
     ];
     const body = {
       drivers: adminDrivers,
@@ -387,8 +440,7 @@
     return `
       <div class="section-head"><h2>駕駛管理</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
       ${table(["姓名", "身分證", "手機", "駕照到期日", "備註", "操作"], state.data.drivers.map((d) => [
-        d.name, d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "",
-        rowActions("driver", "drivers", d.id)
+        d.name, d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)
       ]))}
     `;
   }
@@ -397,8 +449,7 @@
     return `
       <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
       ${table(["車牌", "廠牌", "型號", "年份", "狀態", "目前駕駛", "備註", "操作"], state.data.vehicles.map((v) => [
-        v.plate_no, v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "",
-        rowActions("vehicle", "vehicles", v.id)
+        v.plate_no, v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "", rowActions("vehicle", "vehicles", v.id)
       ]))}
     `;
   }
@@ -407,8 +458,7 @@
     return `
       <div class="section-head"><h2>保養管理</h2><button class="primary-btn" data-modal="maintenanceRecord">新增保養紀錄</button></div>
       ${table(["車輛", "保養日期", "里程", "項目", "維修廠", "金額", "下次保養", "操作"], state.data.maintenance_records.map((r) => [
-        vehicleName(r.vehicle_id), fmtDate(r.service_date), r.mileage || "", r.items || "", r.vendor || "", Number(r.cost || 0).toLocaleString(), fmtDate(r.next_service_date),
-        rowActions("maintenanceRecord", "maintenance_records", r.id)
+        vehicleName(r.vehicle_id), fmtDate(r.service_date), r.mileage || "", r.items || "", r.vendor || "", Number(r.cost || 0).toLocaleString(), fmtDate(r.next_service_date), rowActions("maintenanceRecord", "maintenance_records", r.id)
       ]))}
     `;
   }
@@ -417,8 +467,7 @@
     return `
       <div class="section-head"><h2>公告管理</h2><button class="primary-btn" data-modal="announcement">新增公告</button></div>
       ${table(["標題", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [
-        a.title, a.content, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length,
-        rowActions("announcement", "announcements", a.id)
+        a.title, a.content, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
       ]))}
     `;
   }
@@ -583,6 +632,7 @@
       if (value === (cfg.ADMIN_PIN || "123456")) {
         state.admin = true;
         state.user = null;
+        saveSession("admin", "admin");
         render();
       } else {
         state.error = "管理 PIN 不正確";
@@ -599,26 +649,48 @@
     state.user = driver;
     state.admin = false;
     state.view = "home";
+    saveSession("driver", driver.id);
     render();
+  }
+
+  function extractHighwayItems(html) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const text = doc.body.innerText.replace(/\n{3,}/g, "\n\n").trim();
+    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+    const useful = lines.filter((line) => /國道|高速|交流道|路段|事故|施工|壅塞|封閉|車多|回堵/.test(line));
+    return useful.slice(0, 12).map((line, index) => ({
+      title: index === 0 ? "高速公路即時路況" : "路況事件",
+      content: line
+    }));
   }
 
   async function loadHighway() {
     const box = document.getElementById("highwayList");
-    if (!cfg.HIGHWAY_EVENTS_URL) return;
-    box.innerHTML = `<div class="empty">載入中...</div>`;
-    try {
-      const res = await fetch(cfg.HIGHWAY_EVENTS_URL);
-      const json = await res.json();
-      const items = Array.isArray(json) ? json : (json.data || json.Events || json.LiveTraffics || []);
-      box.innerHTML = items.slice(0, 10).map((x) => `
-        <article class="item">
-          <div class="item-title">${escapeHtml(x.RoadName || x.roadName || x.title || "國道事件")}</div>
-          <div>${escapeHtml(x.Description || x.description || x.content || JSON.stringify(x))}</div>
-        </article>
-      `).join("") || `<div class="empty">目前沒有事件資料</div>`;
-    } catch (err) {
-      box.innerHTML = `<div class="empty">讀取失敗：${escapeHtml(err.message || err)}</div>`;
+    if (!box) return;
+    box.innerHTML = `<div class="empty">載入國道路況中...</div>`;
+    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayUrl, highwayProxyUrl].filter(Boolean);
+    for (const url of urls) {
+      try {
+        const res = await fetch(url, { cache: "no-store" });
+        const type = res.headers.get("content-type") || "";
+        const payload = type.includes("application/json") ? await res.json() : await res.text();
+        const items = typeof payload === "string"
+          ? extractHighwayItems(payload)
+          : (Array.isArray(payload) ? payload : (payload.data || payload.Events || payload.LiveTraffics || []));
+        if (items.length) {
+          box.innerHTML = items.slice(0, 12).map((x) => `
+            <article class="item">
+              <div class="item-title">${escapeHtml(x.RoadName || x.roadName || x.title || "國道事件")}</div>
+              <div>${escapeHtml(x.Description || x.description || x.content || x.Message || JSON.stringify(x))}</div>
+            </article>
+          `).join("");
+          return;
+        }
+      } catch {
+        // Try the next configured source, then show the official fallback link.
+      }
     }
+    box.innerHTML = `<div class="empty">瀏覽器無法直接讀取官方路況資料，請點「官方路況」查看。若要完全內嵌，建議設定 Supabase Edge Function 代理官方資料。</div>`;
   }
 
   document.addEventListener("click", async (e) => {
@@ -633,6 +705,7 @@
       state.user = null;
       state.admin = false;
       state.view = "home";
+      clearSession();
       render();
     }
     if (target.dataset.view) {
@@ -674,9 +747,13 @@
     await handleLogin(new FormData(e.target).get("login"));
   });
 
-  loadAll().then(render).catch((err) => {
+  loadAll().then(() => {
+    restoreSession();
+    render();
+  }).catch((err) => {
     state.error = err.message || String(err);
     state.data = localLoad();
+    restoreSession();
     render();
   });
 })();
