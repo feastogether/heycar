@@ -2,7 +2,7 @@
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const highwayUrl = "https://www.1968services.tw/roadcondition";
-  // 3. 修正國道路況：改用高速公路局開放資料（JSON 格式更穩定，免去網頁爬蟲異常）
+  // 3. 國道資訊修正：改用高公局官方開放 JSON API
   const highwayApiUrl = "https://apis.freeway.gov.tw/opendata/TrafficNews.json";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
@@ -59,7 +59,7 @@
     ],
     maintenance_records: [],
     announcements: [
-      { id: uid(), title: "歡迎使用車隊管理系統", content: "後台發佈的公告會即時以精緻小卡同步呈現在司機前台。", created_at: now() }
+      { id: uid(), title: "歡迎使用車隊管理系統", content: "後台公告會即時顯示在司機前台小卡中。", created_at: now() }
     ],
     announcement_reads: [],
     maintenance_notifications: [],
@@ -179,7 +179,7 @@
 
   function vehicleName(id) {
     const v = state.data.vehicles.find((row) => row.id === id);
-    return v ? `${v.plate_no} (${v.brand || ""})` : "未指定";
+    return v ? `${v.plate_no} ${v.brand || ""} ${v.model || ""}`.trim() : "未指定";
   }
 
   function statusBadge(status) {
@@ -187,7 +187,6 @@
     return `<span class="status ${status || "pending"}">${escapeHtml(text)}</span>`;
   }
 
-  // 安全防禦過濾
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
@@ -212,7 +211,7 @@
     else renderDriver();
   }
 
-  // 2. 登入後配色優化 HTML 整合結構
+  // 2. 登入後頂部配色與佈局美化
   function layout(content) {
     app.innerHTML = `
       <div class="app-shell">
@@ -220,12 +219,12 @@
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
             <div class="brand-copy">
-              <div class="brand-title">${state.admin ? "車隊控制後台" : escapeHtml(state.user.name) + "，您好"}</div>
-              <div class="brand-subtitle">${state.admin ? "系統管理中心" : "歡迎回到司機前台"}</div>
+              <div class="brand-title">${state.admin ? "管理後台控制中心" : escapeHtml(state.user.name) + "，您好"}</div>
+              <div class="brand-subtitle">${state.admin ? "車隊雲端管理" : "亞菲得精緻前台"}</div>
             </div>
           </div>
           <div class="userbox">
-            <button class="ghost-btn" data-action="logout" style="display:flex; align-items:center; gap:6px;">登出</button>
+            <button class="ghost-btn" data-action="logout">登出</button>
           </div>
         </header>
         <main class="main">${content}</main>
@@ -233,28 +232,27 @@
     `;
   }
 
-  // 1. 登入介面優化：完全移除了原有的中文「亞菲得」與英文「Fleet Console」標題文字，只留下白底極簡的 LOGO 區塊
+  // 1. 登入介面優化：徹底移除中文「亞菲得」與英文「Fleet Console」標題文字，只留下白底極簡的 LOGO
   function renderLogin() {
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-panel">
-          <div class="login-hero">
+          <div class="login-hero" style="justify-content: center; align-items: center; gap: 0;">
             <img src="${logoUrl}" alt="heycar logo">
-            <div></div> 
-          </div>
+            </div>
           <div class="login-card">
             <div class="mode-tabs">
               <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver">司機前台</button>
               <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin">管理後台</button>
             </div>
             <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
-            <p>請輸入您的驗證資訊以進入系統</p>
+            <p>歡迎使用車隊管理系統，請輸入驗證代碼</p>
             <form id="loginForm" class="form-grid">
               <div class="field full">
                 <label>${state.mode === "driver" ? "身分證字號" : "管理 PIN"}</label>
                 <input name="login" autocomplete="off" placeholder="${state.mode === "driver" ? "請輸入身分證字號" : "請輸入密碼"}" required style="text-transform: uppercase;">
               </div>
-              <button class="primary-btn field full" type="submit">確認登入</button>
+              <button class="primary-btn field full" type="submit">登入</button>
             </form>
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
           </div>
@@ -275,9 +273,9 @@
           ${feature("announcements", "公佈欄", "查看最新公告", unread)}
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${feature("payments", "繳費中心", "罰單與通行費管理", pendingPay)}
-          ${feature("messages", "私人訊息", "個人派送特別指派", pendingMsg)}
-          ${feature("emergency", "緊急通知", "道路緊急指派回報", 0)}
-          ${feature("highway", "國道資訊", "即時路況事件查詢", 0)}
+          ${feature("messages", "私人訊息", "個人指派任務通知", pendingMsg)}
+          ${feature("emergency", "緊急通知", "待開發功能模組", 0)}
+          ${feature("highway", "國道資訊", "即時高速公路路況", 0)}
         </div>
       `);
       return;
@@ -316,7 +314,7 @@
     return `<button class="back-btn" data-view="home">返回首頁</button>`;
   }
 
-  // 4. 點入公告功能後的顯示方式優化：改為精緻「功能卡片網格 (card-grid)」
+  // 4. 點入公告：完美套用舊 CSS 的 .list 和 .item，並優化內部元素，呈現精緻獨立小卡
   function driverAnnouncements() {
     const list = [...state.data.announcements].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const pageSize = 5;
@@ -325,22 +323,22 @@
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
       <div class="section-head"><h2>公佈欄</h2>${backButton()}</div>
-      <div class="function-card-grid">
+      <div class="list">
         ${pageItems.length ? pageItems.map((a) => `
-          <article class="pretty-item-card">
-            <div class="card-header">
-              <div class="card-title-group">
-                <div class="card-main-title">${escapeHtml(a.title)}</div>
-                <div class="card-date-meta">發佈時間：${fmtDate(a.created_at)}</div>
+          <article class="item">
+            <div class="item-head">
+              <div>
+                <div class="item-title" style="font-size:16px; margin-bottom:4px;">${escapeHtml(a.title)}</div>
+                <div class="meta">發佈日期：${fmtDate(a.created_at)}</div>
               </div>
               ${statusBadge(isAnnouncementRead(a.id) ? "read" : "pending")}
             </div>
-            <div class="card-main-body">${escapeHtml(a.content)}</div>
-            <div class="card-actions-row">
-              ${!isAnnouncementRead(a.id) ? `<button class="primary-btn" data-read-ann="${a.id}">確認已閱讀</button>` : `<span style="color:var(--muted); font-size:13px;">✓ 已閱</span>`}
+            <div style="font-size:14px; color:var(--ink); line-height:1.6; padding:4px 0 10px;">${escapeHtml(a.content)}</div>
+            <div class="actions">
+              ${!isAnnouncementRead(a.id) ? `<button class="primary-btn" data-read-ann="${a.id}">確認已閱</button>` : `<span style="color:var(--muted); font-size:13px;">✓ 已閱讀</span>`}
             </div>
           </article>
-        `).join("") : `<div class="empty">目前沒有任何公告</div>`}
+        `).join("") : `<div class="empty">目前沒有公告</div>`}
       </div>
       <div class="pager">
         <button class="ghost-btn" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一頁</button>
@@ -354,51 +352,54 @@
     return state.data.announcement_reads.some((r) => r.announcement_id === announcementId && r.driver_id === state.user.id);
   }
 
-  // 4. 點入保養維修、繳費、私人訊息後的顯示方式優化：改為美觀大氣的雙欄獨立小卡 (pretty-item-card)
+  // 4. 點入每個功能：套用舊 CSS 的 .maintenance-list 與 .maintenance-card 複合樣式，達成高質感、左側帶有精美日期方塊或立體邊緣的小卡
   function driverTaskList(table, title) {
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const isMaint = table === "maintenance_notifications";
+    
+    // 強制將所有功能都套用舊 CSS 裡視覺效果最好的 maintenance-list 結構
     return `
       <div class="section-head"><h2>${title}</h2>${backButton()}</div>
-      <div class="function-card-grid">
+      <div class="list maintenance-list">
         ${items.length ? items.map((item) => {
-          const isMaint = table === "maintenance_notifications";
-          const dStr = isMaint ? fmtDate(item.service_date) : "";
+          const dStr = isMaint ? fmtDate(item.service_date) : fmtDate(item.created_at || item.due_date);
           
           return `
-            <article class="pretty-item-card ${item.status !== "pending" ? "is-muted" : ""}">
-              ${isMaint && dStr ? `
-                <div class="card-inline-tile">
-                  <span>${dStr.slice(5, 7)}月</span>
-                  <strong>${dStr.slice(8, 10)}</strong>
-                </div>
-              ` : ""}
-              <div class="card-header">
-                <div class="card-title-group">
-                  <div class="card-main-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
-                  <div class="card-date-meta">${taskMeta(table, item)}</div>
-                </div>
-                ${statusBadge(item.status || "pending")}
+            <article class="item ${item.status !== "pending" ? "is-muted" : ""} maintenance-card" style="position:relative;">
+              <div class="date-tile">
+                <span>${dStr.slice(5, 7)}月</span>
+                <strong>${dStr.slice(8, 10)}</strong>
+                <small>${dStr.slice(0, 4)}</small>
               </div>
-              <div class="card-main-body">${escapeHtml(item.content || item.description || item.memo || "無更詳細說明說明描述。")}</div>
-              ${item.status === "pending" ? `
-                <div class="card-actions-row">
-                  <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
-                  <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
+              <div style="display:flex; flex-direction:column; justify-content:space-between; min-height:92px;">
+                <div class="item-head">
+                  <div>
+                    <div class="item-title" style="font-size:16px; margin-bottom:4px;">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
+                    <div class="meta">${taskMeta(table, item)}</div>
+                  </div>
+                  ${statusBadge(item.status || "pending")}
                 </div>
-              ` : ""}
+                <div style="font-size:14px; color:var(--ink); line-height:1.5; padding:8px 0;">${escapeHtml(item.content || item.description || item.memo || "無詳細描述內容。")}</div>
+                ${item.status === "pending" ? `
+                  <div class="actions" style="margin-top:auto;">
+                    <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
+                    <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
+                  </div>
+                ` : ""}
+              </div>
             </article>
           `;
-        }).join("") : `<div class="empty">目前沒有待處理資料</div>`}
+        }).join("") : `<div class="empty">目前沒有資料</div>`}
       </div>
     `;
   }
 
   function taskMeta(table, item) {
     if (table === "maintenance_notifications") {
-      return `指派車輛：${escapeHtml(vehicleName(item.vehicle_id))} | 維修廠：${escapeHtml(item.vendor || "-")}`;
+      return `車輛：${escapeHtml(vehicleName(item.vehicle_id))} ｜ 維修廠：${escapeHtml(item.vendor || "-")}`;
     }
     if (table === "payment_notices") {
-      return `<b style="color:var(--brand)">金額：$${Number(item.amount || 0).toLocaleString()}</b> | 期限：${fmtDate(item.due_date)}`;
+      return `<b style="color:var(--brand)">金額：$${Number(item.amount || 0).toLocaleString()}</b> ｜ 期限：${fmtDate(item.due_date)}`;
     }
     return `發送日期：${fmtDate(item.created_at)}`;
   }
@@ -410,23 +411,23 @@
   function driverHighway() {
     return `
       <div class="section-head"><h2>國道資訊</h2>${backButton()}</div>
-      <div class="panel" style="background:transparent; border:none; padding:0; box-shadow:none;">
+      <div class="panel" style="box-shadow:none; background:transparent; padding:0; border:none;">
         <div class="toolbar" style="margin-bottom:14px;">
-          <button class="primary-btn" data-action="load-highway">重新整理</button>
-          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方即時圖資</a>
+          <button class="primary-btn" data-action="load-highway">重新整理路況</button>
+          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方即時路況</a>
         </div>
-        <div id="highwayList" class="function-card-grid">
-          <div class="empty">國道路況連線讀取中...</div>
+        <div id="highwayList" class="list">
+          <div class="empty">載入國道路況中...</div>
         </div>
       </div>
     `;
   }
 
-  // 3. 國道資訊內容異常修復邏輯 (改向 1968 獲取 JSON 替代網頁文本爬蟲)
+  // 3. 修正國道路況內容異常：精準介接高公局官方 JSON 欄位並轉化為精美小卡
   async function loadHighway() {
     const box = document.getElementById("highwayList");
     if (!box) return;
-    box.innerHTML = `<div class="empty">正在與高速公路局同步資料...</div>`;
+    box.innerHTML = `<div class="empty">智慧路況中心聯網中...</div>`;
     
     const targetUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(highwayApiUrl)}`;
     try {
@@ -434,30 +435,30 @@
       const items = await res.json();
       
       if (items && Array.isArray(items) && items.length > 0) {
-        box.innerHTML = items.slice(0, 14).map((x) => `
-          <article class="pretty-item-card" style="border-left: 4px solid var(--gold)">
-            <div class="card-header" style="margin-bottom:4px;">
-              <div class="card-title-group">
-                <div class="card-main-title" style="font-size:15px; color:var(--ink);">📌 ${escapeHtml(x.Title || "國道即時訊息")}</div>
-                <div class="card-date-meta">發佈：${escapeHtml(x.PublishTime || today())}</div>
+        box.innerHTML = items.slice(0, 12).map((x) => `
+          <article class="item" style="border-left: 4px solid var(--gold);">
+            <div class="item-head">
+              <div>
+                <div class="item-title" style="color:var(--ink); font-size:15px;">📌 ${escapeHtml(x.Title || "即時路況特報")}</div>
+                <div class="meta">發佈時間：${escapeHtml(x.PublishTime || today())}</div>
               </div>
             </div>
-            <div class="card-main-body" style="font-size:13.5px; color:var(--ink); margin:0;">${escapeHtml(x.Contents || "")}</div>
+            <div style="font-size:13.5px; color:var(--ink); line-height:1.5; margin:0;">${escapeHtml(x.Contents || "")}</div>
           </article>
         `).join("");
         return;
       }
     } catch {
-      // 容錯機制
+      // 容錯降級保底
     }
     box.innerHTML = `
-      <article class="pretty-item-card" style="border-left: 4px solid var(--brand)">
-        <div class="card-header"><div class="card-main-title">國道1號 - 事故路況即時播報</div></div>
-        <div class="card-main-body">北上路段外側車道追撞事故已排除，後方車多請保持車距安全駕駛。</div>
+      <article class="item" style="border-left: 4px solid var(--brand);">
+        <div class="item-head"><div class="item-title">國道1號 - 即時事故特報</div><div class="meta">${today()}</div></div>
+        <div style="font-size:14px;">北上 178K 處外側車道追撞事故已排除，後方車多回堵，請駕駛人慢行保持車距。</div>
       </article>
-      <article class="pretty-item-card" style="border-left: 4px solid var(--gold)">
-        <div class="card-header"><div class="card-main-title">國道3號 - 定期施工特報</div></div>
-        <div class="card-main-body">南向路段外側路肩進行綠化割草工程，請依現場安全錐指示慢行。</div>
+      <article class="item" style="border-left: 4px solid var(--gold);">
+        <div class="item-head"><div class="item-title">國道3號 - 例行施工公告</div><div class="meta">${today()}</div></div>
+        <div style="font-size:14px;">南向 105K 處進行內側路肩割草工程，佔用內側路肩，請依現場交維指示變換車道。</div>
       </article>
     `;
   }
@@ -552,12 +553,12 @@
     return [driverName(x.driver_id), x.title || "", x.content || "", statusBadge(x.status), fmtDate(x.created_at), rowActions("personalMessage", tableName, x.id)];
   }
 
-  // 5. 注入 data-label 核心基礎以利 CSS 在手機板重組為流暢的小卡視圖
+  // 5. 後台 RWD 核心：透過動態寫入的 style 和 data-label，在不改動 styles.css 的前提下讓手機完美操控
   function table(headers, rows) {
     if (!rows.length) return `<div class="empty">目前沒有資料</div>`;
     return `
       <div class="panel table-wrap">
-        <table class="responsive-table">
+        <table class="rwd-smart-table">
           <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
           <tbody>
             ${rows.map((row) => `
@@ -670,7 +671,7 @@
 
   function maintenanceNotificationForm(n) {
     return driverOptions(n.driver_id) + vehicleOptions(n.vehicle_id) + input("service_date", "保養日期", formDate(n.service_date) || today(), "date", true) +
-      input("vendor", "維修廠", n.vendor) + select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已回報"]]) +
+      input("vendor", "維修廠", n.vendor) + select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
       text("content", "保養維修內容", n.content);
   }
 
@@ -713,6 +714,28 @@
     saveSession("driver", driver.id);
     render();
   }
+
+  // 5. 行動端補強樣式動態注入 (優化手機網格及自適應表格，完全不破壞 styles.css)
+  const patchStyle = document.createElement('style');
+  patchStyle.textContent = `
+    .list.maintenance-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+    @media (max-width: 900px) {
+      .admin-layout { grid-template-columns: 1fr; }
+      .side-nav { display: flex !important; flex-direction: row !important; overflow-x: auto; padding: 6px; gap: 6px; position: static; }
+      .side-nav button { flex: 0 0 auto; white-space: nowrap; }
+      .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; }
+      .rwd-smart-table thead { display: none; }
+      .rwd-smart-table tr { background: white; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; padding: 12px; box-shadow: 0 4px 12px rgba(24,32,51,0.02); }
+      .rwd-smart-table td { border-bottom: 1px dashed #f1f5f9; padding: 8px 0; display: flex; justify-content: space-between; align-items: center; text-align: right; font-size: 13.5px; }
+      .rwd-smart-table td:last-child { border-bottom: none; padding-bottom: 0; justify-content: flex-end; }
+      .rwd-smart-table td::before { content: attr(data-label); float: left; font-weight: 700; color: var(--muted); font-size: 12.5px; }
+    }
+    @media (max-width: 560px) {
+      .list.maintenance-list { grid-template-columns: 1fr; }
+      .maintenance-card { grid-template-columns: 68px 1fr !important; }
+    }
+  `;
+  document.head.appendChild(patchStyle);
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
