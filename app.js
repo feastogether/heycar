@@ -41,12 +41,12 @@
   const vehicleStatuses = ["正常", "出借", "出租", "待修中", "維修中", "出保中", "閒置", "報廢", "其他"];
 
   const featureIcons = {
-    announcements: "公",
-    maintenance: "修",
-    payments: "費",
-    messages: "訊",
-    emergency: "急",
-    highway: "道"
+    announcements: "M4 6.5A2.5 2.5 0 0 1 6.5 4H20v13H7.5A3.5 3.5 0 0 0 4 20.5v-14Zm3 0h10M7.5 10h8M7.5 13.5h6",
+    maintenance: "M14.7 6.3a4.5 4.5 0 0 0-5.9 5.9L4 17l3 3 4.8-4.8a4.5 4.5 0 0 0 5.9-5.9l-3 3-3-3 3-3Z",
+    payments: "M4 7h16v10H4V7Zm2 3h12M7 14h4",
+    messages: "M4 5h16v11H8l-4 3V5Zm4 5h8M8 13h5",
+    emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
+    highway: "M8 20 11 4h2l3 16M5 12h14M9 8h6M8.5 16h7"
   };
 
   const seed = {
@@ -227,7 +227,7 @@
               </div>
             ` : `
               <div class="brand-copy">
-                <div class="brand-title">${escapeHtml(state.user.name)}，您好</div>
+                <div class="brand-title driver-name">${escapeHtml(state.user.name)}，您好</div>
                 <div class="brand-subtitle">亞菲得車隊</div>
               </div>
             `}
@@ -308,11 +308,17 @@
     return `
       <button class="feature-card" data-view="${view}">
         ${count ? `<span class="badge alert-badge">${count}</span>` : ""}
-        <span class="feature-icon">${featureIcons[view] || "車"}</span>
-        <strong>${title}</strong>
-        <small>${desc}</small>
+        <span class="feature-icon">${iconSvg(featureIcons[view])}</span>
+        <span class="feature-copy">
+          <strong>${title}</strong>
+          <small>${desc}</small>
+        </span>
       </button>
     `;
+  }
+
+  function iconSvg(path) {
+    return `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}" /></svg>`;
   }
 
   function mine(table) {
@@ -320,7 +326,7 @@
   }
 
   function backButton() {
-    return `<button class="ghost-btn" data-view="home">返回首頁</button>`;
+    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>返回</span></button>`;
   }
 
   function driverAnnouncements() {
@@ -330,7 +336,7 @@
     state.page = Math.min(state.page, maxPage);
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
-      <div class="section-head"><h2>公佈欄</h2>${backButton()}</div>
+      <div class="section-head page-head"><div><p>Driver Center</p><h2>公佈欄</h2></div>${backButton()}</div>
       <div class="list">
         ${pageItems.length ? pageItems.map((a) => `
           <article class="item">
@@ -359,7 +365,7 @@
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const cardClass = table === "maintenance_notifications" ? "list maintenance-list" : "list";
     return `
-      <div class="section-head"><h2>${title}</h2>${backButton()}</div>
+      <div class="section-head page-head"><div><p>Driver Center</p><h2>${title}</h2></div>${backButton()}</div>
       <div class="${cardClass}">
         ${items.length ? items.map((item) => `
           <article class="item ${item.status !== "pending" ? "is-muted" : ""} ${table === "maintenance_notifications" ? "maintenance-card" : ""}">
@@ -401,15 +407,15 @@
   }
 
   function driverEmergency() {
-    return `<div class="section-head"><h2>緊急通知</h2>${backButton()}</div><div class="panel">此功能待開發。</div>`;
+    return `<div class="section-head page-head"><div><p>Driver Center</p><h2>緊急通知</h2></div>${backButton()}</div><div class="panel">此功能待開發。</div>`;
   }
 
   function driverHighway() {
     return `
-      <div class="section-head"><h2>國道資訊</h2>${backButton()}</div>
+      <div class="section-head page-head"><div><p>Driver Center</p><h2>國道資訊</h2></div>${backButton()}</div>
       <div class="panel">
-        <div class="toolbar">
-          <button class="primary-btn" data-action="load-highway">重新整理</button>
+        <div class="toolbar actionbar">
+          <button class="primary-btn icon-text-btn" data-action="load-highway">${iconSvg("M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5")}<span>重新整理</span></button>
           <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方路況</a>
         </div>
         <div id="highwayList" class="list" style="margin-top:14px">
