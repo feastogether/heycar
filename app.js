@@ -220,9 +220,19 @@
         <header class="topbar">
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
+            ${state.admin ? `
+              <div class="brand-copy">
+                <div class="brand-title">管理後台</div>
+                <div class="brand-subtitle">亞菲得車隊管理</div>
+              </div>
+            ` : `
+              <div class="brand-copy">
+                <div class="brand-title">${escapeHtml(state.user.name)}，您好</div>
+                <div class="brand-subtitle">亞菲得車隊</div>
+              </div>
+            `}
           </div>
           <div class="userbox">
-            <strong>${escapeHtml(state.admin ? "管理員" : state.user.name)}</strong>
             <button class="ghost-btn" data-action="logout">登出</button>
           </div>
         </header>
@@ -239,6 +249,7 @@
             <img src="${logoUrl}" alt="heycar logo">
             <div>
               <h1>亞菲得</h1>
+              <div class="login-mark">Fleet Console</div>
             </div>
           </div>
           <div class="login-card">
@@ -269,12 +280,6 @@
 
     if (state.view === "home") {
       layout(`
-        <div class="driver-hero">
-          <div>
-            <p>亞菲得車隊</p>
-            <h2>${escapeHtml(state.user.name)}，您好</h2>
-          </div>
-        </div>
         <div class="dashboard-grid">
           ${feature("announcements", "公佈欄", "查看最新公告", unread)}
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
@@ -352,11 +357,19 @@
 
   function driverTaskList(table, title) {
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const cardClass = table === "maintenance_notifications" ? "list maintenance-list" : "list";
     return `
       <div class="section-head"><h2>${title}</h2>${backButton()}</div>
-      <div class="list">
+      <div class="${cardClass}">
         ${items.length ? items.map((item) => `
-          <article class="item">
+          <article class="item ${item.status !== "pending" ? "is-muted" : ""} ${table === "maintenance_notifications" ? "maintenance-card" : ""}">
+            ${table === "maintenance_notifications" ? `
+              <div class="date-tile">
+                <span>${fmtDate(item.service_date).slice(5, 7)}</span>
+                <strong>${fmtDate(item.service_date).slice(8, 10)}</strong>
+                <small>${fmtDate(item.service_date).slice(0, 4)}</small>
+              </div>
+            ` : ""}
             <div class="item-head">
               <div>
                 <div class="item-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>

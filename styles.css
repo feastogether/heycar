@@ -43,7 +43,9 @@ button { cursor: pointer; }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .brand img { height: 38px; width: auto; display: block; }
 .compact-brand img { height: 44px; }
-.brand-title { font-weight: 800; letter-spacing: 0; white-space: nowrap; }
+.brand-copy { display: grid; gap: 2px; min-width: 0; }
+.brand-title { font-weight: 900; letter-spacing: 0; white-space: nowrap; color: var(--ink); }
+.brand-subtitle { color: var(--muted); font-size: 13px; font-weight: 700; }
 .userbox { display: flex; align-items: center; gap: 10px; color: var(--ink); }
 .userbox strong { font-size: 16px; }
 .main { width: min(1180px, calc(100% - 28px)); margin: 22px auto 56px; }
@@ -54,11 +56,12 @@ button { cursor: pointer; }
   place-items: center;
   padding: 20px;
   background:
+    radial-gradient(circle at 78% 20%, rgba(201,139,44,.22), transparent 18rem),
     linear-gradient(135deg, rgba(239,63,53,.13), rgba(31,122,140,.16)),
     #f7fafc;
 }
 .login-panel {
-  width: min(960px, 100%);
+  width: min(880px, 100%);
   display: grid;
   grid-template-columns: 1fr 1fr;
   background: var(--panel);
@@ -70,7 +73,7 @@ button { cursor: pointer; }
 .login-hero {
   padding: 38px;
   background:
-    linear-gradient(145deg, rgba(239,63,53,.85), rgba(25,34,49,.96)),
+    linear-gradient(145deg, rgba(239,63,53,.88), rgba(25,34,49,.97)),
     #192231;
   color: white;
   display: flex;
@@ -80,6 +83,16 @@ button { cursor: pointer; }
 }
 .login-hero img { width: 168px; background: white; padding: 8px 12px; border-radius: 6px; }
 .login-hero h1 { margin: 0; font-size: clamp(30px, 5vw, 54px); line-height: 1.05; letter-spacing: 0; }
+.login-mark {
+  width: max-content;
+  margin-top: 14px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,.3);
+  border-radius: 999px;
+  color: rgba(255,255,255,.82);
+  font-size: 12px;
+  font-weight: 800;
+}
 .login-card { padding: 38px; }
 .login-card h2 { margin: 0 0 8px; font-size: 24px; }
 .login-card p { margin: 0 0 24px; color: var(--muted); }
@@ -110,39 +123,25 @@ input, select, textarea {
 textarea { min-height: 92px; resize: vertical; }
 .error { margin-top: 12px; color: #b91c1c; font-weight: 700; }
 
-.driver-hero {
-  min-height: 138px;
-  display: flex;
-  align-items: flex-end;
-  padding: 24px;
-  margin-bottom: 18px;
-  color: white;
-  border-radius: var(--radius);
-  background:
-    linear-gradient(135deg, rgba(24,32,51,.92), rgba(31,122,140,.82)),
-    #182033;
-  box-shadow: 0 16px 38px rgba(24,32,51,.16);
-}
-.driver-hero p { margin: 0 0 6px; color: rgba(255,255,255,.78); font-weight: 700; }
-.driver-hero h2 { margin: 0; font-size: clamp(28px, 5vw, 42px); letter-spacing: 0; }
 .dashboard-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0,1fr));
-  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: 14px;
+  justify-content: start;
 }
 .feature-card {
   position: relative;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 18px;
-  aspect-ratio: 1 / 1;
-  min-height: 154px;
+  padding: 16px;
+  min-height: 124px;
   display: grid;
-  place-items: center;
+  grid-template-columns: 46px 1fr;
+  place-items: center start;
   align-content: center;
   gap: 10px;
-  text-align: center;
+  text-align: left;
   box-shadow: 0 12px 30px rgba(24,32,51,.07);
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
@@ -151,11 +150,12 @@ textarea { min-height: 92px; resize: vertical; }
   border-color: rgba(239,63,53,.5);
   box-shadow: 0 18px 42px rgba(24,32,51,.12);
 }
-.feature-card strong { font-size: clamp(18px, 2.5vw, 22px); }
-.feature-card small { color: var(--muted); font-size: 13px; line-height: 1.45; }
+.feature-card strong { font-size: 18px; align-self: end; }
+.feature-card small { color: var(--muted); font-size: 13px; line-height: 1.45; align-self: start; }
 .feature-icon {
-  width: 48px;
-  height: 48px;
+  grid-row: span 2;
+  width: 46px;
+  height: 46px;
   display: grid;
   place-items: center;
   border-radius: 14px;
@@ -208,6 +208,30 @@ textarea { min-height: 92px; resize: vertical; }
   gap: 10px;
   box-shadow: 0 8px 22px rgba(24,32,51,.04);
 }
+.item.is-muted {
+  opacity: .58;
+  background: #f3f6fa;
+  filter: grayscale(.12);
+}
+.maintenance-list { gap: 14px; }
+.maintenance-card {
+  grid-template-columns: 82px 1fr;
+  align-items: start;
+}
+.maintenance-card .actions { grid-column: 2; }
+.date-tile {
+  grid-row: span 3;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 92px;
+  border-radius: 8px;
+  color: white;
+  background: linear-gradient(160deg, var(--brand), #192231);
+}
+.date-tile span { font-size: 13px; font-weight: 800; opacity: .82; }
+.date-tile strong { font-size: 34px; line-height: 1; }
+.date-tile small { font-size: 12px; opacity: .8; }
 .item-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .item-title { font-weight: 800; }
 .meta { color: var(--muted); font-size: 13px; line-height: 1.5; }
@@ -272,11 +296,19 @@ th { color: var(--muted); font-size: 13px; }
 }
 
 @media (max-width: 560px) {
-  .topbar { align-items: flex-start; flex-direction: column; }
+  .topbar { align-items: center; flex-direction: row; }
   .brand-title { white-space: normal; }
   .login-card { padding: 24px; }
-  .form-grid, .dashboard-grid, .side-nav { grid-template-columns: 1fr; }
-  .feature-card { aspect-ratio: 1 / .72; min-height: 132px; }
+  .form-grid, .side-nav { grid-template-columns: 1fr; }
+  .dashboard-grid { grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px; }
+  .feature-card { grid-template-columns: 1fr; min-height: 112px; text-align: center; place-items: center; gap: 6px; padding: 12px 8px; }
+  .feature-icon { grid-row: auto; width: 38px; height: 38px; font-size: 16px; }
+  .feature-card strong { font-size: 15px; }
+  .feature-card small { display: none; }
+  .maintenance-card { grid-template-columns: 68px 1fr; }
+  .maintenance-card .actions { grid-column: 1 / -1; }
+  .date-tile { min-height: 78px; }
+  .date-tile strong { font-size: 28px; }
   .section-head, .item-head { flex-direction: column; align-items: stretch; }
   .toolbar > * { flex: 1 1 auto; }
 }
