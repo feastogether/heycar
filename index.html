@@ -70,7 +70,7 @@
     .userbox { display: flex; align-items: center; }
     .main { width: min(1200px, calc(100% - 32px)); margin: 24px auto 60px; flex: 1; }
 
-    /* 1. 登入網頁配色優化 (純淨 LOGO、無雜亂中英文) */
+    /* 登入網頁配色優化 (純淨 LOGO、無雜亂中英文) */
     .login-wrap { min-height: 100vh; display: grid; place-items: center; padding: 20px; background: linear-gradient(135deg, rgba(239,63,53,.06), rgba(31,122,140,.08)), #f4f6f9; }
     .login-panel { width: min(800px, 100%); display: grid; grid-template-columns: 1.1fr 1fr; background: var(--panel); border-radius: var(--radius); overflow: hidden; box-shadow: 0 20px 50px rgba(29,38,54,.08); border: 1px solid var(--line); }
     .login-hero { padding: 40px; background: #ffffff; display: flex; align-items: center; justify-content: center; border-right: 1px solid var(--line); }
@@ -84,8 +84,8 @@
 
     /* 表單格線 */
     .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; }
-    .field { display: grid; gap: 6px; }
-    .field.full { grid-column: 1 / -1; }
+    .form-grid .field { display: grid; gap: 6px; }
+    .form-grid .field.full { grid-column: 1 / -1; }
     label { color: var(--muted); font-size: 13px; font-weight: 700; }
     input, select, textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: white; color: var(--ink); outline: none; }
     input:focus, select:focus, textarea:focus { border-color: var(--brand); }
@@ -106,7 +106,7 @@
     .feature-card small { color: var(--muted); font-size: 12px; }
     .alert-badge { position: absolute; top: -8px; right: -8px; background: #ef4444; color: #fff; min-width: 26px; height: 26px; font-size: 12px; font-weight: 800; border-radius: 999px; display: grid; place-items: center; box-shadow: 0 4px 10px rgba(239,68,68,.3); }
 
-    /* 4. 點入各功能後的高階獨立小卡樣式排版 (Luxury Card Engine) */
+    /* 點入各功能後的高階獨立小卡樣式排版 */
     .section-head { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin-bottom: 20px; }
     .section-head h2 { font-size: 24px; font-weight: 900; }
     .luxury-card-mesh { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
@@ -127,7 +127,7 @@
     .lux-maint-badge { display: inline-block; background: #eff6ff; color: var(--blue); padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 700; margin-bottom: 8px; }
     .lux-item-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px; border-top: 1px solid #f1f5f9; margin-top: auto; }
 
-    /* 5. 管理後台自適應排版 (RWD) */
+    /* 管理後台自適應排版 (RWD) */
     .admin-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
     .side-nav { display: grid; gap: 8px; background: white; border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; position: sticky; top: 80px; }
     .side-nav button { text-align: left; width: 100%; }
@@ -139,6 +139,7 @@
     td { font-size: 14px; }
     tr:last-child td { border-bottom: none; }
     .actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; margin-bottom: 16px; box-shadow: 0 10px 24px rgba(24,32,51,.05); }
     .empty { padding: 40px; text-align: center; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius); background: #fbfdff; width: 100%; grid-column: 1/-1; }
     .pager { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 20px; }
 
@@ -147,15 +148,14 @@
     .modal { width: min(680px, 100%); max-height: 85vh; overflow-y: auto; background: white; border-radius: var(--radius); padding: 24px; box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
     .modal h3 { font-size: 20px; font-weight: 900; }
 
-    /* 手機移動端全面極致優化 (RWD Breakpoints) */
+    /* 手機移動端全面極致優化 (RWD) */
     @media (max-width: 900px) {
       .login-panel { grid-template-columns: 1fr; }
-      .login-hero { display: none; } /* 手機端直接隱藏英雄視覺區塊，達到極簡 */
+      .login-hero { display: none; }
       .admin-layout { grid-template-columns: 1fr; gap: 14px; }
       .side-nav { display: flex !important; flex-direction: row !important; overflow-x: auto; padding: 8px; gap: 6px; position: static; }
       .side-nav button { flex: 0 0 auto; width: auto; white-space: nowrap; padding: 8px 14px; }
       
-      /* 5. 核心科技：將後台呆板的表格就地解構、100% 轉換為手機易讀微型小卡 */
       .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; }
       .rwd-smart-table thead { display: none; }
       .rwd-smart-table tr { background: white; border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 12px; padding: 14px; box-shadow: 0 4px 12px rgba(24,32,51,0.02); }
@@ -177,7 +177,7 @@
   <div id="app"></div>
 
   <script>
-    // 專案配置直接內嵌於最頂端 (確保與 Supabase 即時連線不段線)
+    // 專案配置與帳密初始化
     window.AFIDE_CONFIG = {
       SUPABASE_URL: "https://chnvwziuqcqnllcjqobj.supabase.co",
       SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNobnZ3eml1cWNxbmxsY2pxb2JqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk2MTYxMzAsImV4cCI6MjA5NTE5MjEzMH0.wj7clsE7eO5dIE7nP4aCsDdVg1OEC3yFy7UjJpkMjWI",
@@ -189,12 +189,12 @@
       const cfg = window.AFIDE_CONFIG || {};
       const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
       const highwayUrl = "https://www.1968services.tw/roadcondition";
-      // 3. 修正國道資訊異常：改介接高公局官方 JSON 數據源
       const highwayApiUrl = "https://apis.freeway.gov.tw/opendata/TrafficNews.json";
       const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
       const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
       const app = document.getElementById("app");
 
+      // 核心防禦：一律預設為空陣列，確保在 Supabase 還沒撈到資料前，網頁渲染完全不會噴錯全白
       const state = {
         mode: "driver",
         user: null,
@@ -202,7 +202,16 @@
         view: "home",
         adminView: "drivers",
         page: 1,
-        data: {},
+        data: {
+          drivers: [],
+          vehicles: [],
+          maintenance_records: [],
+          announcements: [],
+          announcement_reads: [],
+          maintenance_notifications: [],
+          personal_messages: [],
+          payment_notices: []
+        },
         error: ""
       };
 
@@ -215,6 +224,24 @@
       const vehicleStatuses = ["正常", "出借", "出租", "待修中", "維修中", "出保中", "閒置", "報廢", "其他"];
       const featureIcons = { announcements: "📢", maintenance: "🔧", payments: "💰", messages: "💬", emergency: "🚨", highway: "🛣️" };
 
+      // 種子保底資料：本地本機端若是完全沒有任何資料庫，會自動套用這段，防禦畫面崩潰
+      const seed = {
+        drivers: [
+          { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", license_expiry: "2027-12-31", notes: "示範司機" }
+        ],
+        vehicles: [
+          { id: uid(), plate_no: "ABC-1234", brand: "Toyota", model: "Altis", year: "2022", status: "正常", current_driver_id: "", notes: "示範車輛" }
+        ],
+        maintenance_records: [],
+        announcements: [
+          { id: uid(), title: "歡迎使用車隊管理系統", content: "後台公告與特殊通知功能已完美升級為高級感立體小卡。", created_at: now() }
+        ],
+        announcement_reads: [],
+        maintenance_notifications: [],
+        personal_messages: [],
+        payment_notices: []
+      };
+
       function uid() { return crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()); }
       function now() { return new Date().toISOString(); }
       function today() { return new Date().toISOString().slice(0, 10); }
@@ -222,9 +249,8 @@
       function localLoad() {
         const raw = localStorage.getItem("afide-data");
         if (!raw) {
-          const emptySeed = { drivers: [], vehicles: [], maintenance_records: [], announcements: [], announcement_reads: [], maintenance_notifications: [], personal_messages: [], payment_notices: [] };
-          localStorage.setItem("afide-data", JSON.stringify(emptySeed));
-          return emptySeed;
+          localStorage.setItem("afide-data", JSON.stringify(seed));
+          return structuredClone(seed);
         }
         return JSON.parse(raw);
       }
@@ -245,15 +271,19 @@
       }
 
       async function loadAll() {
-        state.error = "";
-        if (!hasSupabase) { state.data = localLoad(); return; }
-        const result = {};
-        for (const table of tables) {
-          const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
-          if (error) throw error;
-          result[table] = data || [];
+        try {
+          if (!hasSupabase) { state.data = localLoad(); return; }
+          const result = {};
+          for (const table of tables) {
+            const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
+            if (error) throw error;
+            result[table] = data || [];
+          }
+          state.data = result;
+        } catch (e) {
+          console.error("Supabase 連線失敗，啟動 LocalStorage 本地保底：", e);
+          state.data = localLoad();
         }
-        state.data = result;
       }
 
       async function insert(table, record) {
@@ -300,7 +330,6 @@
         if (state.admin) renderAdmin(); else renderDriver();
       }
 
-      // 2. 登入後整體配色調和優化
       function layout(content) {
         app.innerHTML = `
           <div class="app-shell">
@@ -308,8 +337,8 @@
               <div class="brand">
                 <img src="${logoUrl}" alt="logo">
                 <div class="brand-copy">
-                  <div class="brand-title">${state.admin ? "車隊雲端管理後台" : escapeHtml(state.user.name) + "，您好"}</div>
-                  <div class="brand-subtitle">${state.admin ? "Control Console" : "亞菲得即時前台"}</div>
+                  <div class="brand-title">${state.admin ? "車隊控制管理後台" : escapeHtml(state.user.name) + "，您好"}</div>
+                  <div class="brand-subtitle">${state.admin ? "Control Console" : "車隊即時系統"}</div>
                 </div>
               </div>
               <div class="userbox"><button class="ghost-btn" data-action="logout">登出</button></div>
@@ -319,7 +348,7 @@
         `;
       }
 
-      // 1. 登入頁優化：完全移去中英文「亞菲得」、「Fleet Console」等贅字，純保留 LOGO 呈現極簡奢華感
+      // 1. 移除了「亞菲得」與「Fleet Console」文字，純白底極簡 logo
       function renderLogin() {
         app.innerHTML = `
           <div class="login-wrap">
@@ -332,8 +361,8 @@
                   <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver">司機前台</button>
                   <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin">管理後台</button>
                 </div>
-                <h2>${state.mode === "driver" ? "司機登入驗證" : "後台控制系統"}</h2>
-                <p>請輸入您的身分權限資料以進入車隊系統</p>
+                <h2>${state.mode === "driver" ? "司機身分驗證" : "後台管理登入"}</h2>
+                <p>請輸入您的登入憑證代碼</p>
                 <form id="loginForm" class="form-grid">
                   <div class="field full">
                     <label>${state.mode === "driver" ? "身分證字號" : "管理 PIN"}</label>
@@ -349,22 +378,23 @@
       }
 
       function renderDriver() {
-        const unread = state.data.announcements.filter((a) => !isAnnouncementRead(a.id)).length;
+        const unread = (state.data.announcements || []).filter((a) => !isAnnouncementRead(a.id)).length;
         const pendingMaint = mine("maintenance_notifications").filter((x) => x.status === "pending").length;
         const pendingPay = mine("payment_notices").filter((x) => x.status === "pending").length;
         const pendingMsg = mine("personal_messages").filter((x) => x.status === "pending").length;
 
         if (state.view === "home") {
-          layout(`
+          layout suicide = `
             <div class="dashboard-grid">
               ${feature("announcements", "公佈欄", "查看最新公告訊息", unread)}
-              ${feature("maintenance", "保養維修", "車輛進廠保養指派", pendingMaint)}
-              ${feature("payments", "繳費中心", "交通違規罰單管理", pendingPay)}
-              ${feature("messages", "私人訊息", "控制中心個人特派通知", pendingMsg)}
-              ${feature("emergency", "緊急通知", "道路狀況即時通報", 0)}
+              ${feature("maintenance", "保養維修", "公務車輛維修排工", pendingMaint)}
+              ${feature("payments", "繳費中心", "違規罰單通行費處理", pendingPay)}
+              ${feature("messages", "私人訊息", "控制中心個人派送指派", pendingMsg)}
+              ${feature("emergency", "緊急通知", "道路特殊狀況安全回報", 0)}
               ${feature("highway", "國道資訊", "即時高速公路路況", 0)}
             </div>
-          `);
+          `;
+          layout(suicide);
           return;
         }
 
@@ -393,12 +423,14 @@
         `;
       }
 
-      function mine(table) { return state.data[table].filter((row) => row.driver_id === state.user.id || row.target_driver_id === state.user.id); }
+      function mine(table) { 
+        return (state.data[table] || []).filter((row) => row.driver_id === state.user.id || row.target_driver_id === state.user.id); 
+      }
       function backButton() { return `<button class="back-btn" data-view="home">返回首頁</button>`; }
 
       // 4. 改用大氣精緻的獨立奢華小卡展示
       function driverAnnouncements() {
-        const list = [...state.data.announcements].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+        const list = [...(state.data.announcements || [])].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
         const pageSize = 5;
         const maxPage = Math.max(1, Math.ceil(list.length / pageSize));
         state.page = Math.min(state.page, maxPage);
@@ -430,9 +462,11 @@
         `;
       }
 
-      function isAnnouncementRead(announcementId) { return state.data.announcement_reads.some((r) => r.announcement_id === announcementId && r.driver_id === state.user.id); }
+      function isAnnouncementRead(announcementId) { 
+        return (state.data.announcement_reads || []).some((r) => r.announcement_id === announcementId && r.driver_id === state.user.id); 
+      }
 
-      // 4. 改為奢華卡片式網格展示 (解決原版列表醜、歪掉的缺陷)
+      // 4. 改為奢華卡片式網格展示
       function driverTaskList(table, title) {
         const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
         const isMaint = table === "maintenance_notifications";
@@ -543,32 +577,32 @@
       function adminDrivers() {
         return `
           <div class="section-head"><h2>駕駛通訊清單</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
-          ${table(["姓名", "身分證", "手機", "駕照到期日", "備註", "操作"], state.data.drivers.map((d) => [d.name, d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)]))}
+          ${table(["姓名", "身分證", "手機", "駕照到期日", "備註", "操作"], (state.data.drivers || []).map((d) => [d.name, d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)]))}
         `;
       }
       function adminVehicles() {
         return `
           <div class="section-head"><h2>車輛資產清單</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-          ${table(["車牌", "廠牌", "型號", "年份", "狀態", "目前駕駛", "備註", "操作"], state.data.vehicles.map((v) => [v.plate_no, v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "", rowActions("vehicle", "vehicles", v.id)]))}
+          ${table(["車牌", "廠牌", "型號", "年份", "狀態", "目前駕駛", "備註", "操作"], (state.data.vehicles || []).map((v) => [v.plate_no, v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "", rowActions("vehicle", "vehicles", v.id)]))}
         `;
       }
       function adminMaintenanceRecords() {
         return `
           <div class="section-head"><h2>實體保養歷史履歷</h2><button class="primary-btn" data-modal="maintenanceRecord">新增保養紀錄</button></div>
-          ${table(["車輛", "保養日期", "里程", "項目", "維修廠", "金額", "下次保養", "操作"], state.data.maintenance_records.map((r) => [vehicleName(r.vehicle_id), fmtDate(r.service_date), r.mileage || "", r.items || "", r.vendor || "", Number(r.cost || 0).toLocaleString(), fmtDate(r.next_service_date), rowActions("maintenanceRecord", "maintenance_records", r.id)]))}
+          ${table(["車輛", "保養日期", "里程", "項目", "維修廠", "金額", "下次保養", "操作"], (state.data.maintenance_records || []).map((r) => [vehicleName(r.vehicle_id), fmtDate(r.service_date), r.mileage || "", r.items || "", r.vendor || "", Number(r.cost || 0).toLocaleString(), fmtDate(r.next_service_date), rowActions("maintenanceRecord", "maintenance_records", r.id)]))}
         `;
       }
       function adminAnnouncements() {
         return `
           <div class="section-head"><h2>公告發佈管理</h2><button class="primary-btn" data-modal="announcement">新增公告</button></div>
-          ${table(["標題", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [a.title, a.content, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)]))}
+          ${table(["標題", "內容", "建立日期", "已讀數", "操作"], (state.data.announcements || []).map((a) => [a.title, a.content, fmtDate(a.created_at), (state.data.announcement_reads || []).filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)]))}
         `;
       }
       function adminTaskManager(tableName, title) {
         const modal = tableName === "maintenance_notifications" ? "maintenanceNotification" : tableName === "personal_messages" ? "personalMessage" : "paymentNotice";
         return `
           <div class="section-head"><h2>${title}監控</h2><button class="primary-btn" data-modal="${modal}">新增${title}</button></div>
-          ${table(taskHeaders(tableName), state.data[tableName].map((x) => taskRow(tableName, x)))}
+          ${table(taskHeaders(tableName), (state.data[tableName] || []).map((x) => taskRow(tableName, x)))}
         `;
       }
       function taskHeaders(tableName) {
@@ -582,7 +616,7 @@
         return [driverName(x.driver_id), x.title || "", x.content || "", statusBadge(x.status), fmtDate(x.created_at), rowActions("personalMessage", tableName, x.id)];
       }
 
-      // 5. 行動端 RWD 技術：自動將 headers 轉化為手機卡片的 data-label，杜絕爆版難用
+      // 5. 行動端 RWD 技術
       function table(headers, rows) {
         if (!rows.length) return `<div class="empty">目前沒有任何建檔資料</div>`;
         return `
@@ -682,6 +716,8 @@
 
       document.addEventListener("submit", async (e) => { if (e.target.id !== "loginForm") return; e.preventDefault(); await handleLogin(new FormData(e.target).get("login")); });
 
+      // 載入資料並在載入完成前先進行一次畫面安全初次渲染
+      render();
       loadAll().then(() => { restoreSession(); render(); }).catch((err) => { state.error = err.message || String(err); state.data = localLoad(); restoreSession(); render(); });
     })();
   </script>
