@@ -1,0 +1,6 @@
+window.AFIDE_CONFIG = {
+  SUPABASE_URL: "",
+  SUPABASE_ANON_KEY: "",
+  ADMIN_PIN: "123456",
+  HIGHWAY_EVENTS_URL: ""
+};
