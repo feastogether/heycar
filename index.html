@@ -113,10 +113,10 @@
     
     .modern-luxury-item {
       background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px;
-      box-shadow: 0 6px 20px rgba(24,32,51,0.03); display: flex; flex-direction: column; justify-content: space-between;
+      box-shadow: 0 6px 20px rgba(24, 32, 51, 0.03); display: flex; flex-direction: column; justify-content: space-between;
       min-height: 150px; position: relative; transition: all 0.2s ease;
     }
-    .modern-luxury-item:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(24,32,51,0.07); border-color: rgba(31,122,140,0.3); }
+    .modern-luxury-item:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(24, 32, 51, 0.07); border-color: rgba(31, 122, 140, 0.3); }
     .modern-luxury-item.is-muted { background: #f8fafc; opacity: 0.65; }
     
     .lux-item-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; border-bottom: 1px dashed var(--line); padding-bottom: 12px; margin-bottom: 12px; }
@@ -384,7 +384,8 @@
         const pendingMsg = mine("personal_messages").filter((x) => x.status === "pending").length;
 
         if (state.view === "home") {
-          layout suicide = `
+          // 修正：修正了原本 layout suicide 致命語法錯誤
+          const homeContent = `
             <div class="dashboard-grid">
               ${feature("announcements", "公佈欄", "查看最新公告訊息", unread)}
               ${feature("maintenance", "保養維修", "公務車輛維修排工", pendingMaint)}
@@ -394,7 +395,7 @@
               ${feature("highway", "國道資訊", "即時高速公路路況", 0)}
             </div>
           `;
-          layout(suicide);
+          layout(homeContent);
           return;
         }
 
