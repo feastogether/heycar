@@ -46,7 +46,7 @@ window.AFIDE_CONFIG = {
 
 ## 國道資訊串接
 
-網站使用 GitHub Actions 每 15 分鐘同步高公局 `CMSLive.xml` 電子資訊看板資料至 `data/CMSLive.xml`，讓 GitHub Pages 可同網域讀取並顯示國道資訊。也可另外將自有 API URL 填到 `HIGHWAY_EVENTS_URL`，前台會優先使用該來源。
+網站使用 GitHub Actions 每 15 分鐘讀取高公局 `CMSLive.xml` 電子資訊看板資料，再產生精簡的 `data/highway-messages.json`，讓 GitHub Pages 可同網域讀取並顯示國道資訊。也可另外將自有 API URL 填到 `HIGHWAY_EVENTS_URL`，前台會優先使用該來源。
 
 官方資料來源：https://tisvcloud.freeway.gov.tw/history/motc20/CMSLive.xml
 

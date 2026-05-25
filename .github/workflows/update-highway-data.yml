@@ -20,12 +20,26 @@ jobs:
       - name: Download freeway XML data
         run: |
           mkdir -p data
-          curl --fail --silent --show-error --retry 3 "https://tisvcloud.freeway.gov.tw/history/motc20/CMSLive.xml" -o data/CMSLive.xml
+          curl --fail --silent --show-error --retry 2 --connect-timeout 10 --max-time 60 "https://tisvcloud.freeway.gov.tw/history/motc20/CMSLive.xml" -o "${RUNNER_TEMP}/CMSLive.xml"
+      - name: Build compact highway messages
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+          const xml = fs.readFileSync(process.env.RUNNER_TEMP + "/CMSLive.xml", "utf8");
+          const updateTime = (xml.match(/<UpdateTime>([^<]+)<\/UpdateTime>/) || [,""])[1];
+          const blocks = [...xml.matchAll(/<CMSLive>([\s\S]*?)<\/CMSLive>/g)].map((m) => m[1]);
+          const rows = blocks.map((block) => {
+            const id = (block.match(/<CMSID>([^<]+)<\/CMSID>/) || [,"資訊看板"])[1];
+            const text = (block.match(/<Text>([\s\S]*?)<\/Text>/) || [,""])[1].replace(/\s+/g, " ").trim();
+            return { title: id.replace("CMS-", "資訊看板 "), content: text, updateTime };
+          }).filter((row) => row.content && /約\s*\d+\s*分|事故|施工|壅塞|封閉|回堵|車多|管制|交流道/.test(row.content)).slice(0, 12);
+          fs.writeFileSync("data/highway-messages.json", JSON.stringify(rows, null, 2) + "\n");
+          NODE
       - name: Commit data changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/CMSLive.xml
+          git add data/highway-messages.json
           git diff --cached --quiet && exit 0
           git commit -m "Update highway XML cache"
           git push

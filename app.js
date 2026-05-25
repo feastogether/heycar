@@ -2,7 +2,7 @@
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const highwayUrl = "https://www.1968services.tw/roadcondition";
-  const highwayCmsCacheUrl = "./data/CMSLive.xml";
+  const highwayCacheUrl = "./data/highway-messages.json";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -664,40 +664,17 @@
     render();
   }
 
-  function xmlText(parent, selector) {
-    return parent.getElementsByTagName(selector)[0]?.textContent?.trim() || "";
-  }
-
-  function extractHighwayItems(xmlSource) {
-    const doc = new DOMParser().parseFromString(xmlSource, "application/xml");
-    const updateTime = xmlTextNode(doc, "UpdateTime");
-    const messages = Array.from(doc.getElementsByTagName("CMSLive"))
-      .map((node) => ({
-        title: xmlText(node, "CMSID").replace("CMS-", "資訊看板 "),
-        content: xmlText(node, "Text").replace(/\s+/g, " ").trim(),
-        updateTime
-      }))
-      .filter((item) => item.content && !/珍惜生命|酒後不開車|疲勞勿駕駛/.test(item.content));
-    return messages.slice(0, 12);
-  }
-
-  function xmlTextNode(doc, tag) {
-    return doc.getElementsByTagName(tag)[0]?.textContent?.trim() || "";
-  }
-
   async function loadHighway() {
     const box = document.getElementById("highwayList");
     if (!box) return;
     box.innerHTML = `<div class="empty">載入國道路況中...</div>`;
-    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayCmsCacheUrl].filter(Boolean);
+    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayCacheUrl].filter(Boolean);
     for (const url of urls) {
       try {
         const res = await fetch(url, { cache: "no-store" });
         const type = res.headers.get("content-type") || "";
         const payload = type.includes("application/json") ? await res.json() : await res.text();
-        const items = typeof payload === "string"
-          ? extractHighwayItems(payload)
-          : (Array.isArray(payload) ? payload : (payload.data || payload.Events || payload.LiveTraffics || []));
+        const items = Array.isArray(payload) ? payload : (payload.data || payload.Events || payload.LiveTraffics || []);
         if (items.length) {
           box.innerHTML = items.slice(0, 12).map((x) => `
             <article class="modern-luxury-item highway-card">
