@@ -2,7 +2,8 @@
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const highwayUrl = "https://www.1968services.tw/roadcondition";
-  const highwayProxyUrl = "https://r.jina.ai/http://r.jina.ai/http://https://www.1968services.tw/roadcondition";
+  const highwayCmsCacheUrl = "./data/CMSLive.xml";
+  const highwayVdCacheUrl = "./data/VD.xml";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -247,10 +248,6 @@
         <section class="login-panel">
           <div class="login-hero">
             <img src="${logoUrl}" alt="heycar logo">
-            <div>
-              <h1>亞菲得</h1>
-              <div class="login-mark">Fleet Console</div>
-            </div>
           </div>
           <div class="login-card">
             <div class="mode-tabs">
@@ -337,15 +334,15 @@
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
       <div class="section-head page-head"><div><p>Driver Center</p><h2>公佈欄</h2></div>${backButton()}</div>
-      <div class="list">
+      <div class="luxury-card-mesh">
         ${pageItems.length ? pageItems.map((a) => `
-          <article class="item">
-            <div class="item-head">
-              <div><div class="item-title">${escapeHtml(a.title)}</div><div class="meta">${fmtDate(a.created_at)}</div></div>
+          <article class="modern-luxury-item ${isAnnouncementRead(a.id) ? "is-muted" : ""}">
+            <div class="lux-item-top">
+              <div class="lux-item-title-group"><div class="lux-item-title">${escapeHtml(a.title)}</div><div class="lux-item-meta">發布日期：${fmtDate(a.created_at)}</div></div>
               ${statusBadge(isAnnouncementRead(a.id) ? "read" : "pending")}
             </div>
-            <div>${escapeHtml(a.content)}</div>
-            <div class="actions"><button class="primary-btn" data-read-ann="${a.id}">已閱讀</button></div>
+            <div class="lux-item-body">${escapeHtml(a.content)}</div>
+            ${!isAnnouncementRead(a.id) ? `<div class="lux-item-actions"><button class="primary-btn" data-read-ann="${a.id}">確認已閱讀</button></div>` : ""}
           </article>
         `).join("") : `<div class="empty">目前沒有公告</div>`}
       </div>
@@ -363,29 +360,25 @@
 
   function driverTaskList(table, title) {
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-    const cardClass = table === "maintenance_notifications" ? "list maintenance-list" : "list";
+    const isMaint = table === "maintenance_notifications";
     return `
       <div class="section-head page-head"><div><p>Driver Center</p><h2>${title}</h2></div>${backButton()}</div>
-      <div class="${cardClass}">
+      <div class="luxury-card-mesh">
         ${items.length ? items.map((item) => `
-          <article class="item ${item.status !== "pending" ? "is-muted" : ""} ${table === "maintenance_notifications" ? "maintenance-card" : ""}">
-            ${table === "maintenance_notifications" ? `
-              <div class="date-tile">
-                <span>${fmtDate(item.service_date).slice(5, 7)}</span>
-                <strong>${fmtDate(item.service_date).slice(8, 10)}</strong>
-                <small>${fmtDate(item.service_date).slice(0, 4)}</small>
-              </div>
-            ` : ""}
-            <div class="item-head">
-              <div>
-                <div class="item-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
-                <div class="meta">${taskMeta(table, item)}</div>
+          <article class="modern-luxury-item ${item.status !== "pending" ? "is-muted" : ""}">
+            <div class="lux-item-top">
+              <div class="lux-item-title-group">
+                <div class="lux-item-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
+                <div class="lux-item-meta">${taskMeta(table, item)}</div>
               </div>
               ${statusBadge(item.status || "pending")}
             </div>
-            <div>${escapeHtml(item.content || item.description || item.memo || "")}</div>
+            <div class="lux-item-body">
+              ${isMaint ? `<div class="lux-maint-badge">預約日期 ${fmtDate(item.service_date)}</div>` : ""}
+              ${escapeHtml(item.content || item.description || item.memo || "無詳細內容")}
+            </div>
             ${item.status === "pending" ? `
-              <div class="actions">
+              <div class="lux-item-actions">
                 <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
                 <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
               </div>
@@ -418,7 +411,7 @@
           <button class="primary-btn icon-text-btn" data-action="load-highway">${iconSvg("M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5")}<span>重新整理</span></button>
           <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方路況</a>
         </div>
-        <div id="highwayList" class="list" style="margin-top:14px">
+        <div id="highwayList" class="luxury-card-mesh highway-grid">
           <div class="empty">載入國道路況中...</div>
         </div>
       </div>
@@ -519,9 +512,9 @@
     if (!rows.length) return `<div class="empty">目前沒有資料</div>`;
     return `
       <div class="panel table-wrap">
-        <table>
+        <table class="rwd-smart-table">
           <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
-          <tbody>${rows.map((row) => `<tr>${row.map((cell) => `<td>${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>
+          <tbody>${rows.map((row) => `<tr>${row.map((cell, index) => `<td data-label="${escapeHtml(headers[index])}">${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>
         </table>
       </div>
     `;
@@ -672,22 +665,32 @@
     render();
   }
 
-  function extractHighwayItems(html) {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const text = doc.body.innerText.replace(/\n{3,}/g, "\n\n").trim();
-    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
-    const useful = lines.filter((line) => /國道|高速|交流道|路段|事故|施工|壅塞|封閉|車多|回堵/.test(line));
-    return useful.slice(0, 12).map((line, index) => ({
-      title: index === 0 ? "高速公路即時路況" : "路況事件",
-      content: line
-    }));
+  function xmlText(parent, selector) {
+    return parent.getElementsByTagName(selector)[0]?.textContent?.trim() || "";
+  }
+
+  function extractHighwayItems(xmlSource) {
+    const doc = new DOMParser().parseFromString(xmlSource, "application/xml");
+    const updateTime = xmlTextNode(doc, "UpdateTime");
+    const messages = Array.from(doc.getElementsByTagName("CMSLive"))
+      .map((node) => ({
+        title: xmlText(node, "CMSID").replace("CMS-", "資訊看板 "),
+        content: xmlText(node, "Text").replace(/\s+/g, " ").trim(),
+        updateTime
+      }))
+      .filter((item) => item.content && !/珍惜生命|酒後不開車|疲勞勿駕駛/.test(item.content));
+    return messages.slice(0, 12);
+  }
+
+  function xmlTextNode(doc, tag) {
+    return doc.getElementsByTagName(tag)[0]?.textContent?.trim() || "";
   }
 
   async function loadHighway() {
     const box = document.getElementById("highwayList");
     if (!box) return;
     box.innerHTML = `<div class="empty">載入國道路況中...</div>`;
-    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayUrl, highwayProxyUrl].filter(Boolean);
+    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayCmsCacheUrl].filter(Boolean);
     for (const url of urls) {
       try {
         const res = await fetch(url, { cache: "no-store" });
@@ -698,9 +701,14 @@
           : (Array.isArray(payload) ? payload : (payload.data || payload.Events || payload.LiveTraffics || []));
         if (items.length) {
           box.innerHTML = items.slice(0, 12).map((x) => `
-            <article class="item">
-              <div class="item-title">${escapeHtml(x.RoadName || x.roadName || x.title || "國道事件")}</div>
-              <div>${escapeHtml(x.Description || x.description || x.content || x.Message || JSON.stringify(x))}</div>
+            <article class="modern-luxury-item highway-card">
+              <div class="lux-item-top">
+                <div class="lux-item-title-group">
+                  <div class="lux-item-title">${escapeHtml(x.RoadName || x.roadName || x.title || "國道資訊看板")}</div>
+                  <div class="lux-item-meta">${escapeHtml(x.updateTime || x.PublishTime || "")}</div>
+                </div>
+              </div>
+              <div class="lux-item-body">${escapeHtml(x.Description || x.description || x.content || x.Message || JSON.stringify(x))}</div>
             </article>
           `).join("");
           return;
@@ -709,7 +717,7 @@
         // Try the next configured source, then show the official fallback link.
       }
     }
-    box.innerHTML = `<div class="empty">瀏覽器無法直接讀取官方路況資料，請點「官方路況」查看。若要完全內嵌，建議設定 Supabase Edge Function 代理官方資料。</div>`;
+    box.innerHTML = `<div class="empty">高公局資料同步準備中，請稍後重新整理，或點「官方路況」查看即時頁面。</div>`;
   }
 
   document.addEventListener("click", async (e) => {
