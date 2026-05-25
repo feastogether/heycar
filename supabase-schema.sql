@@ -5,6 +5,7 @@ create table if not exists public.drivers (
   national_id text unique not null,
   phone text,
   name text not null,
+  fleet_name text not null default '亞菲得車隊',
   license_expiry date,
   notes text,
   created_at timestamptz default now(),
@@ -17,6 +18,7 @@ create table if not exists public.vehicles (
   brand text,
   model text,
   year text,
+  fleet_name text not null default '亞菲得車隊',
   status text not null default '正常',
   current_driver_id uuid references public.drivers(id) on delete set null,
   notes text,
@@ -40,6 +42,7 @@ create table if not exists public.maintenance_records (
 create table if not exists public.announcements (
   id uuid primary key default gen_random_uuid(),
   title text not null,
+  target_fleet text not null default '全部車隊',
   content text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -58,6 +61,7 @@ create table if not exists public.maintenance_notifications (
   driver_id uuid references public.drivers(id) on delete cascade,
   vehicle_id uuid references public.vehicles(id) on delete cascade,
   service_date date not null,
+  service_time time,
   content text,
   vendor text,
   status text not null default 'pending',
@@ -87,6 +91,12 @@ create table if not exists public.payment_notices (
   updated_at timestamptz default now()
 );
 
+-- Existing projects can run these migrations safely after deploying new frontend fields.
+alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.announcements add column if not exists target_fleet text not null default '全部車隊';
+alter table public.maintenance_notifications add column if not exists service_time time;
+
 alter table public.drivers enable row level security;
 alter table public.vehicles enable row level security;
 alter table public.maintenance_records enable row level security;
@@ -115,9 +125,9 @@ create policy "demo write personal messages" on public.personal_messages for all
 create policy "demo read payment notices" on public.payment_notices for select using (true);
 create policy "demo write payment notices" on public.payment_notices for all using (true) with check (true);
 
-insert into public.drivers (national_id, phone, name, license_expiry, notes)
-values ('A123456789', '0912345678', '王小明', '2027-12-31', '示範司機')
+insert into public.drivers (national_id, phone, name, fleet_name, license_expiry, notes)
+values ('A123456789', '0912345678', '王小明', '亞菲得車隊', '2027-12-31', '示範司機')
 on conflict (national_id) do nothing;
 
-insert into public.announcements (title, content)
-values ('歡迎使用亞菲得', '後台公告會顯示在司機前台，每頁五則。');
+insert into public.announcements (title, target_fleet, content)
+values ('歡迎使用亞菲得', '全部車隊', '後台公告會顯示在司機前台，每頁五則。');

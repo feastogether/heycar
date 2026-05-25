@@ -31,8 +31,20 @@ window.AFIDE_CONFIG = {
   SUPABASE_URL: "你的 Supabase Project URL",
   SUPABASE_ANON_KEY: "你的 anon public key",
   ADMIN_PIN: "請改成自己的後台 PIN",
-  HIGHWAY_EVENTS_URL: ""
+  HIGHWAY_EVENTS_URL: "",
+  FLIGHT_INFO_URL: ""
 };
+```
+
+### 既有資料庫升級
+
+已經建好資料表的專案，請在 Supabase SQL Editor 再執行以下欄位升級，才可以使用車隊公告分流與保養時間：
+
+```sql
+alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.announcements add column if not exists target_fleet text not null default '全部車隊';
+alter table public.maintenance_notifications add column if not exists service_time time;
 ```
 
 ## GitHub Pages 部署
@@ -46,9 +58,49 @@ window.AFIDE_CONFIG = {
 
 ## 國道資訊串接
 
-網站使用 GitHub Actions 每 15 分鐘讀取高公局 `CMSLive.xml` 電子資訊看板資料，再產生精簡的 `data/highway-messages.json`，讓 GitHub Pages 可同網域讀取並顯示國道資訊。也可另外將自有 API URL 填到 `HIGHWAY_EVENTS_URL`，前台會優先使用該來源。
+網站已內附由高公局 `CMSLive.xml` 產生的 `data/highway-messages.json` 顯示資料。因官方 XML 沒有開放瀏覽器跨網域存取，且會阻擋 GitHub Actions runner，若要自動取得即時內容，請部署隨附的 Supabase Edge Function：
 
 官方資料來源：https://tisvcloud.freeway.gov.tw/history/motc20/CMSLive.xml
+
+1. 安裝 Supabase CLI 並登入。
+2. 將本專案連結到你的 Supabase project。
+3. 部署函式：
+
+```powershell
+supabase functions deploy highway-events --no-verify-jwt
+```
+
+4. 將 `config.example.js` 的 `HIGHWAY_EVENTS_URL` 設為：
+
+```js
+HIGHWAY_EVENTS_URL: "https://你的專案.supabase.co/functions/v1/highway-events"
+```
+
+前台會優先讀取 Edge Function 的即時資料；未設定時仍會顯示內附的官方快取資料。
+
+## 天氣與航班資訊
+
+登入後頁首會直接顯示桃園機場座標的目前天氣，來源為 [Open-Meteo Current Weather API](https://open-meteo.com/en/docs)。
+
+航班查詢頁已建立，並附有桃園機場官方網站入口。政府開放資料集「桃園國際機場即時航班」標示每五分鐘更新，但目前其 CSV 下載端點實測回傳舊日期資料；為避免顯示過期航班，隨附的 Edge Function 會檢查資料日期，只有兩日內的資料才回傳前台。
+
+1. 部署航班函式：
+
+```powershell
+supabase functions deploy flights --no-verify-jwt
+```
+
+2. 將 `config.example.js` 設為：
+
+```js
+FLIGHT_INFO_URL: "https://你的專案.supabase.co/functions/v1/flights"
+```
+
+3. 若桃園機場提供新的有效 CSV 來源，可設定 Edge Function secret 覆寫下載網址：
+
+```powershell
+supabase secrets set FLIGHT_CSV_URL="新的官方 CSV 網址"
+```
 
 ## 正式上線注意
 

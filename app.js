@@ -3,6 +3,8 @@
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const highwayUrl = "https://www.1968services.tw/roadcondition";
   const highwayCacheUrl = "./data/highway-messages.json";
+  const airportFlightsUrl = "https://www.taoyuan-airport.com/";
+  const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -15,6 +17,8 @@
     adminView: "drivers",
     page: 1,
     data: {},
+    weather: null,
+    weatherLoading: false,
     error: ""
   };
 
@@ -39,6 +43,7 @@
   };
 
   const vehicleStatuses = ["正常", "出借", "出租", "待修中", "維修中", "出保中", "閒置", "報廢", "其他"];
+  const fleets = ["亞菲得車隊", "亞緻車隊", "合作車隊"];
 
   const featureIcons = {
     announcements: "M4 6.5A2.5 2.5 0 0 1 6.5 4H20v13H7.5A3.5 3.5 0 0 0 4 20.5v-14Zm3 0h10M7.5 10h8M7.5 13.5h6",
@@ -46,19 +51,20 @@
     payments: "M4 7h16v10H4V7Zm2 3h12M7 14h4",
     messages: "M4 5h16v11H8l-4 3V5Zm4 5h8M8 13h5",
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
-    highway: "M8 20 11 4h2l3 16M5 12h14M9 8h6M8.5 16h7"
+    highway: "M8 20 11 4h2l3 16M5 12h14M9 8h6M8.5 16h7",
+    flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z"
   };
 
   const seed = {
     drivers: [
-      { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", license_expiry: "2027-12-31", notes: "示範司機" }
+      { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", fleet_name: "亞菲得車隊", license_expiry: "2027-12-31", notes: "示範司機" }
     ],
     vehicles: [
-      { id: uid(), plate_no: "ABC-1234", brand: "Toyota", model: "Altis", year: "2022", status: "正常", current_driver_id: "", notes: "示範車輛" }
+      { id: uid(), plate_no: "ABC-1234", brand: "Toyota", model: "Altis", year: "2022", fleet_name: "亞菲得車隊", status: "正常", current_driver_id: "", notes: "示範車輛" }
     ],
     maintenance_records: [],
     announcements: [
-      { id: uid(), title: "歡迎使用亞菲得", content: "後台公告會顯示在司機前台，每頁五則。", created_at: now() }
+      { id: uid(), title: "歡迎使用亞菲得", target_fleet: "全部車隊", content: "後台公告會顯示在司機前台，每頁五則。", created_at: now() }
     ],
     announcement_reads: [],
     maintenance_notifications: [],
@@ -233,12 +239,14 @@
             `}
           </div>
           <div class="userbox">
+            <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
             <button class="ghost-btn" data-action="logout">登出</button>
           </div>
         </header>
         <main class="main">${content}</main>
       </div>
     `;
+    loadAirportWeather();
   }
 
   function renderLogin() {
@@ -269,7 +277,7 @@
   }
 
   function renderDriver() {
-    const unread = state.data.announcements.filter((a) => !isAnnouncementRead(a.id)).length;
+    const unread = visibleAnnouncements().filter((a) => !isAnnouncementRead(a.id)).length;
     const pendingMaint = mine("maintenance_notifications").filter((x) => x.status === "pending").length;
     const pendingPay = mine("payment_notices").filter((x) => x.status === "pending").length;
     const pendingMsg = mine("personal_messages").filter((x) => x.status === "pending").length;
@@ -283,6 +291,7 @@
           ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
           ${feature("emergency", "緊急通知", "待開發", 0)}
           ${feature("highway", "國道資訊", "即時路況事件", 0)}
+          ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
         </div>
       `);
       return;
@@ -294,10 +303,12 @@
       payments: () => driverTaskList("payment_notices", "繳費中心"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       emergency: driverEmergency,
-      highway: driverHighway
+      highway: driverHighway,
+      flights: driverFlights
     };
     layout(views[state.view]());
     if (state.view === "highway") loadHighway();
+    if (state.view === "flights") loadFlights();
   }
 
   function feature(view, title, desc, count) {
@@ -321,18 +332,30 @@
     return state.data[table].filter((row) => row.driver_id === state.user.id || row.target_driver_id === state.user.id);
   }
 
+  function driverFleet() {
+    return state.user.fleet_name || "亞菲得車隊";
+  }
+
+  function visibleAnnouncements() {
+    return state.data.announcements.filter((item) => !item.target_fleet || item.target_fleet === "全部車隊" || item.target_fleet === driverFleet());
+  }
+
   function backButton() {
-    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>返回</span></button>`;
+    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>首頁</span></button>`;
+  }
+
+  function pageHeader(title) {
+    return `<div class="driver-page-head">${backButton()}<h2>${title}</h2></div>`;
   }
 
   function driverAnnouncements() {
-    const list = [...state.data.announcements].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    const list = [...visibleAnnouncements()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const pageSize = 5;
     const maxPage = Math.max(1, Math.ceil(list.length / pageSize));
     state.page = Math.min(state.page, maxPage);
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
-      <div class="section-head page-head"><div><p>Driver Center</p><h2>公佈欄</h2></div>${backButton()}</div>
+      ${pageHeader("公佈欄")}
       <div class="luxury-card-mesh">
         ${pageItems.length ? pageItems.map((a) => `
           <article class="modern-luxury-item ${isAnnouncementRead(a.id) ? "is-muted" : ""}">
@@ -361,7 +384,7 @@
     const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     const isMaint = table === "maintenance_notifications";
     return `
-      <div class="section-head page-head"><div><p>Driver Center</p><h2>${title}</h2></div>${backButton()}</div>
+      ${pageHeader(title)}
       <div class="luxury-card-mesh">
         ${items.length ? items.map((item) => `
           <article class="modern-luxury-item ${item.status !== "pending" ? "is-muted" : ""}">
@@ -373,7 +396,7 @@
               ${statusBadge(item.status || "pending")}
             </div>
             <div class="lux-item-body">
-              ${isMaint ? `<div class="lux-maint-badge">預約日期 ${fmtDate(item.service_date)}</div>` : ""}
+              ${isMaint ? maintenanceSchedule(item) : ""}
               ${escapeHtml(item.content || item.description || item.memo || "無詳細內容")}
             </div>
             ${item.status === "pending" ? `
@@ -390,7 +413,7 @@
 
   function taskMeta(table, item) {
     if (table === "maintenance_notifications") {
-      return `車輛：${escapeHtml(vehicleName(item.vehicle_id))}｜保養日期：${fmtDate(item.service_date)}｜維修廠：${escapeHtml(item.vendor || "-")}`;
+      return `車輛：${escapeHtml(vehicleName(item.vehicle_id))}`;
     }
     if (table === "payment_notices") {
       return `金額：${Number(item.amount || 0).toLocaleString()}｜期限：${fmtDate(item.due_date)}`;
@@ -398,13 +421,26 @@
     return `發送日期：${fmtDate(item.created_at)}`;
   }
 
+  function maintenanceSchedule(item) {
+    const date = fmtDate(item.service_date);
+    return `
+      <div class="maintenance-schedule">
+        <div class="schedule-date"><strong>${escapeHtml(date.slice(8) || "--")}</strong><span>${escapeHtml(date.slice(0, 7).replace("-", " / "))}</span></div>
+        <div class="schedule-details">
+          <span>預計時間</span><strong>${escapeHtml(item.service_time || "尚未指定")}</strong>
+          <span>維修廠</span><strong>${escapeHtml(item.vendor || "尚未指定")}</strong>
+        </div>
+      </div>
+    `;
+  }
+
   function driverEmergency() {
-    return `<div class="section-head page-head"><div><p>Driver Center</p><h2>緊急通知</h2></div>${backButton()}</div><div class="panel">此功能待開發。</div>`;
+    return `${pageHeader("緊急通知")}<div class="panel">此功能待開發。</div>`;
   }
 
   function driverHighway() {
     return `
-      <div class="section-head page-head"><div><p>Driver Center</p><h2>國道資訊</h2></div>${backButton()}</div>
+      ${pageHeader("國道資訊")}
       <div class="panel">
         <div class="toolbar actionbar">
           <button class="primary-btn icon-text-btn" data-action="load-highway">${iconSvg("M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5")}<span>重新整理</span></button>
@@ -413,6 +449,23 @@
         <div id="highwayList" class="luxury-card-mesh highway-grid">
           <div class="empty">載入國道路況中...</div>
         </div>
+      </div>
+    `;
+  }
+
+  function driverFlights() {
+    return `
+      ${pageHeader("航班資訊")}
+      <div class="panel flight-panel">
+        <form id="flightSearchForm" class="flight-search">
+          <input name="flight" aria-label="航班號碼或城市" placeholder="輸入航班號碼或城市" autocomplete="off">
+          <select name="direction" aria-label="航班類型">
+            <option value="arrival">抵達</option>
+            <option value="departure">出發</option>
+          </select>
+          <button class="primary-btn" type="submit">查詢</button>
+        </form>
+        <div id="flightList" class="luxury-card-mesh flight-grid"><div class="empty">準備航班查詢中...</div></div>
       </div>
     `;
   }
@@ -450,8 +503,8 @@
   function adminDrivers() {
     return `
       <div class="section-head"><h2>駕駛管理</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
-      ${table(["姓名", "身分證", "手機", "駕照到期日", "備註", "操作"], state.data.drivers.map((d) => [
-        d.name, d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)
+      ${table(["姓名", "車隊", "身分證", "手機", "駕照到期日", "備註", "操作"], state.data.drivers.map((d) => [
+        d.name, d.fleet_name || "亞菲得車隊", d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)
       ]))}
     `;
   }
@@ -459,8 +512,8 @@
   function adminVehicles() {
     return `
       <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-      ${table(["車牌", "廠牌", "型號", "年份", "狀態", "目前駕駛", "備註", "操作"], state.data.vehicles.map((v) => [
-        v.plate_no, v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "", rowActions("vehicle", "vehicles", v.id)
+      ${table(["車牌", "車隊", "廠牌", "型號", "年份", "狀態", "目前駕駛", "備註", "操作"], state.data.vehicles.map((v) => [
+        v.plate_no, v.fleet_name || "亞菲得車隊", v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "", rowActions("vehicle", "vehicles", v.id)
       ]))}
     `;
   }
@@ -477,8 +530,8 @@
   function adminAnnouncements() {
     return `
       <div class="section-head"><h2>公告管理</h2><button class="primary-btn" data-modal="announcement">新增公告</button></div>
-      ${table(["標題", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [
-        a.title, a.content, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
+      ${table(["標題", "通知車隊", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [
+        a.title, a.target_fleet || "全部車隊", a.content, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
       ]))}
     `;
   }
@@ -492,14 +545,14 @@
   }
 
   function taskHeaders(tableName) {
-    if (tableName === "maintenance_notifications") return ["駕駛", "車輛", "保養日期", "內容", "維修廠", "狀態", "操作"];
+    if (tableName === "maintenance_notifications") return ["駕駛", "車輛", "保養日期", "時間", "內容", "維修廠", "狀態", "操作"];
     if (tableName === "payment_notices") return ["駕駛", "費用類型", "金額", "期限", "內容", "狀態", "操作"];
     return ["駕駛", "標題", "內容", "狀態", "建立日期", "操作"];
   }
 
   function taskRow(tableName, x) {
     if (tableName === "maintenance_notifications") {
-      return [driverName(x.driver_id), vehicleName(x.vehicle_id), fmtDate(x.service_date), x.content || "", x.vendor || "", statusBadge(x.status), rowActions("maintenanceNotification", tableName, x.id)];
+      return [driverName(x.driver_id), vehicleName(x.vehicle_id), fmtDate(x.service_date), x.service_time || "-", x.content || "", x.vendor || "", statusBadge(x.status), rowActions("maintenanceNotification", tableName, x.id)];
     }
     if (tableName === "payment_notices") {
       return [driverName(x.driver_id), x.fee_type || "", Number(x.amount || 0).toLocaleString(), fmtDate(x.due_date), x.content || "", statusBadge(x.status), rowActions("paymentNotice", tableName, x.id)];
@@ -594,14 +647,21 @@
     return select("vehicle_id", "指定車輛", value || "", [["", "請選擇"], ...state.data.vehicles.map((v) => [v.id, vehicleName(v.id)])]);
   }
 
+  function fleetOptions(name, label, value, includeAll = false) {
+    const options = includeAll ? ["全部車隊", ...fleets] : fleets;
+    return select(name, label, value || options[0], options.map((fleet) => [fleet, fleet]));
+  }
+
   function driverForm(d) {
     return input("name", "姓名", d.name, "text", true) + input("national_id", "登入身分證", d.national_id, "text", true) +
-      input("phone", "手機號碼", d.phone) + input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date") + text("notes", "備註", d.notes);
+      fleetOptions("fleet_name", "所屬車隊", d.fleet_name) + input("phone", "手機號碼", d.phone) +
+      input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date") + text("notes", "備註", d.notes);
   }
 
   function vehicleForm(v) {
     return input("plate_no", "車牌", v.plate_no, "text", true) + input("brand", "廠牌", v.brand) +
       input("model", "型號", v.model) + input("year", "年份", v.year, "number") +
+      fleetOptions("fleet_name", "車隊", v.fleet_name) +
       select("status", "狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s])) +
       select("current_driver_id", "目前駕駛", v.current_driver_id || "", [["", "未指定"], ...state.data.drivers.map((d) => [d.id, d.name])]) +
       text("notes", "備註", v.notes);
@@ -615,12 +675,13 @@
   }
 
   function announcementForm(a) {
-    return input("title", "標題", a.title, "text", true) + text("content", "公告內容", a.content);
+    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車隊", a.target_fleet, true) + text("content", "公告內容", a.content);
   }
 
   function maintenanceNotificationForm(n) {
     return driverOptions(n.driver_id) + vehicleOptions(n.vehicle_id) + input("service_date", "保養日期", formDate(n.service_date) || today(), "date", true) +
-      input("vendor", "維修廠", n.vendor) + select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
+      input("service_time", "保養時間", n.service_time, "time") + input("vendor", "維修廠", n.vendor) +
+      select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
       text("content", "保養維修內容", n.content);
   }
 
@@ -696,6 +757,83 @@
     box.innerHTML = `<div class="empty">高公局資料同步準備中，請稍後重新整理，或點「官方路況」查看即時頁面。</div>`;
   }
 
+  async function loadAirportWeather() {
+    const box = document.getElementById("airportWeather");
+    if (!box) return;
+    if (state.weather) {
+      box.innerHTML = weatherMarkup();
+      return;
+    }
+    if (state.weatherLoading) return;
+    state.weatherLoading = true;
+    try {
+      const response = await fetch(airportWeatherUrl, { cache: "no-store" });
+      const payload = await response.json();
+      state.weather = payload.current;
+      box.innerHTML = weatherMarkup();
+    } catch {
+      box.innerHTML = `<span class="weather-label">桃園機場</span><strong>天氣暫無資料</strong>`;
+    } finally {
+      state.weatherLoading = false;
+    }
+  }
+
+  function weatherMarkup() {
+    if (!state.weather) return `<span class="weather-label">桃園機場</span><strong>天氣載入中</strong>`;
+    const description = weatherDescription(state.weather.weather_code);
+    return `<span class="weather-label">桃園機場</span><strong>${Math.round(state.weather.temperature_2m)}°C ${description}</strong><small>風速 ${Math.round(state.weather.wind_speed_10m)} km/h</small>`;
+  }
+
+  function weatherDescription(code) {
+    if (code === 0) return "晴";
+    if (code <= 3) return "多雲";
+    if (code <= 48) return "有霧";
+    if (code <= 67) return "降雨";
+    if (code <= 77) return "降雪";
+    return "雷雨";
+  }
+
+  async function loadFlights(query = "", direction = "arrival") {
+    const box = document.getElementById("flightList");
+    if (!box) return;
+    if (!cfg.FLIGHT_INFO_URL) {
+      box.innerHTML = `
+        <div class="flight-fallback">
+          <strong>官方即時航班查詢</strong>
+          <p>桃園機場官方資料限制網頁直接讀取。設定航班資料轉接網址後，此處即可直接列出篩選結果。</p>
+          <a class="primary-btn" href="${airportFlightsUrl}" target="_blank" rel="noreferrer">開啟桃園機場官網</a>
+        </div>
+      `;
+      return;
+    }
+    box.innerHTML = `<div class="empty">查詢航班資訊中...</div>`;
+    try {
+      const endpoint = new URL(cfg.FLIGHT_INFO_URL);
+      endpoint.searchParams.set("q", query);
+      endpoint.searchParams.set("direction", direction);
+      const response = await fetch(endpoint, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
+      const flights = Array.isArray(payload) ? payload : payload.data || payload.flights || [];
+      box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
+        <article class="modern-luxury-item flight-card">
+          <div class="flight-route">
+            <strong>${escapeHtml(flight.flightNo || flight.flight_number || flight.FlightNo || "-")}</strong>
+            <span>${escapeHtml(flight.status || flight.Status || "航班資訊")}</span>
+          </div>
+          <div class="flight-place">${escapeHtml(flight.city || flight.destination || flight.origin || flight.City || "-")}</div>
+          <div class="flight-meta">
+            <span>表定 ${escapeHtml(flight.scheduledTime || flight.ScheduledTime || "-")}</span>
+            <span>預計 ${escapeHtml(flight.estimatedTime || flight.EstimatedTime || "-")}</span>
+            <span>航廈 ${escapeHtml(flight.terminal || flight.Terminal || "-")}</span>
+          </div>
+        </article>
+      `).join("") : `<div class="empty">查無符合的航班。</div>`;
+    } catch (error) {
+      box.innerHTML = `<div class="empty">${escapeHtml(error.message || "航班資料讀取失敗")}<br>請使用桃園機場官方查詢。</div>`;
+    }
+  }
+
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
     if (!target) return;
@@ -745,9 +883,15 @@
   });
 
   document.addEventListener("submit", async (e) => {
-    if (e.target.id !== "loginForm") return;
-    e.preventDefault();
-    await handleLogin(new FormData(e.target).get("login"));
+    if (e.target.id === "loginForm") {
+      e.preventDefault();
+      await handleLogin(new FormData(e.target).get("login"));
+    }
+    if (e.target.id === "flightSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      await loadFlights(String(data.get("flight") || "").trim(), String(data.get("direction") || "arrival"));
+    }
   });
 
   loadAll().then(() => {

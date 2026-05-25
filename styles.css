@@ -94,7 +94,19 @@ a { text-decoration: none; }
 .brand-copy { display: grid; gap: 2px; min-width: 0; }
 .brand-title { font-weight: 900; color: var(--ink); font-size: 15px; white-space: nowrap; }
 .brand-subtitle { color: var(--muted); font-size: 11px; font-weight: 700; }
-.userbox { display: flex; align-items: center; }
+.userbox { display: flex; align-items: center; gap: 12px; }
+.airport-weather {
+  min-width: 156px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #f8fafc;
+  display: grid;
+  line-height: 1.25;
+}
+.airport-weather .weather-label { font-size: 11px; font-weight: 700; color: var(--muted); }
+.airport-weather strong { font-size: 14px; }
+.airport-weather small { font-size: 11px; color: var(--muted); }
 .main { width: min(1200px, calc(100% - 32px)); margin: 24px auto 60px; flex: 1; }
 
 .login-wrap {
@@ -162,7 +174,7 @@ textarea { min-height: 100px; resize: vertical; }
   text-align: center;
 }
 
-.dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 760px; }
 .feature-card {
   position: relative;
   background: var(--panel);
@@ -230,11 +242,18 @@ textarea { min-height: 100px; resize: vertical; }
 }
 .section-head h2 { margin: 0; font-size: 24px; font-weight: 900; }
 .page-head p { display: none; }
+.driver-page-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.driver-page-head h2 { margin: 0; font-size: 24px; font-weight: 900; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 .actionbar { justify-content: flex-start; }
 .luxury-card-mesh, .highway-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
 .modern-luxury-item {
@@ -274,16 +293,58 @@ textarea { min-height: 100px; resize: vertical; }
   white-space: pre-line;
   flex-grow: 1;
 }
-.lux-maint-badge {
-  display: block;
-  width: max-content;
+.maintenance-schedule {
+  display: grid;
+  grid-template-columns: 82px 1fr;
+  gap: 14px;
+  align-items: stretch;
+  margin: 2px 0 14px;
+  padding: 12px;
+  background: #eff6ff;
+  border-radius: 9px;
+  color: var(--blue);
+}
+.schedule-date {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  border-right: 1px solid #c7dcfc;
+  padding-right: 12px;
+}
+.schedule-date strong { font-size: 34px; line-height: 1; }
+.schedule-date span { font-size: 12px; font-weight: 700; margin-top: 5px; white-space: nowrap; }
+.schedule-details { display: grid; grid-template-columns: 76px 1fr; gap: 5px 10px; align-content: center; }
+.schedule-details span { font-size: 12px; color: #60738e; font-weight: 700; }
+.schedule-details strong { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
+.flight-search {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 130px auto;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.flight-fallback {
+  grid-column: 1 / -1;
+  padding: 30px;
+  text-align: center;
+  background: #fbfdff;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+.flight-fallback strong { display: block; font-size: 18px; margin-bottom: 6px; }
+.flight-fallback p { max-width: 520px; margin: 0 auto 18px; color: var(--muted); font-size: 14px; }
+.flight-card { min-height: 130px; }
+.flight-route { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.flight-route strong { font-size: 22px; font-weight: 900; }
+.flight-route span {
+  padding: 4px 10px;
+  border-radius: 999px;
   background: #eff6ff;
   color: var(--blue);
-  padding: 3px 8px;
-  border-radius: 4px;
   font-size: 12px;
-  font-weight: 700;
-  margin-bottom: 8px;
+  font-weight: 800;
+}
+.flight-place { margin: 13px 0; font-weight: 700; font-size: 16px; }
+.flight-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--muted); font-size: 13px; }
 }
 .lux-item-actions {
   display: flex;
@@ -374,6 +435,7 @@ tr:last-child td { border-bottom: 0; }
     position: static;
   }
   .side-nav button { flex: 0 0 auto; width: auto; white-space: nowrap; padding: 8px 14px; }
+  .luxury-card-mesh, .highway-grid { grid-template-columns: 1fr; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
   .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; min-width: 0; }
   .rwd-smart-table thead { display: none; }
@@ -405,14 +467,26 @@ tr:last-child td { border-bottom: 0; }
 }
 
 @media (max-width: 560px) {
-  .topbar { padding: 10px 14px; }
+  .topbar { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
   .brand img { height: 32px; }
   .brand-title { font-size: 14px; }
   .main { width: calc(100% - 28px); margin-top: 14px; }
   .form-grid { grid-template-columns: 1fr; }
-  .dashboard-grid, .luxury-card-mesh, .highway-grid { grid-template-columns: 1fr; }
-  .feature-card { min-height: 96px; padding: 16px; }
+  .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .feature-card { min-height: 104px; padding: 12px; gap: 9px; flex-direction: column; align-items: flex-start; }
+  .feature-icon { width: 38px; height: 38px; }
+  .feature-icon svg { width: 20px; height: 20px; }
+  .feature-card strong { font-size: 16px; }
+  .feature-card small { font-size: 11px; }
   .section-head { align-items: stretch; }
   .section-head h2 { font-size: 21px; }
+  .userbox { width: 100%; justify-content: space-between; }
+  .airport-weather { flex: 1; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px; }
+  .airport-weather small { text-align: right; }
+  .driver-page-head h2 { font-size: 21px; }
+  .flight-search { grid-template-columns: 1fr 108px; }
+  .flight-search button { grid-column: 1 / -1; }
+  .maintenance-schedule { grid-template-columns: 70px 1fr; padding: 10px; gap: 10px; }
+  .schedule-date strong { font-size: 30px; }
   .modal { padding: 18px; }
 }
