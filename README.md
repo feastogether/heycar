@@ -82,24 +82,30 @@ HIGHWAY_EVENTS_URL: "https://你的專案.supabase.co/functions/v1/highway-event
 
 登入後頁首會直接顯示桃園機場座標的目前天氣，來源為 [Open-Meteo Current Weather API](https://open-meteo.com/en/docs)。
 
-航班查詢頁已建立，並附有桃園機場官方網站入口。政府開放資料集「桃園國際機場即時航班」標示每五分鐘更新，但目前其 CSV 下載端點實測回傳舊日期資料；為避免顯示過期航班，隨附的 Edge Function 會檢查資料日期，只有兩日內的資料才回傳前台。
+航班查詢頁使用 TDX 運輸資料流通服務的桃園機場即時航班 API：
 
-1. 部署航班函式：
+- 出發：`Air/FIDS/Airport/Departure/TPE`
+- 抵達：`Air/FIDS/Airport/Arrival/TPE`
+
+TDX API 需要授權，因此由 Supabase Edge Function 安全保管金鑰並代前台取得資料。
+
+1. 在 [TDX 平台](https://tdx.transportdata.tw/) 註冊並取得 `Client Id` 與 `Client Secret`。
+2. 將憑證存入 Supabase Edge Function secrets：
+
+```powershell
+supabase secrets set TDX_CLIENT_ID="你的 Client Id" TDX_CLIENT_SECRET="你的 Client Secret"
+```
+
+3. 部署航班函式：
 
 ```powershell
 supabase functions deploy flights --no-verify-jwt
 ```
 
-2. 將 `config.example.js` 設為：
+4. 確認 `config.example.js` 指向航班函式網址：
 
 ```js
-FLIGHT_INFO_URL: "https://你的專案.supabase.co/functions/v1/flights"
-```
-
-3. 若桃園機場提供新的有效 CSV 來源，可設定 Edge Function secret 覆寫下載網址：
-
-```powershell
-supabase secrets set FLIGHT_CSV_URL="新的官方 CSV 網址"
+FLIGHT_INFO_URL: "https://chnvwziuqcqnllcjqobj.supabase.co/functions/v1/flights"
 ```
 
 ## 正式上線注意

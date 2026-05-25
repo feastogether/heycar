@@ -1,5 +1,5 @@
-const defaultSourceUrl = "https://odp.taoyuan-airport.com/dataset/2023081816?format=csv";
-const sourceUrl = Deno.env.get("FLIGHT_CSV_URL") || defaultSourceUrl;
+const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
+const apiBase = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport";
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
@@ -7,42 +7,39 @@ const headers = {
   "Content-Type": "application/json; charset=utf-8"
 };
 
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = "";
-  let quoted = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
-    const next = text[i + 1];
-    if (char === '"' && quoted && next === '"') {
-      field += '"';
-      i += 1;
-    } else if (char === '"') {
-      quoted = !quoted;
-    } else if (char === "," && !quoted) {
-      row.push(field.trim());
-      field = "";
-    } else if ((char === "\n" || char === "\r") && !quoted) {
-      if (char === "\r" && next === "\n") i += 1;
-      row.push(field.trim());
-      if (row.some(Boolean)) rows.push(row);
-      row = [];
-      field = "";
-    } else {
-      field += char;
-    }
+async function tdxToken() {
+  const clientId = Deno.env.get("TDX_CLIENT_ID");
+  const clientSecret = Deno.env.get("TDX_CLIENT_SECRET");
+  if (!clientId || !clientSecret) {
+    throw new Error("請先在 Supabase 設定 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET。");
   }
-  if (field || row.length) {
-    row.push(field.trim());
-    rows.push(row);
+  const body = new URLSearchParams({
+    grant_type: "client_credentials",
+    client_id: clientId,
+    client_secret: clientSecret
+  });
+  const response = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) {
+    throw new Error("TDX 授權失敗，請確認 Client Id 與 Client Secret。");
   }
-  return rows;
+  return payload.access_token as string;
 }
 
-function freshEnough(value: string) {
-  const timestamp = new Date(`${value}T00:00:00+08:00`).getTime();
-  return Number.isFinite(timestamp) && Date.now() - timestamp < 2 * 24 * 60 * 60 * 1000;
+function firstValue(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null && row[key] !== "") return String(row[key]);
+  }
+  return "";
+}
+
+function matchFlight(row: Record<string, unknown>, query: string) {
+  if (!query) return true;
+  return Object.values(row).join(" ").toLowerCase().includes(query);
 }
 
 Deno.serve(async (request) => {
@@ -50,31 +47,32 @@ Deno.serve(async (request) => {
   try {
     const url = new URL(request.url);
     const query = (url.searchParams.get("q") || "").trim().toLowerCase();
-    const direction = url.searchParams.get("direction") || "arrival";
-    const response = await fetch(sourceUrl);
-    if (!response.ok) throw new Error(`Official feed returned ${response.status}`);
-    const rows = parseCsv(await response.text());
-    rows.shift();
-    const recentDates = rows.map((row) => row[8] || row[6]).filter(Boolean).sort().reverse();
-    if (!recentDates.length || !freshEnough(recentDates[0])) {
-      return new Response(JSON.stringify({ error: "官方來源回傳的航班資料並非目前航班，已停止顯示。" }), { status: 502, headers });
-    }
-    const expectedType = direction === "departure" ? "D" : "A";
+    const endpoint = url.searchParams.get("direction") === "departure" ? "Departure" : "Arrival";
+    const token = await tdxToken();
+    const response = await fetch(`${apiBase}/${endpoint}/TPE?%24format=JSON`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error(`TDX 即時航班讀取失敗 (${response.status})。`);
+    const payload = await response.json();
+    const rows = Array.isArray(payload) ? payload : payload.Flights || [];
     const flights = rows
-      .filter((row) => row[1] === expectedType)
-      .filter((row) => !query || row.join(" ").toLowerCase().includes(query))
+      .filter((row: Record<string, unknown>) => matchFlight(row, query))
       .slice(0, 20)
-      .map((row) => ({
-        terminal: row[0],
-        flightNo: `${row[2]}${row[4]}`.replace(/\s+/g, ""),
-        scheduledTime: `${row[6]} ${row[7]}`,
-        estimatedTime: `${row[8]} ${row[9]}`,
-        city: row[12] || row[11] || row[10],
-        status: row[18] || row[13]
+      .map((row: Record<string, unknown>) => ({
+        flightNo: firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"]),
+        city: endpoint === "Departure"
+          ? firstValue(row, ["ArrivalAirportName", "ArrivalAirportID", "DestinationAirportName", "DestinationAirportID"])
+          : firstValue(row, ["DepartureAirportName", "DepartureAirportID", "OriginAirportName", "OriginAirportID"]),
+        scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
+        estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "ActualDepartureTime", "ActualArrivalTime", "EstimatedTime"]),
+        terminal: firstValue(row, ["Terminal", "DepartureTerminal", "ArrivalTerminal"]),
+        gate: firstValue(row, ["Gate", "BoardingGate"]),
+        status: firstValue(row, ["DepartureRemark", "ArrivalRemark", "FlightStatus", "Status"]) || "即時航班",
+        updateTime: firstValue(row, ["UpdateTime"])
       }));
     return new Response(JSON.stringify(flights), { headers });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unable to read flight feed";
+    const message = error instanceof Error ? error.message : "無法讀取 TDX 即時航班。";
     return new Response(JSON.stringify({ error: message }), { status: 502, headers });
   }
 });

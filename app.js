@@ -799,8 +799,8 @@
     if (!cfg.FLIGHT_INFO_URL) {
       box.innerHTML = `
         <div class="flight-fallback">
-          <strong>官方即時航班查詢</strong>
-          <p>桃園機場官方資料限制網頁直接讀取。設定航班資料轉接網址後，此處即可直接列出篩選結果。</p>
+          <strong>TDX 即時航班查詢</strong>
+          <p>設定 TDX 航班資料轉接網址後，此處即可直接列出桃園機場抵達與出發航班。</p>
           <a class="primary-btn" href="${airportFlightsUrl}" target="_blank" rel="noreferrer">開啟桃園機場官網</a>
         </div>
       `;
@@ -826,6 +826,7 @@
             <span>表定 ${escapeHtml(flight.scheduledTime || flight.ScheduledTime || "-")}</span>
             <span>預計 ${escapeHtml(flight.estimatedTime || flight.EstimatedTime || "-")}</span>
             <span>航廈 ${escapeHtml(flight.terminal || flight.Terminal || "-")}</span>
+            ${flight.gate ? `<span>登機門 ${escapeHtml(flight.gate)}</span>` : ""}
           </div>
         </article>
       `).join("") : `<div class="empty">查無符合的航班。</div>`;
