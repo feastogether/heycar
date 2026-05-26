@@ -45,6 +45,24 @@ alter table public.drivers add column if not exists fleet_name text not null def
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.announcements add column if not exists target_fleet text not null default '全部車隊';
 alter table public.maintenance_notifications add column if not exists service_time time;
+
+create table if not exists public.calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  event_date date not null,
+  event_time time,
+  event_type text not null default 'other' check (event_type in ('maintenance', 'tires', 'other')),
+  fleet_name text not null default '亞菲得車隊',
+  plate_no text not null,
+  driver_id uuid references public.drivers(id) on delete set null,
+  content text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.calendar_events enable row level security;
+drop policy if exists "demo read calendar events" on public.calendar_events;
+drop policy if exists "demo write calendar events" on public.calendar_events;
+create policy "demo read calendar events" on public.calendar_events for select using (true);
+create policy "demo write calendar events" on public.calendar_events for all using (true) with check (true);
 ```
 
 ## GitHub Pages 部署

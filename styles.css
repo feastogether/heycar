@@ -345,7 +345,102 @@ textarea { min-height: 100px; resize: vertical; }
 }
 .flight-place { margin: 13px 0; font-weight: 700; font-size: 16px; }
 .flight-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--muted); font-size: 13px; }
+.calendar-panel { padding: 16px; }
+.calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  margin-bottom: 12px;
 }
+.calendar-toolbar h3 { margin: 0; font-size: 20px; font-weight: 900; min-width: 140px; text-align: center; }
+.calendar-nav { width: 42px; height: 42px; padding: 0; }
+.calendar-nav svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+.calendar-legend { display: flex; justify-content: flex-end; gap: 12px; margin-bottom: 12px; }
+.calendar-legend span {
+  position: relative;
+  padding-left: 15px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.calendar-legend span::before {
+  position: absolute;
+  content: "";
+  left: 0;
+  top: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+}
+.calendar-legend .maintenance::before { background: #dc2626; }
+.calendar-legend .tires::before { background: #2563eb; }
+.calendar-legend .other::before { background: #15803d; }
+.calendar-weekdays, .calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.calendar-weekdays {
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  background: #f8fafc;
+  border-radius: 8px 8px 0 0;
+}
+.calendar-weekdays span {
+  padding: 9px 0;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--muted);
+}
+.calendar-grid { border-left: 1px solid var(--line); border-top: 1px solid var(--line); }
+.calendar-cell {
+  min-width: 0;
+  min-height: 114px;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 6px;
+  background: white;
+}
+.calendar-cell.outside { background: #f8fafc; color: #a7b0bf; }
+.calendar-cell.today { background: #fff9f8; }
+.calendar-day-button {
+  width: 100%;
+  min-height: 26px;
+  padding: 0 3px 5px;
+  background: transparent;
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 800;
+  color: inherit;
+}
+.calendar-day-button small { visibility: hidden; color: var(--brand); font-size: 18px; line-height: 1; }
+.calendar-cell:hover .calendar-day-button small { visibility: visible; }
+.calendar-events { display: grid; gap: 4px; }
+.calendar-pill {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border-radius: 5px;
+  padding: 3px 6px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.calendar-pill:hover { filter: brightness(.96); }
+.calendar-pill.maintenance, .calendar-detail-item.maintenance { background: #fee2e2; color: #b91c1c; }
+.calendar-pill.tires, .calendar-detail-item.tires { background: #dbeafe; color: #1d4ed8; }
+.calendar-pill.other, .calendar-detail-item.other { background: #dcfce7; color: #15803d; }
+.calendar-day-detail { display: grid; gap: 10px; }
+.calendar-detail-item { padding: 14px; border-radius: 8px; }
+.calendar-detail-item div { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.calendar-detail-item div strong { font-size: 18px; }
+.calendar-detail-item div span { font-size: 12px; font-weight: 800; }
+.calendar-detail-item p { margin: 4px 0; color: var(--ink); font-size: 14px; }
 .lux-item-actions {
   display: flex;
   justify-content: flex-end;
@@ -488,5 +583,13 @@ tr:last-child td { border-bottom: 0; }
   .flight-search button { grid-column: 1 / -1; }
   .maintenance-schedule { grid-template-columns: 70px 1fr; padding: 10px; gap: 10px; }
   .schedule-date strong { font-size: 30px; }
+  .calendar-panel { padding: 8px; }
+  .calendar-toolbar { gap: 8px; margin: 6px 0 10px; }
+  .calendar-toolbar h3 { font-size: 18px; min-width: 122px; }
+  .calendar-legend { padding-right: 6px; margin-bottom: 8px; }
+  .calendar-cell { min-height: 78px; padding: 3px; }
+  .calendar-day-button { font-size: 12px; min-height: 22px; padding-bottom: 3px; }
+  .calendar-day-button small { display: none; }
+  .calendar-pill { font-size: 10px; padding: 2px 3px; }
   .modal { padding: 18px; }
 }

@@ -91,6 +91,19 @@ create table if not exists public.payment_notices (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  event_date date not null,
+  event_time time,
+  event_type text not null default 'other' check (event_type in ('maintenance', 'tires', 'other')),
+  fleet_name text not null default '亞菲得車隊',
+  plate_no text not null,
+  driver_id uuid references public.drivers(id) on delete set null,
+  content text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- Existing projects can run these migrations safely after deploying new frontend fields.
 alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
@@ -105,9 +118,14 @@ alter table public.announcement_reads enable row level security;
 alter table public.maintenance_notifications enable row level security;
 alter table public.personal_messages enable row level security;
 alter table public.payment_notices enable row level security;
+alter table public.calendar_events enable row level security;
 
 -- Prototype policy for GitHub Pages demo. For production, replace with Supabase Auth
 -- or Edge Functions so admin writes are protected server-side.
+drop policy if exists "demo read calendar events" on public.calendar_events;
+drop policy if exists "demo write calendar events" on public.calendar_events;
+create policy "demo read calendar events" on public.calendar_events for select using (true);
+create policy "demo write calendar events" on public.calendar_events for all using (true) with check (true);
 create policy "demo read drivers" on public.drivers for select using (true);
 create policy "demo write drivers" on public.drivers for all using (true) with check (true);
 create policy "demo read vehicles" on public.vehicles for select using (true);

@@ -16,6 +16,7 @@
     view: "home",
     adminView: "drivers",
     page: 1,
+    calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
     data: {},
     weather: null,
     weatherLoading: false,
@@ -30,7 +31,8 @@
     "announcement_reads",
     "maintenance_notifications",
     "personal_messages",
-    "payment_notices"
+    "payment_notices",
+    "calendar_events"
   ];
 
   const labels = {
@@ -52,7 +54,8 @@
     messages: "M4 5h16v11H8l-4 3V5Zm4 5h8M8 13h5",
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
     highway: "M8 20 11 4h2l3 16M5 12h14M9 8h6M8.5 16h7",
-    flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z"
+    flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
+    calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
   };
 
   const seed = {
@@ -69,7 +72,8 @@
     announcement_reads: [],
     maintenance_notifications: [],
     personal_messages: [],
-    payment_notices: []
+    payment_notices: [],
+    calendar_events: []
   };
 
   function uid() {
@@ -136,6 +140,10 @@
     const result = {};
     for (const table of tables) {
       const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
+      if (error && table === "calendar_events") {
+        result[table] = [];
+        continue;
+      }
       if (error) throw error;
       result[table] = data || [];
     }
@@ -150,6 +158,7 @@
       state.data[table].unshift(data);
       return data;
     }
+    state.data[table] = state.data[table] || [];
     state.data[table].unshift(item);
     localSave();
     return item;
@@ -292,6 +301,7 @@
           ${feature("emergency", "緊急通知", "待開發", 0)}
           ${feature("highway", "國道資訊", "即時路況事件", 0)}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
+          ${feature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
         </div>
       `);
       return;
@@ -304,7 +314,8 @@
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       emergency: driverEmergency,
       highway: driverHighway,
-      flights: driverFlights
+      flights: driverFlights,
+      calendar: () => renderCalendar(false)
     };
     layout(views[state.view]());
     if (state.view === "highway") loadHighway();
@@ -470,6 +481,100 @@
     `;
   }
 
+  function calendarItems(isAdmin) {
+    const items = state.data.calendar_events || [];
+    return isAdmin ? items : items.filter((item) => item.fleet_name === driverFleet());
+  }
+
+  function shiftCalendarMonth(step) {
+    const date = new Date(`${state.calendarMonth}T00:00:00`);
+    date.setMonth(date.getMonth() + step);
+    state.calendarMonth = date.toISOString().slice(0, 7) + "-01";
+  }
+
+  function renderCalendar(isAdmin) {
+    const focus = new Date(`${state.calendarMonth}T00:00:00`);
+    const year = focus.getFullYear();
+    const month = focus.getMonth();
+    const start = new Date(year, month, 1);
+    const end = new Date(year, month + 1, 0);
+    const firstOffset = start.getDay();
+    const days = [];
+    for (let index = 0; index < 42; index += 1) {
+      const date = new Date(year, month, index - firstOffset + 1);
+      const value = localDateValue(date);
+      const events = calendarItems(isAdmin).filter((item) => item.event_date === value);
+      days.push(`
+        <div class="calendar-cell ${date.getMonth() === month ? "" : "outside"} ${value === today() ? "today" : ""}">
+          <button class="calendar-day-button" data-calendar-date="${value}" ${isAdmin ? 'title="新增此日行程"' : 'title="查看此日行程"'}>
+            <span>${date.getDate()}</span>
+            ${isAdmin ? `<small>+</small>` : ""}
+          </button>
+          <div class="calendar-events">
+            ${events.map((item) => isAdmin
+              ? `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}" data-modal="calendarEvent" data-id="${item.id}">${escapeHtml(item.plate_no)}</button>`
+              : `<span class="calendar-pill ${escapeHtml(item.event_type || "other")}">${escapeHtml(item.plate_no)}</span>`
+            ).join("")}
+          </div>
+        </div>
+      `);
+    }
+    const content = `
+      <div class="panel calendar-panel">
+        <div class="calendar-toolbar">
+          <button class="ghost-btn calendar-nav" data-calendar-month="-1" aria-label="上個月">${iconSvg("M15 18 9 12l6-6")}</button>
+          <h3>${year} 年 ${month + 1} 月</h3>
+          <button class="ghost-btn calendar-nav" data-calendar-month="1" aria-label="下個月">${iconSvg("M9 18l6-6-6-6")}</button>
+        </div>
+        <div class="calendar-legend">
+          <span class="maintenance">保養</span><span class="tires">調胎</span><span class="other">其他</span>
+        </div>
+        <div class="calendar-weekdays">${["日", "一", "二", "三", "四", "五", "六"].map((day) => `<span>${day}</span>`).join("")}</div>
+        <div class="calendar-grid">${days.join("")}</div>
+      </div>
+    `;
+    if (!isAdmin) return `${pageHeader("共同行事曆")}${content}`;
+    return `
+      <div class="section-head"><h2>共同行事曆</h2><button class="primary-btn" data-modal="calendarEvent">新增行程</button></div>
+      ${content}
+      ${table(["日期", "時間", "類型", "車隊", "車牌", "指定駕駛", "內容", "操作"], calendarItems(true).map((item) => [
+        fmtDate(item.event_date), item.event_time || "-", calendarTypeName(item.event_type), item.fleet_name || "", item.plate_no || "",
+        driverName(item.driver_id), item.content || "", rowActions("calendarEvent", "calendar_events", item.id)
+      ]))}
+    `;
+  }
+
+  function localDateValue(date) {
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${date.getFullYear()}-${month}-${day}`;
+  }
+
+  function calendarTypeName(type) {
+    return ({ maintenance: "保養", tires: "調胎", other: "其他" })[type] || "其他";
+  }
+
+  function openCalendarDay(date) {
+    const items = calendarItems(false).filter((item) => item.event_date === date);
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `
+      <div class="modal calendar-detail-modal">
+        <div class="section-head"><h3>${fmtDate(date)} 行程</h3><button class="ghost-btn" data-close-modal>關閉</button></div>
+        <div class="calendar-day-detail">
+          ${items.length ? items.map((item) => `
+            <article class="calendar-detail-item ${escapeHtml(item.event_type || "other")}">
+              <div><strong>${escapeHtml(item.plate_no)}</strong><span>${calendarTypeName(item.event_type)}</span></div>
+              <p>${escapeHtml(item.event_time || "時間未指定")} ｜ ${escapeHtml(driverName(item.driver_id))}</p>
+              <p>${escapeHtml(item.content || "無詳細內容")}</p>
+            </article>
+          `).join("") : `<div class="empty">當日沒有車隊行程</div>`}
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
   function renderAdmin() {
     const nav = [
       ["drivers", "駕駛管理"],
@@ -478,7 +583,8 @@
       ["maintenanceNotifications", "保養通知"],
       ["announcements", "公告管理"],
       ["personalMessages", "個人訊息"],
-      ["payments", "繳費通知"]
+      ["payments", "繳費通知"],
+      ["calendar", "共同行事曆"]
     ];
     const body = {
       drivers: adminDrivers,
@@ -487,7 +593,8 @@
       maintenanceNotifications: () => adminTaskManager("maintenance_notifications", "保養通知"),
       announcements: adminAnnouncements,
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
-      payments: () => adminTaskManager("payment_notices", "繳費通知")
+      payments: () => adminTaskManager("payment_notices", "繳費通知"),
+      calendar: () => renderCalendar(true)
     }[state.adminView]();
 
     layout(`
@@ -576,7 +683,7 @@
     return `<div class="actions"><button class="soft-btn" data-modal="${modal}" data-id="${id}">編輯</button><button class="danger-btn" data-delete="${tableName}:${id}">刪除</button></div>`;
   }
 
-  function openModal(type, id) {
+  function openModal(type, id, preset = {}) {
     const map = {
       driver: ["駕駛", "drivers", driverForm],
       vehicle: ["車輛", "vehicles", vehicleForm],
@@ -584,10 +691,11 @@
       announcement: ["公告", "announcements", announcementForm],
       maintenanceNotification: ["保養通知", "maintenance_notifications", maintenanceNotificationForm],
       personalMessage: ["個人訊息", "personal_messages", personalMessageForm],
-      paymentNotice: ["繳費通知", "payment_notices", paymentNoticeForm]
+      paymentNotice: ["繳費通知", "payment_notices", paymentNoticeForm],
+      calendarEvent: ["行程", "calendar_events", calendarEventForm]
     };
     const [title, tableName, formFn] = map[type];
-    const item = id ? state.data[tableName].find((row) => row.id === id) : {};
+    const item = id ? state.data[tableName].find((row) => row.id === id) : preset;
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
@@ -696,6 +804,16 @@
       input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
       text("content", "繳費內容", p.content);
+  }
+
+  function calendarEventForm(item) {
+    return input("event_date", "日期", formDate(item.event_date) || today(), "date", true) +
+      input("event_time", "時間", item.event_time || "", "time") +
+      select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["tires", "調胎"], ["other", "其他"]]) +
+      fleetOptions("fleet_name", "通知車隊", item.fleet_name) +
+      input("plate_no", "車牌", item.plate_no, "text", true) +
+      driverOptions(item.driver_id) +
+      text("content", "內容", item.content);
   }
 
   async function handleLogin(value) {
@@ -813,6 +931,7 @@
       endpoint.searchParams.set("direction", direction);
       const response = await fetch(endpoint, { cache: "no-store" });
       const payload = await response.json();
+      if (response.status === 404) throw new Error("航班服務尚未部署到 Supabase");
       if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
       const flights = Array.isArray(payload) ? payload : payload.data || payload.flights || [];
       box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
@@ -862,6 +981,14 @@
     if (target.dataset.page) {
       state.page = Number(target.dataset.page);
       render();
+    }
+    if (target.dataset.calendarMonth) {
+      shiftCalendarMonth(Number(target.dataset.calendarMonth));
+      render();
+    }
+    if (target.dataset.calendarDate) {
+      if (state.admin) openModal("calendarEvent", null, { event_date: target.dataset.calendarDate });
+      else openCalendarDay(target.dataset.calendarDate);
     }
     if (target.dataset.readAnn) {
       if (!isAnnouncementRead(target.dataset.readAnn)) {
