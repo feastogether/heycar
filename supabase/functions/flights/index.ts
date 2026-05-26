@@ -42,6 +42,10 @@ function matchFlight(row: Record<string, unknown>, query: string) {
   return Object.values(row).join(" ").toLowerCase().includes(query);
 }
 
+function taipeiDate() {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
   try {
@@ -55,11 +59,16 @@ Deno.serve(async (request) => {
     if (!response.ok) throw new Error(`TDX 即時航班讀取失敗 (${response.status})。`);
     const payload = await response.json();
     const rows = Array.isArray(payload) ? payload : payload.Flights || [];
+    const today = taipeiDate();
     const flights = rows
+      .filter((row: Record<string, unknown>) => {
+        const scheduled = firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]);
+        return !scheduled || scheduled.slice(0, 10) >= today;
+      })
       .filter((row: Record<string, unknown>) => matchFlight(row, query))
       .slice(0, 20)
       .map((row: Record<string, unknown>) => ({
-        flightNo: firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"]),
+        flightNo: `${firstValue(row, ["AirlineID", "AirlineCode"])}${firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])}` || "-",
         city: endpoint === "Departure"
           ? firstValue(row, ["ArrivalAirportName", "ArrivalAirportID", "DestinationAirportName", "DestinationAirportID"])
           : firstValue(row, ["DepartureAirportName", "DepartureAirportID", "OriginAirportName", "OriginAirportID"]),
