@@ -54,6 +54,8 @@ create table if not exists public.calendar_events (
   fleet_name text not null default '亞菲得車隊',
   plate_no text not null,
   driver_id uuid references public.drivers(id) on delete set null,
+  vendor text,
+  maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null,
   content text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -63,7 +65,12 @@ drop policy if exists "demo read calendar events" on public.calendar_events;
 drop policy if exists "demo write calendar events" on public.calendar_events;
 create policy "demo read calendar events" on public.calendar_events for select using (true);
 create policy "demo write calendar events" on public.calendar_events for all using (true) with check (true);
+
+alter table public.calendar_events add column if not exists vendor text;
+alter table public.calendar_events add column if not exists maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null;
 ```
+
+行事曆中建立或編輯「保養」及「調胎」行程並指定駕駛時，系統會自動同步一筆保養通知給該駕駛；後續修改同一行程會更新原通知。
 
 ## GitHub Pages 部署
 

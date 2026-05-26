@@ -32,14 +32,22 @@ async function tdxToken() {
 
 function firstValue(row: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
-    if (row[key] !== undefined && row[key] !== null && row[key] !== "") return String(row[key]);
+    if (row[key] !== undefined && row[key] !== null && row[key] !== "") return String(row[key]).trim();
   }
   return "";
 }
 
 function matchFlight(row: Record<string, unknown>, query: string) {
   if (!query) return true;
-  return Object.values(row).join(" ").toLowerCase().includes(query);
+  const flightNo = `${firstValue(row, ["AirlineID", "AirlineCode"])}${firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])}`.replace(/\s+/g, "");
+  const searchText = [
+    flightNo,
+    firstValue(row, ["AirlineID", "AirlineCode"]),
+    firstValue(row, ["DepartureAirportID", "OriginAirportID"]),
+    firstValue(row, ["ArrivalAirportID", "DestinationAirportID"]),
+    firstValue(row, ["DepartureAirportName", "ArrivalAirportName", "OriginAirportName", "DestinationAirportName"])
+  ].join(" ").toLowerCase();
+  return searchText.includes(query.replace(/\s+/g, "").toLowerCase());
 }
 
 function taipeiDate() {
@@ -74,9 +82,13 @@ Deno.serve(async (request) => {
           : firstValue(row, ["DepartureAirportName", "DepartureAirportID", "OriginAirportName", "OriginAirportID"]),
         scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
         estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "ActualDepartureTime", "ActualArrivalTime", "EstimatedTime"]),
+        actualTime: firstValue(row, ["ActualDepartureTime", "ActualArrivalTime", "ActualTime"]),
         terminal: firstValue(row, ["Terminal", "DepartureTerminal", "ArrivalTerminal"]),
         gate: firstValue(row, ["Gate", "BoardingGate"]),
+        baggage: firstValue(row, ["BaggageClaim", "BaggageCarousel"]),
+        checkInCounter: firstValue(row, ["CheckCounter", "CheckInCounter"]),
         status: firstValue(row, ["DepartureRemark", "ArrivalRemark", "FlightStatus", "Status"]) || "即時航班",
+        statusEn: firstValue(row, ["DepartureRemarkEn", "ArrivalRemarkEn", "FlightStatusEn"]),
         updateTime: firstValue(row, ["UpdateTime"])
       }));
     return new Response(JSON.stringify(flights), { headers });

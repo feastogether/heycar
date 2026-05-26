@@ -99,6 +99,8 @@ create table if not exists public.calendar_events (
   fleet_name text not null default '亞菲得車隊',
   plate_no text not null,
   driver_id uuid references public.drivers(id) on delete set null,
+  vendor text,
+  maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null,
   content text,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
@@ -109,6 +111,8 @@ alter table public.drivers add column if not exists fleet_name text not null def
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.announcements add column if not exists target_fleet text not null default '全部車隊';
 alter table public.maintenance_notifications add column if not exists service_time time;
+alter table public.calendar_events add column if not exists vendor text;
+alter table public.calendar_events add column if not exists maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null;
 
 alter table public.drivers enable row level security;
 alter table public.vehicles enable row level security;

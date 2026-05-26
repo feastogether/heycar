@@ -174,6 +174,7 @@
     }
     state.data[table] = state.data[table].map((row) => row.id === id ? { ...row, ...item } : row);
     localSave();
+    return state.data[table].find((row) => row.id === id);
   }
 
   async function remove(table, id) {
@@ -469,7 +470,7 @@
       ${pageHeader("航班資訊")}
       <div class="panel flight-panel">
         <form id="flightSearchForm" class="flight-search">
-          <input name="flight" aria-label="航班號碼或城市" placeholder="輸入航班號碼或城市" autocomplete="off">
+          <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off">
           <select name="direction" aria-label="航班類型">
             <option value="arrival">抵達</option>
             <option value="departure">出發</option>
@@ -487,9 +488,8 @@
   }
 
   function shiftCalendarMonth(step) {
-    const date = new Date(`${state.calendarMonth}T00:00:00`);
-    date.setMonth(date.getMonth() + step);
-    state.calendarMonth = date.toISOString().slice(0, 7) + "-01";
+    const [year, month] = state.calendarMonth.slice(0, 7).split("-").map(Number);
+    state.calendarMonth = localDateValue(new Date(year, month - 1 + step, 1));
   }
 
   function renderCalendar(isAdmin) {
@@ -497,7 +497,6 @@
     const year = focus.getFullYear();
     const month = focus.getMonth();
     const start = new Date(year, month, 1);
-    const end = new Date(year, month + 1, 0);
     const firstOffset = start.getDay();
     const days = [];
     for (let index = 0; index < 42; index += 1) {
@@ -537,9 +536,9 @@
     return `
       <div class="section-head"><h2>共同行事曆</h2><button class="primary-btn" data-modal="calendarEvent">新增行程</button></div>
       ${content}
-      ${table(["日期", "時間", "類型", "車隊", "車牌", "指定駕駛", "內容", "操作"], calendarItems(true).map((item) => [
+      ${table(["日期", "時間", "類型", "車隊", "車牌", "指定駕駛", "保養廠", "內容", "操作"], calendarItems(true).map((item) => [
         fmtDate(item.event_date), item.event_time || "-", calendarTypeName(item.event_type), item.fleet_name || "", item.plate_no || "",
-        driverName(item.driver_id), item.content || "", rowActions("calendarEvent", "calendar_events", item.id)
+        driverName(item.driver_id), item.vendor || "-", item.content || "", rowActions("calendarEvent", "calendar_events", item.id)
       ]))}
     `;
   }
@@ -566,6 +565,7 @@
             <article class="calendar-detail-item ${escapeHtml(item.event_type || "other")}">
               <div><strong>${escapeHtml(item.plate_no)}</strong><span>${calendarTypeName(item.event_type)}</span></div>
               <p>${escapeHtml(item.event_time || "時間未指定")} ｜ ${escapeHtml(driverName(item.driver_id))}</p>
+              ${item.vendor ? `<p>保養廠：${escapeHtml(item.vendor)}</p>` : ""}
               <p>${escapeHtml(item.content || "無詳細內容")}</p>
             </article>
           `).join("") : `<div class="empty">當日沒有車隊行程</div>`}
@@ -713,8 +713,10 @@
       e.preventDefault();
       const record = Object.fromEntries(new FormData(e.currentTarget).entries());
       try {
-        if (id) await update(tableName, id, normalizeRecord(tableName, record));
-        else await insert(tableName, normalizeRecord(tableName, record));
+        const saved = id
+          ? await update(tableName, id, normalizeRecord(tableName, record))
+          : await insert(tableName, normalizeRecord(tableName, record));
+        if (tableName === "calendar_events") await syncCalendarNotification(saved);
         modal.remove();
         render();
       } catch (err) {
@@ -726,6 +728,16 @@
   function normalizeRecord(tableName, record) {
     if (["maintenance_notifications", "personal_messages", "payment_notices"].includes(tableName)) {
       record.status = record.status || "pending";
+    }
+    if (tableName === "vehicles") record.current_driver_id = record.current_driver_id || null;
+    if (tableName === "maintenance_notifications") {
+      record.driver_id = record.driver_id || null;
+      record.vehicle_id = record.vehicle_id || null;
+      record.service_time = record.service_time || null;
+    }
+    if (tableName === "calendar_events") {
+      record.driver_id = record.driver_id || null;
+      record.event_time = record.event_time || null;
     }
     if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
     if (tableName === "maintenance_records") {
@@ -813,7 +825,28 @@
       fleetOptions("fleet_name", "通知車隊", item.fleet_name) +
       input("plate_no", "車牌", item.plate_no, "text", true) +
       driverOptions(item.driver_id) +
+      input("vendor", "保養廠", item.vendor) +
       text("content", "內容", item.content);
+  }
+
+  async function syncCalendarNotification(item) {
+    if (!["maintenance", "tires"].includes(item.event_type) || !item.driver_id) return;
+    const vehicle = state.data.vehicles.find((row) => String(row.plate_no).toUpperCase() === String(item.plate_no).toUpperCase());
+    const patch = {
+      driver_id: item.driver_id,
+      vehicle_id: vehicle?.id || null,
+      service_date: item.event_date,
+      service_time: item.event_time || null,
+      vendor: item.vendor || "",
+      status: "pending",
+      content: `[共同行事曆 - ${calendarTypeName(item.event_type)}] ${item.plate_no}\n${item.content || ""}`.trim()
+    };
+    if (item.maintenance_notification_id) {
+      await update("maintenance_notifications", item.maintenance_notification_id, patch);
+      return;
+    }
+    const notification = await insert("maintenance_notifications", patch);
+    await update("calendar_events", item.id, { maintenance_notification_id: notification.id });
   }
 
   async function handleLogin(value) {
@@ -942,16 +975,24 @@
           </div>
           <div class="flight-place">${escapeHtml(flight.city || flight.destination || flight.origin || flight.City || "-")}</div>
           <div class="flight-meta">
-            <span>表定 ${escapeHtml(flight.scheduledTime || flight.ScheduledTime || "-")}</span>
-            <span>預計 ${escapeHtml(flight.estimatedTime || flight.EstimatedTime || "-")}</span>
-            <span>航廈 ${escapeHtml(flight.terminal || flight.Terminal || "-")}</span>
-            ${flight.gate ? `<span>登機門 ${escapeHtml(flight.gate)}</span>` : ""}
+            <span><label>表定時間</label>${escapeHtml(formatFlightTime(flight.scheduledTime || flight.ScheduledTime))}</span>
+            <span><label>預計時間</label>${escapeHtml(formatFlightTime(flight.estimatedTime || flight.EstimatedTime))}</span>
+            <span><label>實際時間</label>${escapeHtml(formatFlightTime(flight.actualTime || flight.ActualTime))}</span>
+            <span><label>航廈 / 登機門</label>${escapeHtml(flight.terminal || flight.Terminal || "-")} / ${escapeHtml(flight.gate || "-")}</span>
+            ${flight.baggage ? `<span><label>行李轉盤</label>${escapeHtml(flight.baggage)}</span>` : ""}
+            ${flight.checkInCounter ? `<span><label>報到櫃台</label>${escapeHtml(flight.checkInCounter)}</span>` : ""}
           </div>
+          <div class="flight-update">資料更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
         </article>
       `).join("") : `<div class="empty">查無符合的航班。</div>`;
     } catch (error) {
       box.innerHTML = `<div class="empty">${escapeHtml(error.message || "航班資料讀取失敗")}<br>請使用桃園機場官方查詢。</div>`;
     }
+  }
+
+  function formatFlightTime(value) {
+    if (!value) return "-";
+    return String(value).replace("T", " ").slice(0, 16);
   }
 
   document.addEventListener("click", async (e) => {
@@ -985,10 +1026,12 @@
     if (target.dataset.calendarMonth) {
       shiftCalendarMonth(Number(target.dataset.calendarMonth));
       render();
+      return;
     }
     if (target.dataset.calendarDate) {
       if (state.admin) openModal("calendarEvent", null, { event_date: target.dataset.calendarDate });
       else openCalendarDay(target.dataset.calendarDate);
+      return;
     }
     if (target.dataset.readAnn) {
       if (!isAnnouncementRead(target.dataset.readAnn)) {

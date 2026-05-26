@@ -332,7 +332,7 @@ textarea { min-height: 100px; resize: vertical; }
 }
 .flight-fallback strong { display: block; font-size: 18px; margin-bottom: 6px; }
 .flight-fallback p { max-width: 520px; margin: 0 auto 18px; color: var(--muted); font-size: 14px; }
-.flight-card { min-height: 130px; }
+.flight-card { min-height: 192px; }
 .flight-route { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .flight-route strong { font-size: 22px; font-weight: 900; }
 .flight-route span {
@@ -344,7 +344,10 @@ textarea { min-height: 100px; resize: vertical; }
   font-weight: 800;
 }
 .flight-place { margin: 13px 0; font-weight: 700; font-size: 16px; }
-.flight-meta { display: flex; flex-wrap: wrap; gap: 8px 14px; color: var(--muted); font-size: 13px; }
+.flight-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px 16px; color: var(--ink); font-size: 14px; }
+.flight-meta span { display: grid; gap: 2px; font-weight: 700; }
+.flight-meta label { font-size: 11px; color: var(--muted); }
+.flight-update { padding-top: 14px; margin-top: auto; font-size: 11px; color: var(--muted); }
 .calendar-panel { padding: 16px; }
 .calendar-toolbar {
   display: flex;
@@ -427,9 +430,9 @@ textarea { min-height: 100px; resize: vertical; }
   text-align: left;
   font-size: 11px;
   font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
 }
 button.calendar-pill:hover { filter: brightness(.96); }
 .calendar-pill.maintenance, .calendar-detail-item.maintenance { background: #fee2e2; color: #b91c1c; }
@@ -581,6 +584,7 @@ tr:last-child td { border-bottom: 0; }
   .driver-page-head h2 { font-size: 21px; }
   .flight-search { grid-template-columns: 1fr 108px; }
   .flight-search button { grid-column: 1 / -1; }
+  .flight-meta { grid-template-columns: 1fr; }
   .maintenance-schedule { grid-template-columns: 70px 1fr; padding: 10px; gap: 10px; }
   .schedule-date strong { font-size: 30px; }
   .calendar-panel { padding: 8px; }
