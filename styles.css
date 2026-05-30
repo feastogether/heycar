@@ -109,6 +109,29 @@ a { text-decoration: none; }
 .airport-weather small { font-size: 11px; color: var(--muted); }
 .main { width: min(1200px, calc(100% - 32px)); margin: 24px auto 60px; flex: 1; }
 
+.marquee-alert {
+  overflow: hidden;
+  background: #b91c1c;
+  color: #fff;
+  border-bottom: 1px solid rgba(185,28,28,.25);
+}
+.marquee-track {
+  width: max-content;
+  min-width: 100%;
+  display: flex;
+  gap: 56px;
+  padding: 9px 0;
+  font-size: 14px;
+  font-weight: 800;
+  white-space: nowrap;
+  animation: marquee-scroll 24s linear infinite;
+}
+.marquee-track span { padding-left: 56px; }
+@keyframes marquee-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 .login-wrap {
   min-height: 100vh;
   display: grid;
@@ -174,7 +197,13 @@ textarea { min-height: 100px; resize: vertical; }
   text-align: center;
 }
 
-.dashboard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 760px; }
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  width: min(960px, 100%);
+  margin: 0 auto;
+}
 .feature-card {
   position: relative;
   background: var(--panel);
@@ -251,7 +280,7 @@ textarea { min-height: 100px; resize: vertical; }
 .driver-page-head h2 { margin: 0; font-size: 24px; font-weight: 900; }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 .actionbar { justify-content: flex-start; }
-.luxury-card-mesh, .highway-grid {
+.luxury-card-mesh {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
@@ -404,7 +433,10 @@ textarea { min-height: 100px; resize: vertical; }
   border-bottom: 1px solid var(--line);
   padding: 6px;
   background: white;
+  position: relative;
+  cursor: pointer;
 }
+.calendar-cell:hover { background: #fbfdff; }
 .calendar-cell.outside { background: #f8fafc; color: #a7b0bf; }
 .calendar-cell.today { background: #fff9f8; }
 .calendar-day-button {
@@ -421,6 +453,22 @@ textarea { min-height: 100px; resize: vertical; }
 .calendar-day-button small { visibility: hidden; color: var(--brand); font-size: 18px; line-height: 1; }
 .calendar-cell:hover .calendar-day-button small { visibility: visible; }
 .calendar-events { display: grid; gap: 4px; }
+.calendar-count {
+  display: none;
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: white;
+  font-size: 12px;
+  font-weight: 900;
+  place-items: center;
+  box-shadow: 0 4px 10px rgba(239,63,53,.22);
+}
 .calendar-pill {
   display: block;
   width: 100%;
@@ -452,7 +500,18 @@ button.calendar-pill:hover { filter: brightness(.96); }
   border-top: 1px solid #f1f5f9;
   margin-top: auto;
 }
-.highway-card { border-left: 5px solid var(--gold); }
+.check-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: #fff;
+}
+.check-field input[type="checkbox"] { width: auto; }
 
 .admin-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
 .side-nav {
@@ -533,7 +592,7 @@ tr:last-child td { border-bottom: 0; }
     position: static;
   }
   .side-nav button { flex: 0 0 auto; width: auto; white-space: nowrap; padding: 8px 14px; }
-  .luxury-card-mesh, .highway-grid { grid-template-columns: 1fr; }
+  .luxury-card-mesh { grid-template-columns: 1fr; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
   .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; min-width: 0; }
   .rwd-smart-table thead { display: none; }
@@ -594,6 +653,7 @@ tr:last-child td { border-bottom: 0; }
   .calendar-cell { min-height: 78px; padding: 3px; }
   .calendar-day-button { font-size: 12px; min-height: 22px; padding-bottom: 3px; }
   .calendar-day-button small { display: none; }
-  .calendar-pill { font-size: 10px; padding: 2px 3px; }
+  .calendar-events { display: none; }
+  .calendar-count { display: grid; }
   .modal { padding: 18px; }
 }

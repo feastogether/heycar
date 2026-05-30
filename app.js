@@ -1,8 +1,6 @@
 (function () {
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
-  const highwayUrl = "https://www.1968services.tw/roadcondition";
-  const highwayCacheUrl = "./data/highway-messages.json";
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
@@ -32,7 +30,8 @@
     "maintenance_notifications",
     "personal_messages",
     "payment_notices",
-    "calendar_events"
+    "calendar_events",
+    "marquee_messages"
   ];
 
   const labels = {
@@ -53,7 +52,6 @@
     payments: "M4 7h16v10H4V7Zm2 3h12M7 14h4",
     messages: "M4 5h16v11H8l-4 3V5Zm4 5h8M8 13h5",
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
-    highway: "M8 20 11 4h2l3 16M5 12h14M9 8h6M8.5 16h7",
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
   };
@@ -63,7 +61,7 @@
       { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", fleet_name: "亞菲得車隊", license_expiry: "2027-12-31", notes: "示範司機" }
     ],
     vehicles: [
-      { id: uid(), plate_no: "ABC-1234", brand: "Toyota", model: "Altis", year: "2022", fleet_name: "亞菲得車隊", status: "正常", current_driver_id: "", notes: "示範車輛" }
+      { id: uid(), plate_no: "ABC-1234", brand: "Toyota", model: "Altis", year: "2022", fleet_name: "亞菲得車隊", status: "正常", current_driver_id: "", insurance_company: "示範保險", insurance_expiry: "2027-12-31", last_inspection_date: "", next_inspection_date: "", last_self_inspection_date: "", notes: "示範車輛" }
     ],
     maintenance_records: [],
     announcements: [
@@ -73,7 +71,8 @@
     maintenance_notifications: [],
     personal_messages: [],
     payment_notices: [],
-    calendar_events: []
+    calendar_events: [],
+    marquee_messages: []
   };
 
   function uid() {
@@ -140,7 +139,7 @@
     const result = {};
     for (const table of tables) {
       const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
-      if (error && table === "calendar_events") {
+      if (error && ["calendar_events", "marquee_messages"].includes(table)) {
         result[table] = [];
         continue;
       }
@@ -253,10 +252,24 @@
             <button class="ghost-btn" data-action="logout">登出</button>
           </div>
         </header>
+        ${!state.admin ? renderMarquee() : ""}
         <main class="main">${content}</main>
       </div>
     `;
     loadAirportWeather();
+  }
+
+  function activeMarqueeMessages() {
+    return (state.data.marquee_messages || [])
+      .filter((item) => item.active !== false && item.message)
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }
+
+  function renderMarquee() {
+    const messages = activeMarqueeMessages();
+    if (!messages.length) return "";
+    const text = messages.map((item) => escapeHtml(item.message)).join("　　｜　　");
+    return `<div class="marquee-alert"><div class="marquee-track"><span>${text}</span><span>${text}</span></div></div>`;
   }
 
   function renderLogin() {
@@ -296,13 +309,12 @@
       layout(`
         <div class="dashboard-grid">
           ${feature("announcements", "公佈欄", "查看最新公告", unread)}
+          ${feature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
           ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
-          ${feature("emergency", "緊急通知", "待開發", 0)}
-          ${feature("highway", "國道資訊", "即時路況事件", 0)}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
-          ${feature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
+          ${feature("emergency", "緊急通知", "待開發", 0)}
         </div>
       `);
       return;
@@ -314,12 +326,10 @@
       payments: () => driverTaskList("payment_notices", "繳費中心"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       emergency: driverEmergency,
-      highway: driverHighway,
       flights: driverFlights,
       calendar: () => renderCalendar(false)
     };
     layout(views[state.view]());
-    if (state.view === "highway") loadHighway();
     if (state.view === "flights") loadFlights();
   }
 
@@ -450,21 +460,6 @@
     return `${pageHeader("緊急通知")}<div class="panel">此功能待開發。</div>`;
   }
 
-  function driverHighway() {
-    return `
-      ${pageHeader("國道資訊")}
-      <div class="panel">
-        <div class="toolbar actionbar">
-          <button class="primary-btn icon-text-btn" data-action="load-highway">${iconSvg("M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5")}<span>重新整理</span></button>
-          <a class="ghost-btn" href="${highwayUrl}" target="_blank" rel="noreferrer">官方路況</a>
-        </div>
-        <div id="highwayList" class="luxury-card-mesh highway-grid">
-          <div class="empty">載入國道路況中...</div>
-        </div>
-      </div>
-    `;
-  }
-
   function driverFlights() {
     return `
       ${pageHeader("航班資訊")}
@@ -504,11 +499,12 @@
       const value = localDateValue(date);
       const events = calendarItems(isAdmin).filter((item) => item.event_date === value);
       days.push(`
-        <div class="calendar-cell ${date.getMonth() === month ? "" : "outside"} ${value === today() ? "today" : ""}">
+        <div class="calendar-cell ${date.getMonth() === month ? "" : "outside"} ${value === today() ? "today" : ""}" data-calendar-cell-date="${value}">
           <button class="calendar-day-button" data-calendar-date="${value}" ${isAdmin ? 'title="新增此日行程"' : 'title="查看此日行程"'}>
             <span>${date.getDate()}</span>
             ${isAdmin ? `<small>+</small>` : ""}
           </button>
+          ${events.length ? `<span class="calendar-count">${events.length}</span>` : ""}
           <div class="calendar-events">
             ${events.map((item) => isAdmin
               ? `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}" data-modal="calendarEvent" data-id="${item.id}">${escapeHtml(item.plate_no)}</button>`
@@ -579,12 +575,13 @@
     const nav = [
       ["drivers", "駕駛管理"],
       ["vehicles", "車輛管理"],
+      ["calendar", "共同行事曆"],
       ["maintenanceRecords", "保養管理"],
       ["maintenanceNotifications", "保養通知"],
       ["announcements", "公告管理"],
       ["personalMessages", "個人訊息"],
       ["payments", "繳費通知"],
-      ["calendar", "共同行事曆"]
+      ["marquee", "跑馬燈通知"]
     ];
     const body = {
       drivers: adminDrivers,
@@ -594,7 +591,8 @@
       announcements: adminAnnouncements,
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
       payments: () => adminTaskManager("payment_notices", "繳費通知"),
-      calendar: () => renderCalendar(true)
+      calendar: () => renderCalendar(true),
+      marquee: adminMarquee
     }[state.adminView]();
 
     layout(`
@@ -619,8 +617,30 @@
   function adminVehicles() {
     return `
       <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-      ${table(["車牌", "車隊", "廠牌", "型號", "年份", "狀態", "目前駕駛", "備註", "操作"], state.data.vehicles.map((v) => [
-        v.plate_no, v.fleet_name || "亞菲得車隊", v.brand || "", v.model || "", v.year || "", statusBadge(v.status), driverName(v.current_driver_id), v.notes || "", rowActions("vehicle", "vehicles", v.id)
+      ${table(["車牌", "車隊", "狀態", "目前駕駛", "保險公司", "保險到期日", "上次檢驗", "下次檢驗", "上次自檢", "備註", "操作"], state.data.vehicles.map((v) => [
+        v.plate_no,
+        v.fleet_name || "亞菲得車隊",
+        statusBadge(v.status),
+        driverName(v.current_driver_id),
+        v.insurance_company || "",
+        fmtDate(v.insurance_expiry),
+        fmtDate(v.last_inspection_date),
+        fmtDate(v.next_inspection_date),
+        fmtDate(v.last_self_inspection_date),
+        v.notes || "",
+        rowActions("vehicle", "vehicles", v.id)
+      ]))}
+    `;
+  }
+
+  function adminMarquee() {
+    return `
+      <div class="section-head"><h2>跑馬燈通知</h2><button class="primary-btn" data-modal="marqueeMessage">新增通知</button></div>
+      ${table(["通知內容", "狀態", "建立日期", "操作"], (state.data.marquee_messages || []).map((item) => [
+        item.message || "",
+        item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
+        fmtDate(item.created_at),
+        rowActions("marqueeMessage", "marquee_messages", item.id)
       ]))}
     `;
   }
@@ -692,7 +712,8 @@
       maintenanceNotification: ["保養通知", "maintenance_notifications", maintenanceNotificationForm],
       personalMessage: ["個人訊息", "personal_messages", personalMessageForm],
       paymentNotice: ["繳費通知", "payment_notices", paymentNoticeForm],
-      calendarEvent: ["行程", "calendar_events", calendarEventForm]
+      calendarEvent: ["行程", "calendar_events", calendarEventForm],
+      marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm]
     };
     const [title, tableName, formFn] = map[type];
     const item = id ? state.data[tableName].find((row) => row.id === id) : preset;
@@ -739,6 +760,7 @@
       record.driver_id = record.driver_id || null;
       record.event_time = record.event_time || null;
     }
+    if (tableName === "marquee_messages") record.active = record.active === "true";
     if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
     if (tableName === "maintenance_records") {
       record.cost = Number(record.cost || 0);
@@ -757,6 +779,10 @@
 
   function select(name, label, value, options) {
     return `<div class="field"><label>${label}</label><select name="${name}">${options.map(([v, t]) => `<option value="${escapeHtml(v)}" ${value === v ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select></div>`;
+  }
+
+  function checkbox(name, label, checked = true) {
+    return `<div class="field"><label class="check-field"><input type="hidden" name="${name}" value="false"><input name="${name}" type="checkbox" value="true" ${checked ? "checked" : ""}>${label}</label></div>`;
   }
 
   function driverOptions(value) {
@@ -782,6 +808,11 @@
     return input("plate_no", "車牌", v.plate_no, "text", true) + input("brand", "廠牌", v.brand) +
       input("model", "型號", v.model) + input("year", "年份", v.year, "number") +
       fleetOptions("fleet_name", "車隊", v.fleet_name) +
+      input("insurance_company", "保險公司", v.insurance_company) +
+      input("insurance_expiry", "保險到期日", formDate(v.insurance_expiry), "date") +
+      input("last_inspection_date", "上次檢驗日期", formDate(v.last_inspection_date), "date") +
+      input("next_inspection_date", "下次檢驗日期", formDate(v.next_inspection_date), "date") +
+      input("last_self_inspection_date", "上次自檢日", formDate(v.last_self_inspection_date), "date") +
       select("status", "狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s])) +
       select("current_driver_id", "目前駕駛", v.current_driver_id || "", [["", "未指定"], ...state.data.drivers.map((d) => [d.id, d.name])]) +
       text("notes", "備註", v.notes);
@@ -829,6 +860,10 @@
       text("content", "內容", item.content);
   }
 
+  function marqueeMessageForm(item) {
+    return text("message", "紅色跑馬燈通知內容", item.message) + checkbox("active", "啟用通知", item.active !== false);
+  }
+
   async function syncCalendarNotification(item) {
     if (!["maintenance", "tires"].includes(item.event_type) || !item.driver_id) return;
     const vehicle = state.data.vehicles.find((row) => String(row.plate_no).toUpperCase() === String(item.plate_no).toUpperCase());
@@ -874,38 +909,6 @@
     state.view = "home";
     saveSession("driver", driver.id);
     render();
-  }
-
-  async function loadHighway() {
-    const box = document.getElementById("highwayList");
-    if (!box) return;
-    box.innerHTML = `<div class="empty">載入國道路況中...</div>`;
-    const urls = [cfg.HIGHWAY_EVENTS_URL, highwayCacheUrl].filter(Boolean);
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, { cache: "no-store" });
-        const type = res.headers.get("content-type") || "";
-        const payload = type.includes("application/json") ? await res.json() : await res.text();
-        const items = Array.isArray(payload) ? payload : (payload.data || payload.Events || payload.LiveTraffics || []);
-        if (items.length) {
-          box.innerHTML = items.slice(0, 12).map((x) => `
-            <article class="modern-luxury-item highway-card">
-              <div class="lux-item-top">
-                <div class="lux-item-title-group">
-                  <div class="lux-item-title">${escapeHtml(x.RoadName || x.roadName || x.title || "國道資訊看板")}</div>
-                  <div class="lux-item-meta">${escapeHtml(x.updateTime || x.PublishTime || "")}</div>
-                </div>
-              </div>
-              <div class="lux-item-body">${escapeHtml(x.Description || x.description || x.content || x.Message || JSON.stringify(x))}</div>
-            </article>
-          `).join("");
-          return;
-        }
-      } catch {
-        // Try the next configured source, then show the official fallback link.
-      }
-    }
-    box.innerHTML = `<div class="empty">高公局資料同步準備中，請稍後重新整理，或點「官方路況」查看即時頁面。</div>`;
   }
 
   async function loadAirportWeather() {
@@ -997,7 +1000,26 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
-    if (!target) return;
+    const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
+    if (!target && !cellDate) return;
+    if (target?.dataset.modal) {
+      openModal(target.dataset.modal, target.dataset.id);
+      return;
+    }
+    if (target?.dataset.delete) {
+      const [tableName, id] = target.dataset.delete.split(":");
+      await remove(tableName, id);
+      return;
+    }
+    if (target?.dataset.closeModal !== undefined) {
+      target.closest(".modal-backdrop").remove();
+      return;
+    }
+    if (!target && cellDate) {
+      if (state.admin) openModal("calendarEvent", null, { event_date: cellDate });
+      else openCalendarDay(cellDate);
+      return;
+    }
     if (target.dataset.mode) {
       state.mode = target.dataset.mode;
       state.error = "";
@@ -1033,6 +1055,11 @@
       else openCalendarDay(target.dataset.calendarDate);
       return;
     }
+    if (cellDate) {
+      if (state.admin) openModal("calendarEvent", null, { event_date: cellDate });
+      else openCalendarDay(cellDate);
+      return;
+    }
     if (target.dataset.readAnn) {
       if (!isAnnouncementRead(target.dataset.readAnn)) {
         await insert("announcement_reads", { announcement_id: target.dataset.readAnn, driver_id: state.user.id });
@@ -1044,13 +1071,6 @@
       await update(tableName, id, { status });
       render();
     }
-    if (target.dataset.modal) openModal(target.dataset.modal, target.dataset.id);
-    if (target.dataset.delete) {
-      const [tableName, id] = target.dataset.delete.split(":");
-      await remove(tableName, id);
-    }
-    if (target.dataset.closeModal !== undefined) target.closest(".modal-backdrop").remove();
-    if (target.dataset.action === "load-highway") loadHighway();
   });
 
   document.addEventListener("submit", async (e) => {

@@ -31,7 +31,6 @@ window.AFIDE_CONFIG = {
   SUPABASE_URL: "你的 Supabase Project URL",
   SUPABASE_ANON_KEY: "你的 anon public key",
   ADMIN_PIN: "請改成自己的後台 PIN",
-  HIGHWAY_EVENTS_URL: "",
   FLIGHT_INFO_URL: ""
 };
 ```
@@ -43,6 +42,11 @@ window.AFIDE_CONFIG = {
 ```sql
 alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.vehicles add column if not exists insurance_expiry date;
+alter table public.vehicles add column if not exists insurance_company text;
+alter table public.vehicles add column if not exists last_inspection_date date;
+alter table public.vehicles add column if not exists next_inspection_date date;
+alter table public.vehicles add column if not exists last_self_inspection_date date;
 alter table public.announcements add column if not exists target_fleet text not null default '全部車隊';
 alter table public.maintenance_notifications add column if not exists service_time time;
 
@@ -68,6 +72,19 @@ create policy "demo write calendar events" on public.calendar_events for all usi
 
 alter table public.calendar_events add column if not exists vendor text;
 alter table public.calendar_events add column if not exists maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null;
+
+create table if not exists public.marquee_messages (
+  id uuid primary key default gen_random_uuid(),
+  message text not null,
+  active boolean not null default true,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.marquee_messages enable row level security;
+drop policy if exists "demo read marquee messages" on public.marquee_messages;
+drop policy if exists "demo write marquee messages" on public.marquee_messages;
+create policy "demo read marquee messages" on public.marquee_messages for select using (true);
+create policy "demo write marquee messages" on public.marquee_messages for all using (true) with check (true);
 ```
 
 行事曆中建立或編輯「保養」及「調胎」行程並指定駕駛時，系統會自動同步一筆保養通知給該駕駛；後續修改同一行程會更新原通知。
@@ -80,28 +97,6 @@ alter table public.calendar_events add column if not exists maintenance_notifica
 4. Source 選 `Deploy from a branch`。
 5. Branch 選 `main`，資料夾選 `/root`。
 6. 儲存後等待 GitHub Pages 產生網址，通常會是 `https://你的帳號.github.io/heycar/`。
-
-## 國道資訊串接
-
-網站已內附由高公局 `CMSLive.xml` 產生的 `data/highway-messages.json` 顯示資料。因官方 XML 沒有開放瀏覽器跨網域存取，且會阻擋 GitHub Actions runner，若要自動取得即時內容，請部署隨附的 Supabase Edge Function：
-
-官方資料來源：https://tisvcloud.freeway.gov.tw/history/motc20/CMSLive.xml
-
-1. 安裝 Supabase CLI 並登入。
-2. 將本專案連結到你的 Supabase project。
-3. 部署函式：
-
-```powershell
-supabase functions deploy highway-events --no-verify-jwt
-```
-
-4. 將 `config.example.js` 的 `HIGHWAY_EVENTS_URL` 設為：
-
-```js
-HIGHWAY_EVENTS_URL: "https://你的專案.supabase.co/functions/v1/highway-events"
-```
-
-前台會優先讀取 Edge Function 的即時資料；未設定時仍會顯示內附的官方快取資料。
 
 ## 天氣與航班資訊
 
