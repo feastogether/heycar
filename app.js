@@ -216,6 +216,22 @@
     return String(value).slice(0, 10);
   }
 
+  function expiryDateBadge(value) {
+    if (!value) return "-";
+    const dateText = fmtDate(value);
+    const target = new Date(`${dateText}T00:00:00`);
+    if (Number.isNaN(target.getTime())) return escapeHtml(dateText);
+    const todayDate = new Date(`${today()}T00:00:00`);
+    const daysLeft = Math.ceil((target - todayDate) / 86400000);
+    if (daysLeft < 0) {
+      return `<span class="expiry-badge expired">${escapeHtml(dateText)}<small>已過期</small></span>`;
+    }
+    if (daysLeft <= 10) {
+      return `<span class="expiry-badge urgent">${escapeHtml(dateText)}<small>${daysLeft === 0 ? "今天到期" : `${daysLeft} 天內到期`}</small></span>`;
+    }
+    return `<span class="expiry-badge normal">${escapeHtml(dateText)}</span>`;
+  }
+
   function formDate(value) {
     return value ? String(value).slice(0, 10) : "";
   }
@@ -609,7 +625,7 @@
     return `
       <div class="section-head"><h2>駕駛管理</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
       ${table(["姓名", "車隊", "身分證", "手機", "駕照到期日", "備註", "操作"], state.data.drivers.map((d) => [
-        d.name, d.fleet_name || "亞菲得車隊", d.national_id, d.phone, fmtDate(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)
+        d.name, d.fleet_name || "亞菲得車隊", d.national_id, d.phone, expiryDateBadge(d.license_expiry), d.notes || "", rowActions("driver", "drivers", d.id)
       ]))}
     `;
   }
@@ -623,7 +639,7 @@
         statusBadge(v.status),
         driverName(v.current_driver_id),
         v.insurance_company || "",
-        fmtDate(v.insurance_expiry),
+        expiryDateBadge(v.insurance_expiry),
         fmtDate(v.last_inspection_date),
         fmtDate(v.next_inspection_date),
         fmtDate(v.last_self_inspection_date),
