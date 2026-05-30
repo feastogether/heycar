@@ -113,6 +113,13 @@ drop policy if exists "demo read flight tracks" on public.flight_tracks;
 drop policy if exists "demo write flight tracks" on public.flight_tracks;
 create policy "demo read flight tracks" on public.flight_tracks for select using (true);
 create policy "demo write flight tracks" on public.flight_tracks for all using (true) with check (true);
+
+create table if not exists public.flight_live_cache (
+  cache_key text primary key,
+  payload jsonb not null,
+  updated_at timestamptz default now()
+);
+alter table public.flight_live_cache enable row level security;
 ```
 
 行事曆中建立或編輯「保養」及「調胎」行程並指定駕駛時，系統會自動同步一筆保養通知給該駕駛；後續修改同一行程會更新原通知。
@@ -121,7 +128,7 @@ create policy "demo write flight tracks" on public.flight_tracks for all using (
 
 開啟 `onair.html` 可進入獨立即時看板。司機在前台「航班資訊」查詢航班後按「追蹤航班」，看板會顯示追蹤航班、目前抵達航班與直播來源。語音通知需要先在看板右上角按「啟用語音通知」。航班降落播報兩次後，追蹤項目會自動下架。
 
-TDX 基礎會員方案的官方限制為 3 點/月、5 次/分/金鑰。看板目前集中每 60 秒讀取一次桃園抵達航班，再用同一批資料更新全部追蹤航班；Edge Function 另有約 55 秒快取，避免多個查詢重複打 TDX。若 24 小時常駐，每月至少會有數萬次即時航班讀取量，建議升級 TDX 付費方案或改成後端排程集中同步。
+TDX 基礎會員方案的官方限制為 3 點/月、5 次/分/金鑰。看板現在每 15 秒讀取自己的 `flight-cache` Edge Function；Edge Function 只會在快取超過約 2 分鐘時打一次 TDX，並把結果存入 `flight_live_cache`。多台看板同時開啟時，TDX 用量仍會集中在後端快取，不會按看板數量倍增。若 24 小時常駐，每 2 分鐘同步約為每天 720 次、每月約 21,600 次，仍建議依實際用量升級 TDX 方案或改為更低頻率。
 
 ## GitHub Pages 部署
 

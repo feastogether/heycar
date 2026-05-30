@@ -142,6 +142,12 @@ create table if not exists public.flight_tracks (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.flight_live_cache (
+  cache_key text primary key,
+  payload jsonb not null,
+  updated_at timestamptz default now()
+);
+
 -- Existing projects can run these migrations safely after deploying new frontend fields.
 alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
@@ -166,6 +172,7 @@ alter table public.payment_notices enable row level security;
 alter table public.calendar_events enable row level security;
 alter table public.marquee_messages enable row level security;
 alter table public.flight_tracks enable row level security;
+alter table public.flight_live_cache enable row level security;
 
 -- Prototype policy for GitHub Pages demo. For production, replace with Supabase Auth
 -- or Edge Functions so admin writes are protected server-side.

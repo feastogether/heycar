@@ -66,3 +66,11 @@ on public.flight_tracks
 for all
 using (true)
 with check (true);
+
+create table if not exists public.flight_live_cache (
+  cache_key text primary key,
+  payload jsonb not null,
+  updated_at timestamptz default now()
+);
+
+alter table public.flight_live_cache enable row level security;

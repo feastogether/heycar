@@ -53,7 +53,7 @@
     });
     tickClock();
     refreshAll();
-    timer = window.setInterval(refreshAll, 60000);
+    timer = window.setInterval(refreshAll, 15000);
     window.setInterval(tickClock, 1000);
   }
 
@@ -76,8 +76,26 @@
   }
 
   async function refreshAll() {
-    const arrivals = await loadArrivals();
-    await loadTracked(arrivals);
+    const board = await loadBoardCache();
+    const arrivals = renderArrivals(board.flights || []);
+    await loadTracked(board.tracks || [], arrivals);
+  }
+
+  async function loadBoardCache() {
+    if (cfg.FLIGHT_CACHE_URL) {
+      try {
+        const response = await fetch(cfg.FLIGHT_CACHE_URL, { cache: "no-store" });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "航班快取服務異常");
+        return {
+          flights: readFlights(payload),
+          tracks: payload.tracks || []
+        };
+      } catch {
+        // Fall back to direct flight API below.
+      }
+    }
+    return { flights: await loadArrivals(), tracks: await readTrackedRows() };
   }
 
   async function loadArrivals() {
@@ -90,23 +108,26 @@
       url.searchParams.set("direction", "arrival");
       const response = await fetch(url, { cache: "no-store" });
       const payload = await response.json();
-      const flights = readFlights(payload)
-        .map((flight) => normalizeFlight(flight, "arrival"))
-        .filter((flight) => shouldShowArrival(flight))
-        .sort((a, b) => flightTimeValue(a) - flightTimeValue(b))
-        .slice(0, 10);
-      arrivalList.innerHTML = flights.length ? flights.map(renderArrival).join("") : `<div class="empty">目前沒有抵達航班資料</div>`;
-      return flights;
+      return readFlights(payload);
     } catch {
       arrivalList.innerHTML = `<div class="empty">抵達航班讀取失敗，稍後會自動重試</div>`;
       return [];
     }
   }
 
-  async function loadTracked(arrivals = []) {
-    const tracks = await readTrackedRows();
+  function renderArrivals(items) {
+    const flights = items
+      .map((flight) => normalizeFlight(flight, "arrival"))
+      .filter((flight) => shouldShowArrival(flight))
+      .sort((a, b) => flightTimeValue(a) - flightTimeValue(b))
+      .slice(0, 10);
+    arrivalList.innerHTML = flights.length ? flights.map(renderArrival).join("") : `<div class="empty">目前沒有抵達航班資料</div>`;
+    return flights;
+  }
+
+  async function loadTracked(tracks = [], arrivals = []) {
     const refreshed = [];
-    for (const track of tracks) {
+    for (const track of tracks.map(rowToFlight)) {
       const next = refreshTrackFromArrivals(track, arrivals);
       if (!next.announced) refreshed.push(next);
     }
@@ -164,6 +185,17 @@
   }
 
   async function removeTrack(flight) {
+    if (cfg.FLIGHT_CACHE_URL) {
+      try {
+        await fetch(cfg.FLIGHT_CACHE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "landed", id: flight.id })
+        });
+      } catch {
+        // Try direct database fallback below.
+      }
+    }
     if (db) {
       try {
         await db.from("flight_tracks").update({
@@ -188,6 +220,7 @@
   }
 
   function rowToFlight(row) {
+    if (row.flightNo) return row;
     return {
       ...(row.payload || {}),
       id: row.id,

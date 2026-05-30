@@ -1064,6 +1064,20 @@
 
   async function trackFlight(encoded) {
     const flight = JSON.parse(decodeURIComponent(encoded));
+    if (cfg.FLIGHT_CACHE_URL) {
+      try {
+        const response = await fetch(cfg.FLIGHT_CACHE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "track", flight: { ...flight, driverId: state.user?.id || null } })
+        });
+        if (!response.ok) throw new Error("track failed");
+        alert(`${flight.flightNo} 已加入 onair.html 資訊看板追蹤`);
+        return;
+      } catch {
+        // Keep a same-browser fallback if the cache function is not ready.
+      }
+    }
     const row = {
       id: flight.id,
       driver_id: state.user?.id || null,
