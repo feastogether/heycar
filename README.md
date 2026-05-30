@@ -128,6 +128,8 @@ alter table public.flight_live_cache enable row level security;
 
 開啟 `onair.html` 可進入獨立即時看板。司機在前台「航班資訊」查詢航班後按「追蹤航班」，看板會顯示追蹤航班、目前抵達航班與直播來源。語音通知需要先在看板右上角按「啟用語音通知」。航班降落播報兩次後，追蹤項目會自動下架。
 
+直播來源目前使用可被 iframe 載入的頁面來源：TaiwanPlus、民視新聞、France 24；桃園機場官網保留為外開備援。若第三方直播頁調整嵌入政策，可在 `onair.js` 的 `sources` 更新來源。
+
 TDX 基礎會員方案的官方限制為 3 點/月、5 次/分/金鑰。看板現在每 15 秒讀取自己的 `flight-cache` Edge Function；Edge Function 只會在快取超過約 2 分鐘時打一次 TDX，並把結果存入 `flight_live_cache`。多台看板同時開啟時，TDX 用量仍會集中在後端快取，不會按看板數量倍增。若 24 小時常駐，每 2 分鐘同步約為每天 720 次、每月約 21,600 次，仍建議依實際用量升級 TDX 方案或改為更低頻率。
 
 ## GitHub Pages 部署

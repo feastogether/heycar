@@ -5,25 +5,20 @@
     : null;
 
   const sources = {
-    global: {
-      label: "寰宇新聞",
-      type: "youtube",
-      url: "https://www.youtube-nocookie.com/embed/live_stream?channel=UCp2f7tGJGN6R9Muxipem8Nw&autoplay=1&mute=1&playsinline=1"
+    taiwanplus: {
+      label: "TaiwanPlus",
+      type: "embed",
+      url: "https://www.cxtvlive.com/live-tv/taiwan-plus"
     },
-    tvbs: {
-      label: "TVBS NEWS",
-      type: "page",
-      url: "https://news.tvbs.com.tw/live/news4live/19982"
-    },
-    ftv: {
+    ftvnews: {
       label: "民視新聞",
-      type: "page",
-      url: "https://www.ftvnews.com.tw/live"
+      type: "embed",
+      url: "https://isuper.tv/ftv-news-live/"
     },
-    cts: {
-      label: "華視新聞",
-      type: "page",
-      url: "https://news.cts.com.tw/live/"
+    france24: {
+      label: "France 24",
+      type: "embed",
+      url: "https://www.mangolinkworld.com/webcams/news/france-24-english.html"
     },
     airport: {
       label: "桃園機場官網",
@@ -43,7 +38,7 @@
 
   function init() {
     sourceSelect.innerHTML = Object.entries(sources).map(([key, source]) => `<option value="${key}">${source.label}</option>`).join("");
-    setSource(localStorage.getItem("afide-onair-source") || "global");
+    setSource(localStorage.getItem("afide-onair-source") || "taiwanplus");
     sourceSelect.addEventListener("change", () => setSource(sourceSelect.value));
     document.getElementById("refreshBtn").addEventListener("click", refreshAll);
     document.getElementById("enableVoice").addEventListener("click", () => {
@@ -58,10 +53,10 @@
   }
 
   function setSource(key) {
-    const source = sources[key] || sources.global;
-    sourceSelect.value = sources[key] ? key : "global";
-    liveMount.innerHTML = source.type === "youtube"
-      ? `<iframe class="news-frame" src="${source.url}" title="${source.label}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`
+    const source = sources[key] || sources.taiwanplus;
+    sourceSelect.value = sources[key] ? key : "taiwanplus";
+    liveMount.innerHTML = source.type === "embed"
+      ? `<iframe class="news-frame" src="${source.url}" title="${source.label}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`
       : `<div class="source-card"><strong>${source.label}</strong><p>此來源若無法被嵌入，請用新分頁開啟觀看。</p><a href="${source.url}" target="_blank" rel="noreferrer">開啟直播來源</a></div>`;
     localStorage.setItem("afide-onair-source", sourceSelect.value);
   }
@@ -296,10 +291,11 @@
   }
 
   function shouldShowArrival(flight) {
-    if (!isLanded(flight)) return true;
-    const actual = Date.parse(flight.actualTime || "");
-    if (Number.isNaN(actual)) return false;
-    return Date.now() - actual < 2 * 60 * 60 * 1000;
+    if (isLanded(flight)) return false;
+    const time = Date.parse(flight.estimatedTime || flight.scheduledTime || "");
+    if (Number.isNaN(time)) return true;
+    const diff = time - Date.now();
+    return diff > -15 * 60 * 1000 && diff < 8 * 60 * 60 * 1000;
   }
 
   function flightTimeValue(flight) {
