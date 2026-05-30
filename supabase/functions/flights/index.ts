@@ -1,5 +1,81 @@
 const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const apiBase = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport";
+const cacheMs = 55_000;
+const flightCache = new Map<string, { ts: number; rows: Record<string, unknown>[] }>();
+
+const airlineNames: Record<string, string> = {
+  BR: "長榮航空",
+  CI: "中華航空",
+  JX: "星宇航空",
+  IT: "台灣虎航",
+  AE: "華信航空",
+  B7: "立榮航空",
+  CX: "國泰航空",
+  HX: "香港航空",
+  UO: "香港快運",
+  JL: "日本航空",
+  NH: "全日空",
+  MM: "樂桃航空",
+  GK: "捷星日本",
+  KE: "大韓航空",
+  OZ: "韓亞航空",
+  LJ: "真航空",
+  TW: "德威航空",
+  ZE: "易斯達航空",
+  BX: "釜山航空",
+  "7C": "濟州航空",
+  SQ: "新加坡航空",
+  TR: "酷航",
+  TG: "泰國航空",
+  VN: "越南航空",
+  VJ: "越捷航空",
+  PR: "菲律賓航空",
+  "5J": "宿霧太平洋航空",
+  MH: "馬來西亞航空",
+  D7: "亞洲航空",
+  UA: "聯合航空",
+  DL: "達美航空",
+  AC: "加拿大航空",
+  EK: "阿聯酋航空",
+  TK: "土耳其航空",
+  KL: "荷蘭皇家航空",
+  AY: "芬蘭航空"
+};
+
+const airportNames: Record<string, string> = {
+  KIX: "大阪關西",
+  NRT: "東京成田",
+  HND: "東京羽田",
+  NGO: "名古屋",
+  FUK: "福岡",
+  OKA: "沖繩",
+  CTS: "札幌新千歲",
+  ICN: "首爾仁川",
+  GMP: "首爾金浦",
+  PUS: "釜山",
+  HKG: "香港",
+  MFM: "澳門",
+  SIN: "新加坡",
+  BKK: "曼谷",
+  DMK: "曼谷廊曼",
+  SGN: "胡志明市",
+  HAN: "河內",
+  MNL: "馬尼拉",
+  CEB: "宿霧",
+  KUL: "吉隆坡",
+  PEN: "檳城",
+  CGK: "雅加達",
+  DPS: "峇里島",
+  SFO: "舊金山",
+  LAX: "洛杉磯",
+  SEA: "西雅圖",
+  YVR: "溫哥華",
+  YYZ: "多倫多",
+  DXB: "杜拜",
+  IST: "伊斯坦堡",
+  AMS: "阿姆斯特丹",
+  HEL: "赫爾辛基"
+};
 
 const headers = {
   "Access-Control-Allow-Origin": "*",
@@ -54,6 +130,35 @@ function taipeiDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
 }
 
+function localizedAirport(row: Record<string, unknown>, endpoint: string) {
+  const name = endpoint === "Departure"
+    ? firstValue(row, ["ArrivalAirportNameZh", "ArrivalAirportName", "DestinationAirportNameZh", "DestinationAirportName"])
+    : firstValue(row, ["DepartureAirportNameZh", "DepartureAirportName", "OriginAirportNameZh", "OriginAirportName"]);
+  const code = endpoint === "Departure"
+    ? firstValue(row, ["ArrivalAirportID", "DestinationAirportID"])
+    : firstValue(row, ["DepartureAirportID", "OriginAirportID"]);
+  return name || airportNames[code] || code;
+}
+
+function localizedAirline(row: Record<string, unknown>) {
+  const code = firstValue(row, ["AirlineID", "AirlineCode"]);
+  return firstValue(row, ["AirlineNameZh", "AirlineName", "AirlineNameEn"]) || airlineNames[code] || code;
+}
+
+async function readRows(endpoint: string, token: string) {
+  const hit = flightCache.get(endpoint);
+  const time = Date.now();
+  if (hit && time - hit.ts < cacheMs) return hit.rows;
+  const response = await fetch(`${apiBase}/${endpoint}/TPE?%24format=JSON`, {
+    headers: { Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error(`TDX 即時航班讀取失敗 (${response.status})。`);
+  const payload = await response.json();
+  const rows = Array.isArray(payload) ? payload : payload.Flights || [];
+  flightCache.set(endpoint, { ts: time, rows });
+  return rows;
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
   try {
@@ -61,12 +166,7 @@ Deno.serve(async (request) => {
     const query = (url.searchParams.get("q") || "").trim().toLowerCase();
     const endpoint = url.searchParams.get("direction") === "departure" ? "Departure" : "Arrival";
     const token = await tdxToken();
-    const response = await fetch(`${apiBase}/${endpoint}/TPE?%24format=JSON`, {
-      headers: { Authorization: `Bearer ${token}` }
-    });
-    if (!response.ok) throw new Error(`TDX 即時航班讀取失敗 (${response.status})。`);
-    const payload = await response.json();
-    const rows = Array.isArray(payload) ? payload : payload.Flights || [];
+    const rows = await readRows(endpoint, token);
     const today = taipeiDate();
     const flights = rows
       .filter((row: Record<string, unknown>) => {
@@ -77,9 +177,12 @@ Deno.serve(async (request) => {
       .slice(0, 20)
       .map((row: Record<string, unknown>) => ({
         flightNo: `${firstValue(row, ["AirlineID", "AirlineCode"])}${firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])}` || "-",
-        city: endpoint === "Departure"
-          ? firstValue(row, ["ArrivalAirportName", "ArrivalAirportID", "DestinationAirportName", "DestinationAirportID"])
-          : firstValue(row, ["DepartureAirportName", "DepartureAirportID", "OriginAirportName", "OriginAirportID"]),
+        city: localizedAirport(row, endpoint),
+        airportCode: endpoint === "Departure"
+          ? firstValue(row, ["ArrivalAirportID", "DestinationAirportID"])
+          : firstValue(row, ["DepartureAirportID", "OriginAirportID"]),
+        airline: localizedAirline(row),
+        airlineCode: firstValue(row, ["AirlineID", "AirlineCode"]),
         scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
         estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "ActualDepartureTime", "ActualArrivalTime", "EstimatedTime"]),
         actualTime: firstValue(row, ["ActualDepartureTime", "ActualArrivalTime", "ActualTime"]),

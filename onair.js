@@ -7,24 +7,33 @@
   const sources = {
     global: {
       label: "寰宇新聞",
-      url: "https://www.youtube.com/embed/live_stream?channel=UCp2f7tGJGN6R9Muxipem8Nw&autoplay=1&mute=1"
+      type: "youtube",
+      url: "https://www.youtube-nocookie.com/embed/live_stream?channel=UCp2f7tGJGN6R9Muxipem8Nw&autoplay=1&mute=1&playsinline=1"
     },
     tvbs: {
       label: "TVBS NEWS",
-      url: "https://www.youtube.com/embed/live_stream?channel=UC5nwNW4KdC0SzrhF9BXEYOQ&autoplay=1&mute=1"
+      type: "page",
+      url: "https://news.tvbs.com.tw/live/news4live/19982"
     },
     ftv: {
       label: "民視新聞",
-      url: "https://www.youtube.com/embed/live_stream?channel=UC2VmWn8dAqkzlQqvy02E1PA&autoplay=1&mute=1"
+      type: "page",
+      url: "https://www.ftvnews.com.tw/live"
     },
     cts: {
       label: "華視新聞",
-      url: "https://www.youtube.com/embed/live_stream?channel=UCDCJyLpbfgeVE9iZiEam-Kg&autoplay=1&mute=1"
+      type: "page",
+      url: "https://news.cts.com.tw/live/"
+    },
+    airport: {
+      label: "桃園機場官網",
+      type: "page",
+      url: "https://www.taoyuan-airport.com/"
     }
   };
 
   const sourceSelect = document.getElementById("sourceSelect");
-  const liveFrame = document.getElementById("liveFrame");
+  const liveMount = document.getElementById("liveMount");
   const arrivalList = document.getElementById("arrivalList");
   const trackedList = document.getElementById("trackedList");
   const trackCount = document.getElementById("trackCount");
@@ -51,7 +60,9 @@
   function setSource(key) {
     const source = sources[key] || sources.global;
     sourceSelect.value = sources[key] ? key : "global";
-    liveFrame.src = source.url;
+    liveMount.innerHTML = source.type === "youtube"
+      ? `<iframe class="news-frame" src="${source.url}" title="${source.label}" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>`
+      : `<div class="source-card"><strong>${source.label}</strong><p>此來源若無法被嵌入，請用新分頁開啟觀看。</p><a href="${source.url}" target="_blank" rel="noreferrer">開啟直播來源</a></div>`;
     localStorage.setItem("afide-onair-source", sourceSelect.value);
   }
 
@@ -65,7 +76,8 @@
   }
 
   async function refreshAll() {
-    await Promise.all([loadArrivals(), loadTracked()]);
+    const arrivals = await loadArrivals();
+    await loadTracked(arrivals);
   }
 
   async function loadArrivals() {
@@ -78,18 +90,25 @@
       url.searchParams.set("direction", "arrival");
       const response = await fetch(url, { cache: "no-store" });
       const payload = await response.json();
-      const flights = readFlights(payload).slice(0, 10).map((flight) => normalizeFlight(flight, "arrival"));
+      const flights = readFlights(payload)
+        .map((flight) => normalizeFlight(flight, "arrival"))
+        .filter((flight) => shouldShowArrival(flight))
+        .sort((a, b) => flightTimeValue(a) - flightTimeValue(b))
+        .slice(0, 10);
       arrivalList.innerHTML = flights.length ? flights.map(renderArrival).join("") : `<div class="empty">目前沒有抵達航班資料</div>`;
+      return flights;
     } catch {
       arrivalList.innerHTML = `<div class="empty">抵達航班讀取失敗，稍後會自動重試</div>`;
+      return [];
     }
   }
 
-  async function loadTracked() {
+  async function loadTracked(arrivals = []) {
     const tracks = await readTrackedRows();
     const refreshed = [];
     for (const track of tracks) {
-      refreshed.push(await refreshTrack(track));
+      const next = refreshTrackFromArrivals(track, arrivals);
+      if (!next.announced) refreshed.push(next);
     }
     trackCount.textContent = `${refreshed.length} 架`;
     trackedList.innerHTML = refreshed.length ? refreshed.map(renderTracked).join("") : `<div class="empty">尚未追蹤航班。請回司機前台的航班資訊查詢後點選追蹤。</div>`;
@@ -112,25 +131,17 @@
     }
   }
 
-  async function refreshTrack(track) {
-    if (!cfg.FLIGHT_INFO_URL || !track.flightNo) return track;
-    try {
-      const url = new URL(cfg.FLIGHT_INFO_URL);
-      url.searchParams.set("direction", track.direction || "arrival");
-      url.searchParams.set("q", track.flightNo);
-      const response = await fetch(url, { cache: "no-store" });
-      const payload = await response.json();
-      const match = readFlights(payload).map((flight) => normalizeFlight(flight, track.direction || "arrival")).find((flight) => flight.flightNo === track.flightNo);
-      const next = match ? { ...track, ...match, announced: track.announced } : track;
-      if (!next.announced && isLanded(next)) {
-        next.announced = true;
-        announceLanding(next);
-      }
-      await saveTrack(next);
+  function refreshTrackFromArrivals(track, arrivals) {
+    const match = arrivals.find((flight) => flight.flightNo === track.flightNo);
+    const next = match ? { ...track, ...match, announced: track.announced } : track;
+    if (!next.announced && isLanded(next)) {
+      next.announced = true;
+      announceLanding(next);
+      removeTrack(next);
       return next;
-    } catch {
-      return track;
     }
+    saveTrack(next);
+    return next;
   }
 
   async function saveTrack(flight) {
@@ -149,6 +160,26 @@
       }).eq("id", flight.id);
     } catch {
       // Keep the board running even when database writes are unavailable.
+    }
+  }
+
+  async function removeTrack(flight) {
+    if (db) {
+      try {
+        await db.from("flight_tracks").update({
+          active: false,
+          announced: true,
+          updated_at: new Date().toISOString()
+        }).eq("id", flight.id);
+      } catch {
+        // Local fallback below.
+      }
+    }
+    try {
+      const local = JSON.parse(localStorage.getItem("afide-tracked-flights") || "[]").filter((item) => item.id !== flight.id);
+      localStorage.setItem("afide-tracked-flights", JSON.stringify(local));
+    } catch {
+      // Ignore malformed local cache.
     }
   }
 
@@ -183,6 +214,8 @@
       flightNo,
       city: flight.city || flight.destination || flight.origin || flight.City || "",
       airline: flight.airline || flight.airlineName || flight.AirlineName || "",
+      airlineCode: flight.airlineCode || "",
+      airportCode: flight.airportCode || "",
       status: flight.status || flight.Status || "航班資訊",
       scheduledTime: flight.scheduledTime || flight.ScheduledTime || "",
       estimatedTime: flight.estimatedTime || flight.EstimatedTime || "",
@@ -198,7 +231,7 @@
     return `
       <article class="arrival-row">
         <strong>${escapeHtml(flight.flightNo || "-")}</strong>
-        <span>${escapeHtml(flight.city || "-")}</span>
+        <span>${escapeHtml(displayRoute(flight))}</span>
         <em>${escapeHtml(flight.status || "-")}</em>
         <time>預計 ${escapeHtml(formatTime(flight.estimatedTime || flight.scheduledTime))}</time>
       </article>
@@ -213,7 +246,7 @@
           <strong>${escapeHtml(flight.flightNo || "-")}</strong>
           <span>${escapeHtml(landed ? "已降落" : flight.status || "-")}</span>
         </div>
-        <div class="tracked-route">${escapeHtml(flight.city || "-")} - 桃園</div>
+        <div class="tracked-route">${escapeHtml(flight.airline || flight.airlineCode || "")} ${escapeHtml(displayRoute(flight))} - 桃園</div>
         <dl class="tracked-meta">
           <div><dt>預計降落</dt><dd>${escapeHtml(formatTime(flight.estimatedTime || flight.scheduledTime))}</dd></div>
           <div><dt>實際時間</dt><dd>${escapeHtml(formatTime(flight.actualTime))}</dd></div>
@@ -227,6 +260,17 @@
   function isLanded(flight) {
     const text = `${flight.status || ""} ${flight.actualTime || ""}`.toLowerCase();
     return Boolean(flight.actualTime) || text.includes("已降落") || text.includes("抵達") || text.includes("arrived") || text.includes("landed");
+  }
+
+  function shouldShowArrival(flight) {
+    if (!isLanded(flight)) return true;
+    const actual = Date.parse(flight.actualTime || "");
+    if (Number.isNaN(actual)) return false;
+    return Date.now() - actual < 2 * 60 * 60 * 1000;
+  }
+
+  function flightTimeValue(flight) {
+    return Date.parse(flight.estimatedTime || flight.scheduledTime || flight.actualTime || "") || Number.MAX_SAFE_INTEGER;
   }
 
   function announceLanding(flight) {
@@ -274,6 +318,11 @@
   function formatTime(value) {
     if (!value) return "-";
     return String(value).replace("T", " ").slice(0, 16);
+  }
+
+  function displayRoute(flight) {
+    const city = flight.city || "-";
+    return flight.airportCode ? `${city} (${flight.airportCode})` : city;
   }
 
   function escapeHtml(value) {

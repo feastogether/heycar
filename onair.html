@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>亞菲得即時資訊看板</title>
-  <link rel="stylesheet" href="./onair.css?v=20260530-1">
+  <link rel="stylesheet" href="./onair.css?v=20260530-3">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
@@ -29,7 +29,7 @@
           <h1>即時直播</h1>
           <select id="sourceSelect" aria-label="切換直播來源"></select>
         </div>
-        <iframe id="liveFrame" title="即時直播" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+        <div id="liveMount" class="live-mount"></div>
       </section>
 
       <section class="panel arrival-panel">
@@ -55,6 +55,6 @@
   </div>
 
   <script src="./config.example.js?v=20260530-2"></script>
-  <script src="./onair.js?v=20260530-1"></script>
+  <script src="./onair.js?v=20260530-3"></script>
 </body>
 </html>

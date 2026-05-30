@@ -92,7 +92,9 @@ create table if not exists public.flight_tracks (
   flight_no text not null,
   direction text not null default 'arrival',
   city text,
+  airport_code text,
   airline text,
+  airline_code text,
   status text,
   scheduled_time timestamptz,
   estimated_time timestamptz,
@@ -117,7 +119,9 @@ create policy "demo write flight tracks" on public.flight_tracks for all using (
 
 ## 即時資訊看板
 
-開啟 `onair.html` 可進入獨立即時看板。司機在前台「航班資訊」查詢航班後按「追蹤航班」，看板會顯示追蹤航班、目前抵達航班與直播來源。語音通知需要先在看板右上角按「啟用語音通知」。
+開啟 `onair.html` 可進入獨立即時看板。司機在前台「航班資訊」查詢航班後按「追蹤航班」，看板會顯示追蹤航班、目前抵達航班與直播來源。語音通知需要先在看板右上角按「啟用語音通知」。航班降落播報兩次後，追蹤項目會自動下架。
+
+TDX 基礎會員方案的官方限制為 3 點/月、5 次/分/金鑰。看板目前集中每 60 秒讀取一次桃園抵達航班，再用同一批資料更新全部追蹤航班；Edge Function 另有約 55 秒快取，避免多個查詢重複打 TDX。若 24 小時常駐，每月至少會有數萬次即時航班讀取量，建議升級 TDX 付費方案或改成後端排程集中同步。
 
 ## GitHub Pages 部署
 

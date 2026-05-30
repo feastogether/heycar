@@ -79,6 +79,7 @@ button { cursor: pointer; }
 }
 .panel-head h1, .panel-head h2 { margin: 0; font-size: 22px; font-weight: 950; }
 .panel-head span { color: var(--muted); font-size: 13px; font-weight: 900; }
+.live-mount { width: 100%; }
 .news-frame, iframe {
   width: 100%;
   aspect-ratio: 16 / 9;
@@ -86,6 +87,28 @@ button { cursor: pointer; }
   border-radius: 10px;
   background: #111827;
   display: block;
+}
+.source-card {
+  aspect-ratio: 16 / 9;
+  display: grid;
+  place-content: center;
+  gap: 12px;
+  padding: 26px;
+  text-align: center;
+  border-radius: 10px;
+  background: #111827;
+  color: #fff;
+}
+.source-card strong { font-size: 24px; font-weight: 950; }
+.source-card p { margin: 0; color: #cbd5e1; }
+.source-card a {
+  justify-self: center;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--brand);
+  color: #fff;
+  font-weight: 900;
+  text-decoration: none;
 }
 
 .arrival-list, .tracked-list { display: grid; gap: 10px; }

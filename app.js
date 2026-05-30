@@ -1031,6 +1031,8 @@
       flightNo,
       city: flight.city || flight.destination || flight.origin || flight.City || "",
       airline: flight.airline || flight.airlineName || flight.AirlineName || "",
+      airlineCode: flight.airlineCode || "",
+      airportCode: flight.airportCode || "",
       status: flight.status || flight.Status || "航班資訊",
       scheduledTime: flight.scheduledTime || flight.ScheduledTime || "",
       estimatedTime: flight.estimatedTime || flight.EstimatedTime || "",
@@ -1076,6 +1078,8 @@
       terminal: flight.terminal,
       gate: flight.gate,
       baggage: flight.baggage,
+      airport_code: flight.airportCode,
+      airline_code: flight.airlineCode,
       payload: flight,
       active: true,
       announced: false
