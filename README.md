@@ -85,9 +85,39 @@ drop policy if exists "demo read marquee messages" on public.marquee_messages;
 drop policy if exists "demo write marquee messages" on public.marquee_messages;
 create policy "demo read marquee messages" on public.marquee_messages for select using (true);
 create policy "demo write marquee messages" on public.marquee_messages for all using (true) with check (true);
+
+create table if not exists public.flight_tracks (
+  id text primary key,
+  driver_id uuid references public.drivers(id) on delete set null,
+  flight_no text not null,
+  direction text not null default 'arrival',
+  city text,
+  airline text,
+  status text,
+  scheduled_time timestamptz,
+  estimated_time timestamptz,
+  actual_time timestamptz,
+  terminal text,
+  gate text,
+  baggage text,
+  payload jsonb,
+  active boolean not null default true,
+  announced boolean not null default false,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+alter table public.flight_tracks enable row level security;
+drop policy if exists "demo read flight tracks" on public.flight_tracks;
+drop policy if exists "demo write flight tracks" on public.flight_tracks;
+create policy "demo read flight tracks" on public.flight_tracks for select using (true);
+create policy "demo write flight tracks" on public.flight_tracks for all using (true) with check (true);
 ```
 
 行事曆中建立或編輯「保養」及「調胎」行程並指定駕駛時，系統會自動同步一筆保養通知給該駕駛；後續修改同一行程會更新原通知。
+
+## 即時資訊看板
+
+開啟 `onair.html` 可進入獨立即時看板。司機在前台「航班資訊」查詢航班後按「追蹤航班」，看板會顯示追蹤航班、目前抵達航班與直播來源。語音通知需要先在看板右上角按「啟用語音通知」。
 
 ## GitHub Pages 部署
 

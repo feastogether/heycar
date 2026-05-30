@@ -31,7 +31,8 @@
     "personal_messages",
     "payment_notices",
     "calendar_events",
-    "marquee_messages"
+    "marquee_messages",
+    "flight_tracks"
   ];
 
   const labels = {
@@ -72,7 +73,8 @@
     personal_messages: [],
     payment_notices: [],
     calendar_events: [],
-    marquee_messages: []
+    marquee_messages: [],
+    flight_tracks: []
   };
 
   function uid() {
@@ -139,7 +141,7 @@
     const result = {};
     for (const table of tables) {
       const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
-      if (error && ["calendar_events", "marquee_messages"].includes(table)) {
+      if (error && ["calendar_events", "marquee_messages", "flight_tracks"].includes(table)) {
         result[table] = [];
         continue;
       }
@@ -1002,6 +1004,9 @@
             ${flight.checkInCounter ? `<span><label>報到櫃台</label>${escapeHtml(flight.checkInCounter)}</span>` : ""}
           </div>
           <div class="flight-update">資料更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
+          <div class="lux-item-actions">
+            <button class="primary-btn" data-track-flight="${escapeHtml(encodeFlightTrack(flight, direction))}">追蹤航班</button>
+          </div>
         </article>
       `).join("") : `<div class="empty">查無符合的航班。</div>`;
     } catch (error) {
@@ -1012,6 +1017,85 @@
   function formatFlightTime(value) {
     if (!value) return "-";
     return String(value).replace("T", " ").slice(0, 16);
+  }
+
+  function encodeFlightTrack(flight, direction = "arrival") {
+    return encodeURIComponent(JSON.stringify(normalizeFlight(flight, direction)));
+  }
+
+  function normalizeFlight(flight, direction = "arrival") {
+    const flightNo = flight.flightNo || flight.flight_number || flight.FlightNo || "";
+    return {
+      id: `${direction}:${flightNo}`.toUpperCase(),
+      direction,
+      flightNo,
+      city: flight.city || flight.destination || flight.origin || flight.City || "",
+      airline: flight.airline || flight.airlineName || flight.AirlineName || "",
+      status: flight.status || flight.Status || "航班資訊",
+      scheduledTime: flight.scheduledTime || flight.ScheduledTime || "",
+      estimatedTime: flight.estimatedTime || flight.EstimatedTime || "",
+      actualTime: flight.actualTime || flight.ActualTime || "",
+      terminal: flight.terminal || flight.Terminal || "",
+      gate: flight.gate || "",
+      baggage: flight.baggage || "",
+      updateTime: flight.updateTime || now(),
+      announced: false
+    };
+  }
+
+  function trackedKey() {
+    return `afide-tracked-flights-${state.user?.id || "guest"}`;
+  }
+
+  function trackedFlights() {
+    try {
+      return JSON.parse(localStorage.getItem(trackedKey()) || "[]");
+    } catch {
+      return [];
+    }
+  }
+
+  function saveTrackedFlights(items) {
+    localStorage.setItem(trackedKey(), JSON.stringify(items));
+    localStorage.setItem("afide-tracked-flights", JSON.stringify(items));
+  }
+
+  async function trackFlight(encoded) {
+    const flight = JSON.parse(decodeURIComponent(encoded));
+    const row = {
+      id: flight.id,
+      driver_id: state.user?.id || null,
+      flight_no: flight.flightNo,
+      direction: flight.direction,
+      city: flight.city,
+      airline: flight.airline,
+      status: flight.status,
+      scheduled_time: flight.scheduledTime || null,
+      estimated_time: flight.estimatedTime || null,
+      actual_time: flight.actualTime || null,
+      terminal: flight.terminal,
+      gate: flight.gate,
+      baggage: flight.baggage,
+      payload: flight,
+      active: true,
+      announced: false
+    };
+    if (hasSupabase) {
+      try {
+        const { error } = await db.from("flight_tracks").upsert(row, { onConflict: "id" });
+        if (error) throw error;
+      } catch {
+        const items = trackedFlights().filter((item) => item.id !== flight.id);
+        items.unshift({ ...flight, trackedAt: now() });
+        saveTrackedFlights(items.slice(0, 12));
+      }
+    } else {
+      const items = trackedFlights().filter((item) => item.id !== flight.id);
+      items.unshift({ ...flight, trackedAt: now() });
+      saveTrackedFlights(items.slice(0, 12));
+    }
+    localStorage.setItem("afide-tracked-flights", JSON.stringify([flight, ...trackedFlights().filter((item) => item.id !== flight.id)].slice(0, 12)));
+    alert(`${flight.flightNo} 已加入 onair.html 資訊看板追蹤`);
   }
 
   document.addEventListener("click", async (e) => {
@@ -1086,6 +1170,9 @@
       const [tableName, id, status] = target.dataset.taskStatus.split(":");
       await update(tableName, id, { status });
       render();
+    }
+    if (target.dataset.trackFlight) {
+      await trackFlight(target.dataset.trackFlight);
     }
   });
 
