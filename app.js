@@ -503,6 +503,16 @@
           <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off">
           <button class="primary-btn" type="submit">查詢</button>
         </form>
+        <div class="flight-keyboard" aria-label="航班快速鍵盤">
+          <div class="keyboard-row airline-row">
+            ${["BR", "CI", "JX", "IT", "CX", "JL", "NH", "KE", "OZ", "SQ", "TR", "TG", "VN", "VJ", "PR", "5J", "CZ", "CA", "MU"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+          </div>
+          <div class="keyboard-row digit-row">
+            ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+            <button type="button" class="keyboard-action" data-flight-key="backspace">退格</button>
+            <button type="button" class="keyboard-action" data-flight-key="clear">清除</button>
+          </div>
+        </div>
         <div id="flightList" class="luxury-card-mesh flight-grid"><div class="empty">準備航班查詢中...</div></div>
       </div>
     `;
@@ -1131,10 +1141,24 @@
     return code ? `https://images.kiwi.com/airlines/64/${code}.png` : "";
   }
 
+  function handleFlightKeyboard(key) {
+    const input = document.querySelector('#flightSearchForm input[name="flight"]');
+    if (!input) return;
+    const current = String(input.value || "").toUpperCase();
+    if (key === "clear") input.value = "";
+    else if (key === "backspace") input.value = current.slice(0, -1);
+    else input.value = `${current}${key}`.replace(/[^A-Z0-9]/g, "");
+    input.focus();
+  }
+
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
     if (!target && !cellDate) return;
+    if (target?.dataset.flightKey) {
+      handleFlightKeyboard(target.dataset.flightKey);
+      return;
+    }
     if (target?.dataset.modal) {
       openModal(target.dataset.modal, target.dataset.id);
       return;

@@ -444,6 +444,38 @@ textarea { min-height: 100px; resize: vertical; }
   padding: 0;
   min-width: 0;
 }
+.flight-keyboard {
+  display: grid;
+  gap: 8px;
+  margin: -4px 0 18px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdff;
+}
+.keyboard-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.flight-keyboard button {
+  min-width: 46px;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid #d9e4f2;
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: 0 3px 10px rgba(24,32,51,.03);
+}
+.flight-keyboard button:active { transform: translateY(1px); }
+.flight-keyboard .keyboard-action {
+  min-width: 64px;
+  background: #eef2f7;
+  color: #344054;
+}
 .flight-fallback {
   grid-column: 1 / -1;
   padding: 30px;
@@ -842,6 +874,16 @@ tr:last-child td { border-bottom: 0; }
   .flight-date-field { min-height: 40px; grid-column: 1 / -1; }
   .flight-search input[name="flight"],
   .flight-search button { grid-column: 1 / -1; }
+  .flight-keyboard { padding: 10px; gap: 7px; margin-top: -2px; }
+  .keyboard-row { gap: 6px; }
+  .flight-keyboard button {
+    flex: 1 0 calc(20% - 6px);
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+  .flight-keyboard .keyboard-action { flex-basis: calc(50% - 6px); }
   .flight-card { min-height: 0; padding: 14px; gap: 11px; }
   .flight-card-head { gap: 10px; padding-bottom: 10px; }
   .flight-airline { grid-template-columns: 42px 1fr; gap: 9px; }
