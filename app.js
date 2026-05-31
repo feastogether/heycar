@@ -1137,6 +1137,11 @@
     const current = String(input.value || "").toUpperCase();
     if (key === "clear") input.value = "";
     else if (key === "backspace") input.value = current.slice(0, -1);
+    else if (key === "enter") {
+      hideFlightKeyboard();
+      document.getElementById("flightSearchForm")?.requestSubmit();
+      return;
+    }
     else input.value = `${current}${key}`.replace(/[^A-Z0-9]/g, "");
     input.focus();
   }
@@ -1152,13 +1157,13 @@
         <div class="keyboard-row digit-row">
           ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
         </div>
-        <div class="keyboard-row airline-row">
-          ${["BR", "CI", "JX", "IT", "CX", "JL", "NH", "KE", "OZ", "SQ", "TR", "TG", "VN", "VJ", "PR", "5J", "CZ", "CA", "MU"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+        <div class="keyboard-row letter-row">
+          ${"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
         </div>
         <div class="keyboard-row action-row">
           <button type="button" class="keyboard-action" data-flight-key="backspace">退格</button>
           <button type="button" class="keyboard-action" data-flight-key="clear">清除</button>
-          <button type="button" class="keyboard-done" data-flight-key="close">完成</button>
+          <button type="button" class="keyboard-done" data-flight-key="enter">Enter</button>
         </div>
       `;
       document.body.appendChild(keyboard);
