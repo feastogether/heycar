@@ -1015,7 +1015,7 @@
                 <small>${escapeHtml(flightRouteText(flight, direction))}</small>
               </div>
             </div>
-            <span class="flight-status ${flightStatusClass(flight.status || flight.Status)}">${escapeHtml(flight.status || flight.Status || "航班資訊")}</span>
+            <span class="flight-status ${flightStatusClass(flightStatusText(flight))}">${escapeHtml(flightStatusText(flight))}</span>
           </div>
           <div class="flight-time-grid">
             <span>
@@ -1064,11 +1064,25 @@
   function flightStatusClass(status) {
     const text = String(status || "").toLowerCase();
     if (/取消|cancel/.test(text)) return "cancelled";
-    if (/延誤|delay/.test(text)) return "delayed";
+    if (/延誤|延後|delay/.test(text)) return "delayed";
     if (/登機|boarding/.test(text)) return "boarding";
     if (/抵達|已到|arriv|landed/.test(text)) return "landed";
     if (/出發|depart/.test(text)) return "departed";
     return "scheduled";
+  }
+
+  function flightStatusText(flight) {
+    const rawStatus = flight.status || flight.Status || "航班資訊";
+    const delay = flightDelayMinutes(flight.scheduledTime || flight.ScheduledTime, flight.estimatedTime || flight.EstimatedTime || flight.actualTime || flight.ActualTime);
+    if (/準時|on time/i.test(rawStatus) && delay >= 5) return `預計延後 ${delay} 分`;
+    return rawStatus;
+  }
+
+  function flightDelayMinutes(scheduled, compared) {
+    const scheduledTime = Date.parse(scheduled || "");
+    const comparedTime = Date.parse(compared || "");
+    if (!Number.isFinite(scheduledTime) || !Number.isFinite(comparedTime)) return 0;
+    return Math.max(0, Math.round((comparedTime - scheduledTime) / 60000));
   }
 
   function airlineLogoUrl(value) {
