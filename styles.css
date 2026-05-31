@@ -368,11 +368,12 @@ textarea { min-height: 100px; resize: vertical; }
 .schedule-details strong { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 .flight-search {
   display: grid;
-  grid-template-columns: 178px 150px minmax(220px, 1fr) auto;
+  grid-template-columns: 150px 178px 170px minmax(220px, 1fr) auto;
   gap: 10px;
   margin-bottom: 18px;
 }
-.flight-toggle {
+.flight-toggle,
+.flight-source-toggle {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -384,12 +385,14 @@ textarea { min-height: 100px; resize: vertical; }
   background: #f8fafc;
   isolation: isolate;
 }
-.flight-toggle input {
+.flight-toggle input,
+.flight-source-toggle input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
-.flight-toggle label {
+.flight-toggle label,
+.flight-source-toggle label {
   z-index: 2;
   min-height: 34px;
   display: grid;
@@ -401,7 +404,8 @@ textarea { min-height: 100px; resize: vertical; }
   cursor: pointer;
   transition: color .2s ease;
 }
-.flight-toggle-thumb {
+.flight-toggle-thumb,
+.flight-source-toggle::before {
   position: absolute;
   z-index: 1;
   top: 4px;
@@ -413,8 +417,33 @@ textarea { min-height: 100px; resize: vertical; }
   box-shadow: 0 8px 18px rgba(239,63,53,.22);
   transition: transform .22s ease;
 }
-.flight-toggle input:checked + label { color: white; }
+.flight-source-toggle::before { content: ""; }
+.flight-toggle input:checked + label,
+.flight-source-toggle input:checked + label { color: white; }
 .flight-toggle input[value="departure"]:checked ~ .flight-toggle-thumb { transform: translateX(100%); }
+.flight-source-toggle input[value="taoyuan"]:checked ~ label:last-of-type { color: white; }
+.flight-source-toggle:has(input[value="taoyuan"]:checked)::before { transform: translateX(100%); }
+.flight-date-field {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: white;
+}
+.flight-date-field span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.flight-date-field input {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
 .flight-fallback {
   grid-column: 1 / -1;
   padding: 30px;
@@ -519,10 +548,11 @@ textarea { min-height: 100px; resize: vertical; }
 }
 .flight-detail-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px 14px;
   color: var(--ink);
 }
+.taoyuan-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .flight-detail-grid span {
   display: grid;
   gap: 3px;
@@ -804,7 +834,13 @@ tr:last-child td { border-bottom: 0; }
   .airport-weather { flex: 1; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px; }
   .airport-weather small { text-align: right; }
   .driver-page-head h2 { font-size: 21px; }
-  .flight-search { grid-template-columns: 1fr; }
+  .flight-search { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .flight-source-toggle,
+  .flight-toggle { min-height: 40px; }
+  .flight-source-toggle label,
+  .flight-toggle label { min-height: 30px; font-size: 13px; }
+  .flight-date-field { min-height: 40px; grid-column: 1 / -1; }
+  .flight-search input[name="flight"],
   .flight-search button { grid-column: 1 / -1; }
   .flight-card { min-height: 0; padding: 14px; gap: 11px; }
   .flight-card-head { gap: 10px; padding-bottom: 10px; }
@@ -819,7 +855,8 @@ tr:last-child td { border-bottom: 0; }
   .flight-time-grid label,
   .flight-detail-grid label { font-size: 10px; }
   .flight-time-grid strong { font-size: 12px; word-break: break-word; }
-  .flight-detail-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .flight-detail-grid,
+  .taoyuan-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .flight-detail-grid span { font-size: 12px; }
   .flight-detail-grid .wide { grid-column: auto; }
   .maintenance-schedule { grid-template-columns: 70px 1fr; padding: 10px; gap: 10px; }

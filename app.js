@@ -483,6 +483,12 @@
       ${pageHeader("航班資訊")}
       <div class="panel flight-panel">
         <form id="flightSearchForm" class="flight-search">
+          <div class="flight-source-toggle" role="radiogroup" aria-label="資料來源">
+            <input type="radio" id="sourceTdx" name="source" value="tdx" checked>
+            <label for="sourceTdx">TDX</label>
+            <input type="radio" id="sourceTaoyuan" name="source" value="taoyuan">
+            <label for="sourceTaoyuan">桃機</label>
+          </div>
           <div class="flight-toggle" role="radiogroup" aria-label="航班類型">
             <input type="radio" id="flightArrival" name="direction" value="arrival" checked>
             <label for="flightArrival">抵達</label>
@@ -490,7 +496,10 @@
             <label for="flightDeparture">出發</label>
             <span class="flight-toggle-thumb"></span>
           </div>
-          <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
+          <label class="flight-date-field">
+            <span>日期</span>
+            <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
+          </label>
           <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off">
           <button class="primary-btn" type="submit">查詢</button>
         </form>
@@ -976,7 +985,7 @@
     return "雷雨";
   }
 
-  async function loadFlights(query = "", direction = "arrival", date = today()) {
+  async function loadFlights(query = "", direction = "arrival", date = today(), source = "tdx") {
     const box = document.getElementById("flightList");
     if (!box) return;
     if (!cfg.FLIGHT_INFO_URL) {
@@ -995,6 +1004,7 @@
       endpoint.searchParams.set("q", query);
       endpoint.searchParams.set("direction", direction);
       endpoint.searchParams.set("date", date || today());
+      endpoint.searchParams.set("source", source);
       const requestHeaders = cfg.SUPABASE_ANON_KEY
         ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` }
         : {};
@@ -1031,12 +1041,10 @@
               <strong>${escapeHtml(formatFlightTime(flight.actualTime || flight.ActualTime))}</strong>
             </span>
           </div>
-          <div class="flight-detail-grid">
-            <span><label>航廈</label>${escapeHtml(flight.terminal || flight.Terminal || "-")}</span>
-            <span><label>登機門</label>${escapeHtml(flight.gate || "-")}</span>
-            <span><label>${direction === "departure" ? "報到櫃台" : "行李轉盤"}</label>${escapeHtml((direction === "departure" ? flight.checkInCounter : flight.baggage) || "-")}</span>
+          <div class="flight-detail-grid ${flight.sourceType === "taoyuan" ? "taoyuan-detail-grid" : ""}">
+            ${flightDetailItems(flight, direction)}
           </div>
-          <div class="flight-update">資料來源：TDX ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
+          <div class="flight-update">資料來源：${escapeHtml(flight.source || "TDX")} ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
         </article>
       `).join("") : `<div class="empty">查無符合的航班。</div>`;
     } catch (error) {
@@ -1047,6 +1055,34 @@
   function formatFlightTime(value) {
     if (!value) return "-";
     return String(value).replace("T", " ").slice(0, 16);
+  }
+
+  function flightDetailItems(flight, direction) {
+    const items = [
+      ["航廈", flight.terminal || flight.Terminal],
+      ["登機門", flight.gate],
+      [direction === "departure" ? "報到櫃台" : "行李轉盤", direction === "departure" ? flight.checkInCounter : flight.baggage]
+    ];
+    if (flight.sourceType === "taoyuan") {
+      items.push(
+        ["行李轉盤", flight.baggage],
+        ["報到櫃台", flight.checkInCounter],
+        ["航班動態", flight.statusEn],
+        ["備註", flight.remark],
+        ["機型", flight.aircraftType],
+        ["其他航點", flight.otherStops || flight.otherStopsEn]
+      );
+    }
+    const seen = new Set();
+    return items
+      .filter(([label]) => {
+        const key = `${label}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .map(([label, value]) => `<span><label>${escapeHtml(label)}</label>${escapeHtml(value || "-")}</span>`)
+      .join("");
   }
 
   function flightDisplayName(flight) {
@@ -1178,7 +1214,12 @@
     if (e.target.id === "flightSearchForm") {
       e.preventDefault();
       const data = new FormData(e.target);
-      await loadFlights(String(data.get("flight") || "").trim(), String(data.get("direction") || "arrival"), String(data.get("date") || today()));
+      await loadFlights(
+        String(data.get("flight") || "").trim(),
+        String(data.get("direction") || "arrival"),
+        String(data.get("date") || today()),
+        String(data.get("source") || "tdx")
+      );
     }
   });
 

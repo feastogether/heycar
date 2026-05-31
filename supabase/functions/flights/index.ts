@@ -1,9 +1,11 @@
 const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const apiBase = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport";
+const taoyuanFlightCsvUrl = "https://odp.taoyuan-airport.com/dataset/2025102001?format=csv";
 const cacheMs = 5 * 60_000;
 const staleCacheMs = 60 * 60_000;
 
 const flightCache = new Map<string, { ts: number; rows: Record<string, unknown>[] }>();
+const taoyuanCache: { ts: number; rows: Record<string, string>[] } = { ts: 0, rows: [] };
 const tokenCache: { ts: number; token: string } = { ts: 0, token: "" };
 
 const airlineNames: Record<string, string> = {
@@ -115,7 +117,8 @@ function firstValue(row: Record<string, unknown>, keys: string[]) {
 }
 
 function cleanText(value: unknown) {
-  return String(value ?? "").trim();
+  const text = String(value ?? "").trim();
+  return text === "null" ? "" : text;
 }
 
 function flightKey(code: unknown, number: unknown) {
@@ -145,7 +148,52 @@ function airlineLogo(code: string) {
   return code ? `https://images.kiwi.com/airlines/64/${code}.png` : "";
 }
 
-function matchFlight(row: Record<string, unknown>, query: string) {
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+    if (char === "\"") {
+      if (quoted && next === "\"") {
+        cell += "\"";
+        i += 1;
+      } else {
+        quoted = !quoted;
+      }
+    } else if (char === "," && !quoted) {
+      row.push(cell);
+      cell = "";
+    } else if ((char === "\n" || char === "\r") && !quoted) {
+      if (char === "\r" && next === "\n") i += 1;
+      row.push(cell);
+      if (row.some((value) => value.trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else {
+      cell += char;
+    }
+  }
+  if (cell || row.length) {
+    row.push(cell);
+    if (row.some((value) => value.trim())) rows.push(row);
+  }
+  return rows;
+}
+
+function combineTaoyuanTime(date: string, time: string) {
+  const d = cleanText(date).slice(0, 10);
+  const t = cleanText(time).replace("+08:00", "").slice(0, 8);
+  return d && t ? `${d}T${t}+08:00` : "";
+}
+
+function matchText(value: string, query: string) {
+  return !query || value.toLowerCase().includes(query.replace(/\s+/g, "").toLowerCase());
+}
+
+function matchTdxFlight(row: Record<string, unknown>, query: string) {
   if (!query) return true;
   const flightNo = flightKey(firstValue(row, ["AirlineID", "AirlineCode"]), firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"]));
   const searchText = [
@@ -155,7 +203,19 @@ function matchFlight(row: Record<string, unknown>, query: string) {
     firstValue(row, ["ArrivalAirportID", "DestinationAirportID"]),
     firstValue(row, ["DepartureAirportName", "ArrivalAirportName", "OriginAirportName", "DestinationAirportName"])
   ].join(" ").toLowerCase();
-  return searchText.includes(query.replace(/\s+/g, "").toLowerCase());
+  return matchText(searchText, query);
+}
+
+function matchTaoyuanFlight(row: Record<string, string>, query: string) {
+  const searchText = [
+    flightKey(row["航空公司代碼"], row["班次"]),
+    row["航空公司代碼"],
+    row["航空公司中文"],
+    row["往來地點"],
+    row["往來地點英文"],
+    row["往來地點中文"]
+  ].join(" ").toLowerCase();
+  return matchText(searchText, query);
 }
 
 async function tdxToken() {
@@ -182,7 +242,7 @@ async function tdxToken() {
   return tokenCache.token;
 }
 
-async function readRows(endpoint: string, token: string) {
+async function readTdxRows(endpoint: string, token: string) {
   const hit = flightCache.get(endpoint);
   const now = Date.now();
   if (hit && now - hit.ts < cacheMs) return hit.rows;
@@ -201,6 +261,86 @@ async function readRows(endpoint: string, token: string) {
   return rows;
 }
 
+async function readTaoyuanRows() {
+  const now = Date.now();
+  if (taoyuanCache.rows.length && now - taoyuanCache.ts < cacheMs) return taoyuanCache.rows;
+
+  const response = await fetch(taoyuanFlightCsvUrl);
+  if (!response.ok) {
+    if (taoyuanCache.rows.length && now - taoyuanCache.ts < staleCacheMs) return taoyuanCache.rows;
+    throw new Error(`桃園機場航班資料讀取失敗 (${response.status})`);
+  }
+  const [header = [], ...records] = parseCsv(await response.text());
+  const rows = records.map((record) => {
+    const item: Record<string, string> = {};
+    header.forEach((key, index) => {
+      item[cleanText(key)] = cleanText(record[index]);
+    });
+    return item;
+  });
+  taoyuanCache.ts = now;
+  taoyuanCache.rows = rows;
+  return rows;
+}
+
+function mapTdxFlight(row: Record<string, unknown>, endpoint: string) {
+  const airlineCode = firstValue(row, ["AirlineID", "AirlineCode"]);
+  return {
+    flightNo: flightKey(airlineCode, firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])) || "-",
+    city: localizedAirport(row, endpoint),
+    airportCode: endpoint === "Departure"
+      ? firstValue(row, ["ArrivalAirportID", "DestinationAirportID"])
+      : firstValue(row, ["DepartureAirportID", "OriginAirportID"]),
+    airline: localizedAirline(row),
+    airlineCode,
+    airlineLogo: airlineLogo(airlineCode),
+    scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
+    estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "EstimatedTime"]),
+    actualTime: firstValue(row, ["ActualDepartureTime", "ActualArrivalTime", "ActualTime"]),
+    terminal: firstValue(row, ["Terminal", "DepartureTerminal", "ArrivalTerminal"]),
+    gate: firstValue(row, ["Gate", "BoardingGate"]),
+    baggage: firstValue(row, ["BaggageClaim", "BaggageCarousel"]),
+    checkInCounter: firstValue(row, ["CheckCounter", "CheckInCounter"]),
+    status: firstValue(row, ["DepartureRemark", "ArrivalRemark", "FlightStatus", "Status"]) || "即時航班",
+    statusEn: firstValue(row, ["DepartureRemarkEn", "ArrivalRemarkEn", "FlightStatusEn"]),
+    updateTime: firstValue(row, ["UpdateTime"]),
+    source: "TDX",
+    sourceType: "tdx"
+  };
+}
+
+function mapTaoyuanFlight(row: Record<string, string>) {
+  const airlineCode = row["航空公司代碼"];
+  const scheduledTime = combineTaoyuanTime(row["表訂日期"], row["表訂時間"]);
+  const estimatedTime = combineTaoyuanTime(row["預計日期"], row["預計時間"]);
+  const status = row["備註"] || row["航班動態中文"] || "即時航班";
+  return {
+    flightNo: flightKey(airlineCode, row["班次"]) || "-",
+    city: row["往來地點中文"] || row["往來地點英文"] || row["往來地點"],
+    cityEn: row["往來地點英文"],
+    airportCode: row["往來地點"],
+    airline: row["航空公司中文"] || airlineNames[airlineCode] || airlineCode,
+    airlineCode,
+    airlineLogo: airlineLogo(airlineCode),
+    scheduledTime,
+    estimatedTime,
+    actualTime: "",
+    terminal: row["航廈"],
+    gate: row["機門"],
+    baggage: row["行李轉盤"],
+    checkInCounter: row["報到櫃台"],
+    status,
+    statusEn: row["航班動態英文"],
+    remark: row["備註"],
+    aircraftType: row["機型"],
+    otherStops: row["其他航點中文"] || row["其他航點英文"] || row["其他航點"],
+    otherStopsEn: row["其他航點英文"],
+    updateTime: estimatedTime || scheduledTime,
+    source: "桃園機場",
+    sourceType: "taoyuan"
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
 
@@ -208,41 +348,30 @@ Deno.serve(async (request) => {
     const url = new URL(request.url);
     const query = (url.searchParams.get("q") || "").trim().toLowerCase();
     const endpoint = url.searchParams.get("direction") === "departure" ? "Departure" : "Arrival";
+    const directionCode = endpoint === "Departure" ? "D" : "A";
     const targetDate = (url.searchParams.get("date") || taipeiDate()).slice(0, 10);
-    const token = await tdxToken();
-    const rows = await readRows(endpoint, token);
+    const source = url.searchParams.get("source") === "taoyuan" ? "taoyuan" : "tdx";
 
+    if (source === "taoyuan") {
+      const rows = await readTaoyuanRows();
+      const flights = rows
+        .filter((row) => row["方向"] === directionCode && cleanText(row["表訂日期"]).slice(0, 10) === targetDate)
+        .filter((row) => matchTaoyuanFlight(row, query))
+        .slice(0, 40)
+        .map(mapTaoyuanFlight);
+      return new Response(JSON.stringify(flights), { headers });
+    }
+
+    const token = await tdxToken();
+    const rows = await readTdxRows(endpoint, token);
     const flights = rows
       .filter((row: Record<string, unknown>) => {
         const scheduled = firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]);
         return !scheduled || scheduled.slice(0, 10) === targetDate;
       })
-      .filter((row: Record<string, unknown>) => matchFlight(row, query))
+      .filter((row: Record<string, unknown>) => matchTdxFlight(row, query))
       .slice(0, 20)
-      .map((row: Record<string, unknown>) => {
-        const airlineCode = firstValue(row, ["AirlineID", "AirlineCode"]);
-        return {
-          flightNo: flightKey(airlineCode, firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])) || "-",
-          city: localizedAirport(row, endpoint),
-          airportCode: endpoint === "Departure"
-            ? firstValue(row, ["ArrivalAirportID", "DestinationAirportID"])
-            : firstValue(row, ["DepartureAirportID", "OriginAirportID"]),
-          airline: localizedAirline(row),
-          airlineCode,
-          airlineLogo: airlineLogo(airlineCode),
-          scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
-          estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "EstimatedTime"]),
-          actualTime: firstValue(row, ["ActualDepartureTime", "ActualArrivalTime", "ActualTime"]),
-          terminal: firstValue(row, ["Terminal", "DepartureTerminal", "ArrivalTerminal"]),
-          gate: firstValue(row, ["Gate", "BoardingGate"]),
-          baggage: firstValue(row, ["BaggageClaim", "BaggageCarousel"]),
-          checkInCounter: firstValue(row, ["CheckCounter", "CheckInCounter"]),
-          status: firstValue(row, ["DepartureRemark", "ArrivalRemark", "FlightStatus", "Status"]) || "即時航班",
-          statusEn: firstValue(row, ["DepartureRemarkEn", "ArrivalRemarkEn", "FlightStatusEn"]),
-          updateTime: firstValue(row, ["UpdateTime"]),
-          source: "TDX"
-        };
-      });
+      .map((row: Record<string, unknown>) => mapTdxFlight(row, endpoint));
 
     return new Response(JSON.stringify(flights), { headers });
   } catch (error) {
