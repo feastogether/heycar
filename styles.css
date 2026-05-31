@@ -444,7 +444,7 @@ textarea { min-height: 100px; resize: vertical; }
   padding: 0;
   min-width: 0;
 }
-.flight-keyboard-open { padding-bottom: 300px; }
+.flight-keyboard-open { padding-bottom: 330px; }
 .flight-keyboard-sheet {
   position: fixed;
   left: 0;
@@ -452,7 +452,7 @@ textarea { min-height: 100px; resize: vertical; }
   bottom: 0;
   z-index: 500;
   display: grid;
-  gap: 7px;
+  gap: 8px;
   padding: 10px max(10px, env(safe-area-inset-left)) calc(12px + env(safe-area-inset-bottom));
   border-top: 1px solid #d8e0ea;
   background: #eef2f7;
@@ -470,30 +470,38 @@ textarea { min-height: 100px; resize: vertical; }
 }
 .keyboard-row {
   display: grid;
-  gap: 5px;
+  gap: 6px;
 }
 .digit-row { grid-template-columns: repeat(10, minmax(0, 1fr)); }
-.letter-row { grid-template-columns: repeat(10, minmax(0, 1fr)); }
-.action-row { grid-template-columns: 1fr 1fr 1.3fr; }
+.qwerty-top { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+.qwerty-middle {
+  grid-template-columns: repeat(9, minmax(0, 1fr));
+  padding-inline: 4.8%;
+}
+.qwerty-bottom { grid-template-columns: 1fr repeat(7, minmax(0, 1fr)) 1.35fr; }
+.action-row { grid-template-columns: 1fr 2fr; }
 .flight-keyboard-sheet button {
-  min-height: 39px;
+  min-height: 44px;
   padding: 0 4px;
   border: 1px solid #d4dce8;
-  border-radius: 7px;
+  border-radius: 8px;
   background: white;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 18px;
   font-weight: 900;
 }
 .flight-keyboard-sheet button:active { transform: translateY(1px); }
 .flight-keyboard-sheet .keyboard-action {
-  background: #dfe6ef;
+  background: #d8dde6;
   color: #344054;
 }
+.keyboard-collapse,
+.keyboard-backspace { font-size: 20px !important; }
 .flight-keyboard-sheet .keyboard-done {
   background: #192231;
   border-color: #192231;
   color: white;
+  font-size: 15px;
 }
 .flight-fallback {
   grid-column: 1 / -1;
@@ -893,11 +901,13 @@ tr:last-child td { border-bottom: 0; }
   .flight-date-field { min-height: 40px; grid-column: 1 / -1; }
   .flight-search input[name="flight"],
   .flight-search button { grid-column: 1 / -1; }
-  .flight-keyboard-open { padding-bottom: 300px; }
+  .flight-keyboard-open { padding-bottom: 330px; }
   .flight-keyboard-sheet { padding-inline: 8px; }
   .digit-row { grid-template-columns: repeat(10, minmax(0, 1fr)); }
-  .letter-row { grid-template-columns: repeat(7, minmax(0, 1fr)); }
-  .flight-keyboard-sheet button { min-height: 36px; font-size: 12px; padding: 0 3px; }
+  .qwerty-top { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+  .qwerty-middle { grid-template-columns: repeat(9, minmax(0, 1fr)); padding-inline: 4.8%; }
+  .qwerty-bottom { grid-template-columns: 1fr repeat(7, minmax(0, 1fr)) 1.35fr; }
+  .flight-keyboard-sheet button { min-height: 38px; font-size: 13px; padding: 0 3px; }
   .flight-card { min-height: 0; padding: 14px; gap: 11px; }
   .flight-card-head { gap: 10px; padding-bottom: 10px; }
   .flight-airline { grid-template-columns: 42px 1fr; gap: 9px; }

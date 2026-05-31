@@ -1067,7 +1067,7 @@
       items.push(
         ["行李轉盤", flight.baggage],
         ["報到櫃台", flight.checkInCounter],
-        ["航班動態", flight.statusEn],
+        ["航班動態", localizedFlightStatus(flight.statusEn)],
         ["備註", flight.remark],
         ["機型", flight.aircraftType],
         ["其他航點", flight.otherStops || flight.otherStopsEn]
@@ -1101,14 +1101,14 @@
     const text = String(status || "").toLowerCase();
     if (/取消|cancel/.test(text)) return "cancelled";
     if (/延誤|延後|delay/.test(text)) return "delayed";
-    if (/登機|boarding/.test(text)) return "boarding";
-    if (/抵達|已到|arriv|landed/.test(text)) return "landed";
+    if (/登機|滑行|boarding|taxiing/.test(text)) return "boarding";
+    if (/抵達|已到|抵達機坪|arriv|landed|to gate/.test(text)) return "landed";
     if (/出發|depart/.test(text)) return "departed";
     return "scheduled";
   }
 
   function flightStatusText(flight, direction) {
-    const rawStatus = flight.status || flight.Status || "航班資訊";
+    const rawStatus = localizedFlightStatus(flight.status || flight.Status || flight.statusEn || "航班資訊");
     const actual = flight.actualTime || flight.ActualTime;
     const estimated = flight.estimatedTime || flight.EstimatedTime;
     const scheduled = flight.scheduledTime || flight.ScheduledTime;
@@ -1117,6 +1117,22 @@
     const delay = flightDelayMinutes(scheduled, estimated || actual);
     if (/準時|on time/i.test(rawStatus) && delay >= 5) return `預計延後 ${delay} 分`;
     return rawStatus;
+  }
+
+  function localizedFlightStatus(status) {
+    const raw = String(status || "").trim();
+    const text = raw.toLowerCase();
+    if (!raw) return "";
+    if (/taxiing/.test(text)) return "滑行中";
+    if (/to gate/.test(text)) return "抵達機坪";
+    if (/arrived|landed/.test(text)) return "已抵達";
+    if (/departed/.test(text)) return "已出發";
+    if (/boarding/.test(text)) return "登機中";
+    if (/check-in|check in/.test(text)) return "報到中";
+    if (/delayed|delay/.test(text)) return "延誤";
+    if (/cancel/.test(text)) return "取消";
+    if (/on time/.test(text)) return raw.includes("準時") ? raw.replace(/ON TIME/i, "").trim() : "準時";
+    return raw;
   }
 
   function flightDelayMinutes(scheduled, compared) {
@@ -1157,13 +1173,20 @@
         <div class="keyboard-row digit-row">
           ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
         </div>
-        <div class="keyboard-row letter-row">
-          ${"ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+        <div class="keyboard-row qwerty-row qwerty-top">
+          ${"QWERTYUIOP".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+        </div>
+        <div class="keyboard-row qwerty-row qwerty-middle">
+          ${"ASDFGHJKL".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+        </div>
+        <div class="keyboard-row qwerty-row qwerty-bottom">
+          <button type="button" class="keyboard-action keyboard-collapse" data-flight-key="close">⌄</button>
+          ${"ZXCVBNM".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+          <button type="button" class="keyboard-action keyboard-backspace" data-flight-key="backspace">⌫</button>
         </div>
         <div class="keyboard-row action-row">
-          <button type="button" class="keyboard-action" data-flight-key="backspace">退格</button>
           <button type="button" class="keyboard-action" data-flight-key="clear">清除</button>
-          <button type="button" class="keyboard-done" data-flight-key="enter">Enter</button>
+          <button type="button" class="keyboard-done" data-flight-key="enter">Enter 搜尋</button>
         </div>
       `;
       document.body.appendChild(keyboard);
