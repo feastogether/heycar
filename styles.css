@@ -383,6 +383,32 @@ textarea { min-height: 100px; resize: vertical; }
 .flight-fallback strong { display: block; font-size: 18px; margin-bottom: 6px; }
 .flight-fallback p { max-width: 520px; margin: 0 auto 18px; color: var(--muted); font-size: 14px; }
 .flight-card { min-height: 192px; }
+.flight-airline {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.flight-airline img,
+.airline-fallback {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: #fff;
+}
+.flight-airline img { object-fit: contain; padding: 5px; }
+.airline-fallback {
+  display: none;
+  place-items: center;
+  background: #192231;
+  color: white;
+  font-size: 13px;
+  font-weight: 900;
+}
+.flight-airline strong { display: block; font-size: 16px; font-weight: 950; }
+.flight-airline small { color: var(--muted); font-size: 12px; font-weight: 800; }
 .flight-route { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .flight-route strong { font-size: 22px; font-weight: 900; }
 .flight-route span {

@@ -145,6 +145,10 @@ function localizedAirline(row: Record<string, unknown>) {
   return firstValue(row, ["AirlineNameZh", "AirlineName", "AirlineNameEn"]) || airlineNames[code] || code;
 }
 
+function airlineLogo(code: string) {
+  return code ? `https://images.kiwi.com/airlines/64/${code}.png` : "";
+}
+
 async function readRows(endpoint: string, token: string) {
   const hit = flightCache.get(endpoint);
   const time = Date.now();
@@ -183,6 +187,7 @@ Deno.serve(async (request) => {
           : firstValue(row, ["DepartureAirportID", "OriginAirportID"]),
         airline: localizedAirline(row),
         airlineCode: firstValue(row, ["AirlineID", "AirlineCode"]),
+        airlineLogo: airlineLogo(firstValue(row, ["AirlineID", "AirlineCode"])),
         scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
         estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "ActualDepartureTime", "ActualArrivalTime", "EstimatedTime"]),
         actualTime: firstValue(row, ["ActualDepartureTime", "ActualArrivalTime", "ActualTime"]),

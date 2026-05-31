@@ -31,8 +31,7 @@
     "personal_messages",
     "payment_notices",
     "calendar_events",
-    "marquee_messages",
-    "flight_tracks"
+    "marquee_messages"
   ];
 
   const labels = {
@@ -73,8 +72,7 @@
     personal_messages: [],
     payment_notices: [],
     calendar_events: [],
-    marquee_messages: [],
-    flight_tracks: []
+    marquee_messages: []
   };
 
   function uid() {
@@ -141,7 +139,7 @@
     const result = {};
     for (const table of tables) {
       const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
-      if (error && ["calendar_events", "marquee_messages", "flight_tracks"].includes(table)) {
+      if (error && ["calendar_events", "marquee_messages"].includes(table)) {
         result[table] = [];
         continue;
       }
@@ -990,11 +988,19 @@
       const flights = Array.isArray(payload) ? payload : payload.data || payload.flights || [];
       box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
         <article class="modern-luxury-item flight-card">
+          <div class="flight-airline">
+            <img src="${escapeHtml(flight.airlineLogo || airlineLogoUrl(flight.airlineCode || flight.flightNo))}" alt="${escapeHtml(flight.airline || flight.airlineCode || "airline")} logo" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">
+            <span class="airline-fallback">${escapeHtml(flight.airlineCode || String(flight.flightNo || "").slice(0, 2) || "-")}</span>
+            <div>
+              <strong>${escapeHtml(flight.airline || flight.airlineName || flight.airlineCode || "航空公司")}</strong>
+              <small>${escapeHtml(flight.airlineCode || "")}</small>
+            </div>
+          </div>
           <div class="flight-route">
             <strong>${escapeHtml(flight.flightNo || flight.flight_number || flight.FlightNo || "-")}</strong>
             <span>${escapeHtml(flight.status || flight.Status || "航班資訊")}</span>
           </div>
-          <div class="flight-place">${escapeHtml(flight.city || flight.destination || flight.origin || flight.City || "-")}</div>
+          <div class="flight-place">${direction === "departure" ? "目的地" : "出發地"}：${escapeHtml(flight.city || flight.destination || flight.origin || flight.City || "-")}${flight.airportCode ? ` (${escapeHtml(flight.airportCode)})` : ""}</div>
           <div class="flight-meta">
             <span><label>表定時間</label>${escapeHtml(formatFlightTime(flight.scheduledTime || flight.ScheduledTime))}</span>
             <span><label>預計時間</label>${escapeHtml(formatFlightTime(flight.estimatedTime || flight.EstimatedTime))}</span>
@@ -1004,9 +1010,6 @@
             ${flight.checkInCounter ? `<span><label>報到櫃台</label>${escapeHtml(flight.checkInCounter)}</span>` : ""}
           </div>
           <div class="flight-update">資料更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
-          <div class="lux-item-actions">
-            <button class="primary-btn" data-track-flight="${escapeHtml(encodeFlightTrack(flight, direction))}">追蹤航班</button>
-          </div>
         </article>
       `).join("") : `<div class="empty">查無符合的航班。</div>`;
     } catch (error) {
@@ -1019,101 +1022,9 @@
     return String(value).replace("T", " ").slice(0, 16);
   }
 
-  function encodeFlightTrack(flight, direction = "arrival") {
-    return encodeURIComponent(JSON.stringify(normalizeFlight(flight, direction)));
-  }
-
-  function normalizeFlight(flight, direction = "arrival") {
-    const flightNo = flight.flightNo || flight.flight_number || flight.FlightNo || "";
-    return {
-      id: `${direction}:${flightNo}`.toUpperCase(),
-      direction,
-      flightNo,
-      city: flight.city || flight.destination || flight.origin || flight.City || "",
-      airline: flight.airline || flight.airlineName || flight.AirlineName || "",
-      airlineCode: flight.airlineCode || "",
-      airportCode: flight.airportCode || "",
-      status: flight.status || flight.Status || "航班資訊",
-      scheduledTime: flight.scheduledTime || flight.ScheduledTime || "",
-      estimatedTime: flight.estimatedTime || flight.EstimatedTime || "",
-      actualTime: flight.actualTime || flight.ActualTime || "",
-      terminal: flight.terminal || flight.Terminal || "",
-      gate: flight.gate || "",
-      baggage: flight.baggage || "",
-      updateTime: flight.updateTime || now(),
-      announced: false
-    };
-  }
-
-  function trackedKey() {
-    return `afide-tracked-flights-${state.user?.id || "guest"}`;
-  }
-
-  function trackedFlights() {
-    try {
-      return JSON.parse(localStorage.getItem(trackedKey()) || "[]");
-    } catch {
-      return [];
-    }
-  }
-
-  function saveTrackedFlights(items) {
-    localStorage.setItem(trackedKey(), JSON.stringify(items));
-    localStorage.setItem("afide-tracked-flights", JSON.stringify(items));
-  }
-
-  async function trackFlight(encoded) {
-    const flight = JSON.parse(decodeURIComponent(encoded));
-    if (cfg.FLIGHT_CACHE_URL) {
-      try {
-        const response = await fetch(cfg.FLIGHT_CACHE_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "track", flight: { ...flight, driverId: state.user?.id || null } })
-        });
-        if (!response.ok) throw new Error("track failed");
-        alert(`${flight.flightNo} 已加入 onair.html 資訊看板追蹤`);
-        return;
-      } catch {
-        // Keep a same-browser fallback if the cache function is not ready.
-      }
-    }
-    const row = {
-      id: flight.id,
-      driver_id: state.user?.id || null,
-      flight_no: flight.flightNo,
-      direction: flight.direction,
-      city: flight.city,
-      airline: flight.airline,
-      status: flight.status,
-      scheduled_time: flight.scheduledTime || null,
-      estimated_time: flight.estimatedTime || null,
-      actual_time: flight.actualTime || null,
-      terminal: flight.terminal,
-      gate: flight.gate,
-      baggage: flight.baggage,
-      airport_code: flight.airportCode,
-      airline_code: flight.airlineCode,
-      payload: flight,
-      active: true,
-      announced: false
-    };
-    if (hasSupabase) {
-      try {
-        const { error } = await db.from("flight_tracks").upsert(row, { onConflict: "id" });
-        if (error) throw error;
-      } catch {
-        const items = trackedFlights().filter((item) => item.id !== flight.id);
-        items.unshift({ ...flight, trackedAt: now() });
-        saveTrackedFlights(items.slice(0, 12));
-      }
-    } else {
-      const items = trackedFlights().filter((item) => item.id !== flight.id);
-      items.unshift({ ...flight, trackedAt: now() });
-      saveTrackedFlights(items.slice(0, 12));
-    }
-    localStorage.setItem("afide-tracked-flights", JSON.stringify([flight, ...trackedFlights().filter((item) => item.id !== flight.id)].slice(0, 12)));
-    alert(`${flight.flightNo} 已加入 onair.html 資訊看板追蹤`);
+  function airlineLogoUrl(value) {
+    const code = String(value || "").replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase();
+    return code ? `https://images.kiwi.com/airlines/64/${code}.png` : "";
   }
 
   document.addEventListener("click", async (e) => {
@@ -1188,9 +1099,6 @@
       const [tableName, id, status] = target.dataset.taskStatus.split(":");
       await update(tableName, id, { status });
       render();
-    }
-    if (target.dataset.trackFlight) {
-      await trackFlight(target.dataset.trackFlight);
     }
   });
 
