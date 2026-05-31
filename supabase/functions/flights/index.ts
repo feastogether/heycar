@@ -1,10 +1,9 @@
 const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const apiBase = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport";
-const taoyuanFlightCsvUrl = "https://odp.taoyuan-airport.com/dataset/2025102001?format=csv";
-const cacheMs = 55_000;
+const cacheMs = 120_000;
 
 const flightCache = new Map<string, { ts: number; rows: Record<string, unknown>[] }>();
-const taoyuanCache = new Map<string, { ts: number; rows: Record<string, string>[] }>();
+const tokenCache: { ts: number; token: string } = { ts: 0, token: "" };
 
 const airlineNames: Record<string, string> = {
   BR: "長榮航空",
@@ -107,25 +106,6 @@ const headers = {
   "Content-Type": "application/json; charset=utf-8"
 };
 
-async function tdxToken() {
-  const clientId = Deno.env.get("TDX_CLIENT_ID");
-  const clientSecret = Deno.env.get("TDX_CLIENT_SECRET");
-  if (!clientId || !clientSecret) throw new Error("Supabase 尚未設定 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET");
-
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "client_credentials",
-      client_id: clientId,
-      client_secret: clientSecret
-    })
-  });
-  const payload = await response.json();
-  if (!response.ok || !payload.access_token) throw new Error("TDX Token 取得失敗，請確認 Client Id 與 Secret");
-  return payload.access_token as string;
-}
-
 function firstValue(row: Record<string, unknown>, keys: string[]) {
   for (const key of keys) {
     if (row[key] !== undefined && row[key] !== null && row[key] !== "") return String(row[key]).trim();
@@ -134,81 +114,15 @@ function firstValue(row: Record<string, unknown>, keys: string[]) {
 }
 
 function cleanText(value: unknown) {
-  const text = String(value ?? "").trim();
-  return text === "null" ? "" : text;
-}
-
-function normalizeFlightNumber(value: unknown) {
-  return cleanText(value).replace(/\s+/g, "").toUpperCase();
+  return String(value ?? "").trim();
 }
 
 function flightKey(code: unknown, number: unknown) {
-  return `${cleanText(code).toUpperCase()}${normalizeFlightNumber(number)}`;
-}
-
-function listValue(row: Record<string, unknown>, keys: string[]) {
-  for (const key of keys) {
-    const value = row[key];
-    if (Array.isArray(value) && value.length) {
-      return value.map((item) => {
-        if (typeof item !== "object" || item === null) return cleanText(item);
-        const entry = item as Record<string, unknown>;
-        return flightKey(firstValue(entry, ["AirlineID", "AirlineCode"]), firstValue(entry, ["FlightNumber", "FlightNo", "FlightNoDisplay"])) || JSON.stringify(entry);
-      }).filter(Boolean).join("、");
-    }
-    if (value !== undefined && value !== null && value !== "") return cleanText(value);
-  }
-  return "";
-}
-
-function parseCsv(text: string) {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let cell = "";
-  let quoted = false;
-
-  for (let i = 0; i < text.length; i += 1) {
-    const char = text[i];
-    const next = text[i + 1];
-    if (char === "\"") {
-      if (quoted && next === "\"") {
-        cell += "\"";
-        i += 1;
-      } else {
-        quoted = !quoted;
-      }
-    } else if (char === "," && !quoted) {
-      row.push(cell);
-      cell = "";
-    } else if ((char === "\n" || char === "\r") && !quoted) {
-      if (char === "\r" && next === "\n") i += 1;
-      row.push(cell);
-      if (row.some((value) => value.trim() !== "")) rows.push(row);
-      row = [];
-      cell = "";
-    } else {
-      cell += char;
-    }
-  }
-  if (cell || row.length) {
-    row.push(cell);
-    if (row.some((value) => value.trim() !== "")) rows.push(row);
-  }
-  return rows;
+  return `${cleanText(code).toUpperCase()}${cleanText(number).replace(/\s+/g, "").toUpperCase()}`;
 }
 
 function taipeiDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
-}
-
-function taoyuanDate(value: string) {
-  return cleanText(value).slice(0, 10);
-}
-
-function taoyuanTime(date: string, time: string) {
-  const d = taoyuanDate(date);
-  const t = cleanText(time).replace("+08:00", "").slice(0, 8);
-  return d && t ? `${d}T${t}+08:00` : "";
 }
 
 function localizedAirport(row: Record<string, unknown>, endpoint: string) {
@@ -243,6 +157,30 @@ function matchFlight(row: Record<string, unknown>, query: string) {
   return searchText.includes(query.replace(/\s+/g, "").toLowerCase());
 }
 
+async function tdxToken() {
+  if (tokenCache.token && Date.now() - tokenCache.ts < 50 * 60_000) return tokenCache.token;
+
+  const clientId = Deno.env.get("TDX_CLIENT_ID");
+  const clientSecret = Deno.env.get("TDX_CLIENT_SECRET");
+  if (!clientId || !clientSecret) throw new Error("Supabase 尚未設定 TDX_CLIENT_ID 與 TDX_CLIENT_SECRET");
+
+  const response = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: clientId,
+      client_secret: clientSecret
+    })
+  });
+  const payload = await response.json();
+  if (!response.ok || !payload.access_token) throw new Error("TDX Token 取得失敗，請確認 Client Id 與 Secret");
+
+  tokenCache.ts = Date.now();
+  tokenCache.token = payload.access_token;
+  return tokenCache.token;
+}
+
 async function readRows(endpoint: string, token: string) {
   const hit = flightCache.get(endpoint);
   const now = Date.now();
@@ -258,68 +196,6 @@ async function readRows(endpoint: string, token: string) {
   return rows;
 }
 
-async function readTaoyuanRows() {
-  const hit = taoyuanCache.get("v2");
-  const now = Date.now();
-  if (hit && now - hit.ts < cacheMs) return hit.rows;
-
-  const response = await fetch(taoyuanFlightCsvUrl);
-  if (!response.ok) throw new Error(`桃園機場航班資料讀取失敗 (${response.status})`);
-  const [header = [], ...records] = parseCsv(await response.text());
-  const rows = records.map((record) => {
-    const item: Record<string, string> = {};
-    header.forEach((key, index) => {
-      item[cleanText(key)] = cleanText(record[index]);
-    });
-    return item;
-  });
-  taoyuanCache.set("v2", { ts: now, rows });
-  return rows;
-}
-
-function findTaoyuanFlight(rows: Record<string, string>[], row: Record<string, unknown>, endpoint: string, targetDate: string) {
-  const direction = endpoint === "Departure" ? "D" : "A";
-  const key = flightKey(firstValue(row, ["AirlineID", "AirlineCode"]), firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"]));
-  return rows.find((item) =>
-    item["方向"] === direction &&
-    taoyuanDate(item["表訂日期"]) === targetDate &&
-    flightKey(item["航空公司代碼"], item["班次"]) === key
-  );
-}
-
-function mergeTaoyuanFlight(base: Record<string, string>, taoyuan: Record<string, string> | undefined, endpoint: string) {
-  if (!taoyuan) return { ...base, source: "TDX" };
-
-  const scheduledTime = taoyuanTime(taoyuan["表訂日期"], taoyuan["表訂時間"]);
-  const estimatedTime = taoyuanTime(taoyuan["預計日期"], taoyuan["預計時間"]);
-  const status = cleanText(taoyuan["備註"]) || cleanText(taoyuan["航班動態中文"]);
-  const code = cleanText(taoyuan["航空公司代碼"]) || base.airlineCode;
-  const otherStops = cleanText(taoyuan["其他航點中文"]) || cleanText(taoyuan["其他航點英文"]) || cleanText(taoyuan["其他航點"]);
-
-  return {
-    ...base,
-    city: cleanText(taoyuan["往來地點中文"]) || cleanText(taoyuan["往來地點英文"]) || cleanText(taoyuan["往來地點"]) || base.city,
-    airportCode: cleanText(taoyuan["往來地點"]) || base.airportCode,
-    airline: cleanText(taoyuan["航空公司中文"]) || base.airline,
-    airlineCode: code,
-    airlineLogo: airlineLogo(code),
-    flightNo: flightKey(code, taoyuan["班次"]) || base.flightNo,
-    scheduledTime: scheduledTime || base.scheduledTime,
-    estimatedTime: estimatedTime || base.estimatedTime,
-    terminal: cleanText(taoyuan["航廈"]) || base.terminal,
-    gate: cleanText(taoyuan["機門"]) || base.gate,
-    baggage: cleanText(taoyuan["行李轉盤"]) || base.baggage,
-    checkInCounter: cleanText(taoyuan["報到櫃台"]) || base.checkInCounter,
-    aircraftType: cleanText(taoyuan["機型"]) || base.aircraftType,
-    status: status || base.status,
-    statusEn: cleanText(taoyuan["航班動態英文"]) || base.statusEn,
-    otherStops,
-    source: "桃園機場 + TDX",
-    prioritySource: "桃園機場",
-    direction: endpoint === "Departure" ? "departure" : "arrival"
-  };
-}
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
 
@@ -330,13 +206,6 @@ Deno.serve(async (request) => {
     const targetDate = (url.searchParams.get("date") || taipeiDate()).slice(0, 10);
     const token = await tdxToken();
     const rows = await readRows(endpoint, token);
-    let taoyuanRows: Record<string, string>[] = [];
-
-    try {
-      taoyuanRows = await readTaoyuanRows();
-    } catch (error) {
-      console.warn(error instanceof Error ? error.message : "Taoyuan flight data unavailable");
-    }
 
     const flights = rows
       .filter((row: Record<string, unknown>) => {
@@ -347,7 +216,7 @@ Deno.serve(async (request) => {
       .slice(0, 20)
       .map((row: Record<string, unknown>) => {
         const airlineCode = firstValue(row, ["AirlineID", "AirlineCode"]);
-        const base = {
+        return {
           flightNo: flightKey(airlineCode, firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])) || "-",
           city: localizedAirport(row, endpoint),
           airportCode: endpoint === "Departure"
@@ -357,20 +226,17 @@ Deno.serve(async (request) => {
           airlineCode,
           airlineLogo: airlineLogo(airlineCode),
           scheduledTime: firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]),
-          estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "ActualDepartureTime", "ActualArrivalTime", "EstimatedTime"]),
+          estimatedTime: firstValue(row, ["EstimatedDepartureTime", "EstimatedArrivalTime", "EstimatedTime"]),
           actualTime: firstValue(row, ["ActualDepartureTime", "ActualArrivalTime", "ActualTime"]),
           terminal: firstValue(row, ["Terminal", "DepartureTerminal", "ArrivalTerminal"]),
           gate: firstValue(row, ["Gate", "BoardingGate"]),
           baggage: firstValue(row, ["BaggageClaim", "BaggageCarousel"]),
           checkInCounter: firstValue(row, ["CheckCounter", "CheckInCounter"]),
-          aircraftType: firstValue(row, ["AircraftType", "AircraftModel", "Aircraft", "EquipmentType", "Equipment"]),
-          codeShares: listValue(row, ["CodeShareFlights", "CodeShareFlight", "CodeShares", "CodeShare", "ShareFlights", "ShareFlight"]),
-          operatedBy: firstValue(row, ["OperatingAirlineName", "OperatingAirlineID", "OperatedBy"]),
           status: firstValue(row, ["DepartureRemark", "ArrivalRemark", "FlightStatus", "Status"]) || "即時航班",
           statusEn: firstValue(row, ["DepartureRemarkEn", "ArrivalRemarkEn", "FlightStatusEn"]),
-          updateTime: firstValue(row, ["UpdateTime"])
+          updateTime: firstValue(row, ["UpdateTime"]),
+          source: "TDX"
         };
-        return mergeTaoyuanFlight(base, findTaoyuanFlight(taoyuanRows, row, endpoint, targetDate), endpoint);
       });
 
     return new Response(JSON.stringify(flights), { headers });

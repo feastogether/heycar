@@ -1027,12 +1027,8 @@
             <span><label>航廈</label>${escapeHtml(flight.terminal || flight.Terminal || "-")}</span>
             <span><label>登機門</label>${escapeHtml(flight.gate || "-")}</span>
             <span><label>${direction === "departure" ? "報到櫃台" : "行李轉盤"}</label>${escapeHtml((direction === "departure" ? flight.checkInCounter : flight.baggage) || "-")}</span>
-            <span><label>機型</label>${escapeHtml(flight.aircraftType || "TDX 未提供")}</span>
-            ${flight.otherStops ? `<span class="wide"><label>其他航點</label>${escapeHtml(flight.otherStops)}</span>` : ""}
-            <span class="wide"><label>共掛班號</label>${escapeHtml(formatFlightList(flight.codeShares) || "TDX 未提供")}</span>
-            ${flight.operatedBy ? `<span class="wide"><label>執飛航空</label>${escapeHtml(flight.operatedBy)}</span>` : ""}
           </div>
-          <div class="flight-update">資料來源：${escapeHtml(flight.source || "TDX")} ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
+          <div class="flight-update">資料來源：TDX ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
         </article>
       `).join("") : `<div class="empty">查無符合的航班。</div>`;
     } catch (error) {
@@ -1065,11 +1061,6 @@
     if (/抵達|已到|arriv|landed/.test(text)) return "landed";
     if (/出發|depart/.test(text)) return "departed";
     return "scheduled";
-  }
-
-  function formatFlightList(value) {
-    if (Array.isArray(value)) return value.filter(Boolean).join("、");
-    return String(value || "").trim();
   }
 
   function airlineLogoUrl(value) {
