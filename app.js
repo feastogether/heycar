@@ -500,19 +500,9 @@
             <span>日期</span>
             <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
           </label>
-          <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off">
+          <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off" inputmode="none" data-flight-input>
           <button class="primary-btn" type="submit">查詢</button>
         </form>
-        <div class="flight-keyboard" aria-label="航班快速鍵盤">
-          <div class="keyboard-row airline-row">
-            ${["BR", "CI", "JX", "IT", "CX", "JL", "NH", "KE", "OZ", "SQ", "TR", "TG", "VN", "VJ", "PR", "5J", "CZ", "CA", "MU"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
-          </div>
-          <div class="keyboard-row digit-row">
-            ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
-            <button type="button" class="keyboard-action" data-flight-key="backspace">退格</button>
-            <button type="button" class="keyboard-action" data-flight-key="clear">清除</button>
-          </div>
-        </div>
         <div id="flightList" class="luxury-card-mesh flight-grid"><div class="empty">準備航班查詢中...</div></div>
       </div>
     `;
@@ -1151,14 +1141,55 @@
     input.focus();
   }
 
+  function showFlightKeyboard() {
+    let keyboard = document.getElementById("flightKeyboard");
+    if (!keyboard) {
+      keyboard = document.createElement("div");
+      keyboard.id = "flightKeyboard";
+      keyboard.className = "flight-keyboard-sheet";
+      keyboard.innerHTML = `
+        <div class="keyboard-grip"></div>
+        <div class="keyboard-row digit-row">
+          ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+        </div>
+        <div class="keyboard-row airline-row">
+          ${["BR", "CI", "JX", "IT", "CX", "JL", "NH", "KE", "OZ", "SQ", "TR", "TG", "VN", "VJ", "PR", "5J", "CZ", "CA", "MU"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
+        </div>
+        <div class="keyboard-row action-row">
+          <button type="button" class="keyboard-action" data-flight-key="backspace">退格</button>
+          <button type="button" class="keyboard-action" data-flight-key="clear">清除</button>
+          <button type="button" class="keyboard-done" data-flight-key="close">完成</button>
+        </div>
+      `;
+      document.body.appendChild(keyboard);
+    }
+    keyboard.classList.add("is-open");
+    document.body.classList.add("flight-keyboard-open");
+  }
+
+  function hideFlightKeyboard() {
+    document.getElementById("flightKeyboard")?.classList.remove("is-open");
+    document.body.classList.remove("flight-keyboard-open");
+  }
+
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    const flightInput = e.target.closest("[data-flight-input]");
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
-    if (!target && !cellDate) return;
-    if (target?.dataset.flightKey) {
-      handleFlightKeyboard(target.dataset.flightKey);
+    if (flightInput) {
+      showFlightKeyboard();
       return;
     }
+    if (target?.dataset.flightKey) {
+      if (target.dataset.flightKey === "close") hideFlightKeyboard();
+      else handleFlightKeyboard(target.dataset.flightKey);
+      return;
+    }
+    if (!target && !cellDate) {
+      hideFlightKeyboard();
+      return;
+    }
+    if (!e.target.closest("#flightKeyboard") && !e.target.closest("#flightSearchForm")) hideFlightKeyboard();
     if (target?.dataset.modal) {
       openModal(target.dataset.modal, target.dataset.id);
       return;
