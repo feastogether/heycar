@@ -17,6 +17,7 @@
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
     data: {},
     weather: null,
+    weatherFetchedAt: 0,
     weatherLoading: false,
     error: ""
   };
@@ -933,24 +934,31 @@
   }
 
   async function loadAirportWeather() {
-    const box = document.getElementById("airportWeather");
-    if (!box) return;
-    if (state.weather) {
-      box.innerHTML = weatherMarkup();
+    if (!document.getElementById("airportWeather")) return;
+    if (state.weather && Date.now() - state.weatherFetchedAt < 10 * 60_000) {
+      updateAirportWeather();
       return;
     }
     if (state.weatherLoading) return;
     state.weatherLoading = true;
     try {
-      const response = await fetch(airportWeatherUrl, { cache: "no-store" });
+      const response = await fetch(airportWeatherUrl, { cache: "default" });
+      if (!response.ok) throw new Error("weather request failed");
       const payload = await response.json();
+      if (!payload.current) throw new Error("weather payload missing current");
       state.weather = payload.current;
-      box.innerHTML = weatherMarkup();
+      state.weatherFetchedAt = Date.now();
+      updateAirportWeather();
     } catch {
-      box.innerHTML = `<span class="weather-label">桃園機場</span><strong>天氣暫無資料</strong>`;
+      updateAirportWeather(`<span class="weather-label">桃園機場</span><strong>天氣暫無資料</strong>`);
     } finally {
       state.weatherLoading = false;
     }
+  }
+
+  function updateAirportWeather(markup = weatherMarkup()) {
+    const box = document.getElementById("airportWeather");
+    if (box) box.innerHTML = markup;
   }
 
   function weatherMarkup() {
