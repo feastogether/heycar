@@ -1,6 +1,7 @@
 const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const apiBase = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport";
-const cacheMs = 120_000;
+const cacheMs = 5 * 60_000;
+const staleCacheMs = 60 * 60_000;
 
 const flightCache = new Map<string, { ts: number; rows: Record<string, unknown>[] }>();
 const tokenCache: { ts: number; token: string } = { ts: 0, token: "" };
@@ -189,7 +190,11 @@ async function readRows(endpoint: string, token: string) {
   const response = await fetch(`${apiBase}/${endpoint}/TPE?%24format=JSON`, {
     headers: { Authorization: `Bearer ${token}` }
   });
-  if (!response.ok) throw new Error(`TDX 航班資料讀取失敗 (${response.status})`);
+  if (!response.ok) {
+    if (hit && now - hit.ts < staleCacheMs) return hit.rows;
+    if (response.status === 429) throw new Error("TDX 目前請求過多，請稍後再查詢。");
+    throw new Error(`TDX 航班資料讀取失敗 (${response.status})`);
+  }
   const payload = await response.json();
   const rows = Array.isArray(payload) ? payload : payload.Flights || [];
   flightCache.set(endpoint, { ts: now, rows });
