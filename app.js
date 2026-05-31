@@ -998,26 +998,38 @@
         .filter((flight) => !date || String(flight.scheduledTime || flight.ScheduledTime || "").slice(0, 10) === date);
       box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
         <article class="modern-luxury-item flight-card">
-          <div class="flight-airline">
-            <img src="${escapeHtml(flight.airlineLogo || airlineLogoUrl(flight.airlineCode || flight.flightNo))}" alt="${escapeHtml(flight.airline || flight.airlineCode || "airline")} logo" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">
-            <span class="airline-fallback">${escapeHtml(flight.airlineCode || String(flight.flightNo || "").slice(0, 2) || "-")}</span>
-            <div>
-              <strong>${escapeHtml(flight.airline || flight.airlineName || flight.airlineCode || "航空公司")}</strong>
-              <small>${escapeHtml(flight.airlineCode || "")}</small>
+          <div class="flight-card-head">
+            <div class="flight-airline">
+              <img src="${escapeHtml(flight.airlineLogo || airlineLogoUrl(flight.airlineCode || flight.flightNo))}" alt="${escapeHtml(flight.airline || flight.airlineCode || "airline")} logo" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">
+              <span class="airline-fallback">${escapeHtml(flight.airlineCode || String(flight.flightNo || "").slice(0, 2) || "-")}</span>
+              <div>
+                <strong>${escapeHtml(flightDisplayName(flight))}</strong>
+                <small>${escapeHtml(flightRouteText(flight, direction))}</small>
+              </div>
             </div>
+            <span class="flight-status ${flightStatusClass(flight.status || flight.Status)}">${escapeHtml(flight.status || flight.Status || "航班資訊")}</span>
           </div>
-          <div class="flight-route">
-            <strong>${escapeHtml(flight.flightNo || flight.flight_number || flight.FlightNo || "-")}</strong>
-            <span>${escapeHtml(flight.status || flight.Status || "航班資訊")}</span>
+          <div class="flight-time-grid">
+            <span>
+              <label>表定</label>
+              <strong>${escapeHtml(formatFlightTime(flight.scheduledTime || flight.ScheduledTime))}</strong>
+            </span>
+            <span>
+              <label>預計</label>
+              <strong>${escapeHtml(formatFlightTime(flight.estimatedTime || flight.EstimatedTime))}</strong>
+            </span>
+            <span>
+              <label>實際</label>
+              <strong>${escapeHtml(formatFlightTime(flight.actualTime || flight.ActualTime))}</strong>
+            </span>
           </div>
-          <div class="flight-place">${direction === "departure" ? "目的地" : "出發地"}：${escapeHtml(flight.city || flight.destination || flight.origin || flight.City || "-")}${flight.airportCode ? ` (${escapeHtml(flight.airportCode)})` : ""}</div>
-          <div class="flight-meta">
-            <span><label>表定時間</label>${escapeHtml(formatFlightTime(flight.scheduledTime || flight.ScheduledTime))}</span>
-            <span><label>預計時間</label>${escapeHtml(formatFlightTime(flight.estimatedTime || flight.EstimatedTime))}</span>
-            <span><label>實際時間</label>${escapeHtml(formatFlightTime(flight.actualTime || flight.ActualTime))}</span>
-            <span><label>航廈 / 登機門</label>${escapeHtml(flight.terminal || flight.Terminal || "-")} / ${escapeHtml(flight.gate || "-")}</span>
-            ${flight.baggage ? `<span><label>行李轉盤</label>${escapeHtml(flight.baggage)}</span>` : ""}
-            ${flight.checkInCounter ? `<span><label>報到櫃台</label>${escapeHtml(flight.checkInCounter)}</span>` : ""}
+          <div class="flight-detail-grid">
+            <span><label>航廈</label>${escapeHtml(flight.terminal || flight.Terminal || "-")}</span>
+            <span><label>登機門</label>${escapeHtml(flight.gate || "-")}</span>
+            <span><label>${direction === "departure" ? "報到櫃台" : "行李轉盤"}</label>${escapeHtml((direction === "departure" ? flight.checkInCounter : flight.baggage) || "-")}</span>
+            <span><label>機型</label>${escapeHtml(flight.aircraftType || "TDX 未提供")}</span>
+            <span class="wide"><label>共掛班號</label>${escapeHtml(formatFlightList(flight.codeShares) || "TDX 未提供")}</span>
+            ${flight.operatedBy ? `<span class="wide"><label>執飛航空</label>${escapeHtml(flight.operatedBy)}</span>` : ""}
           </div>
           <div class="flight-update">資料更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
         </article>
@@ -1030,6 +1042,33 @@
   function formatFlightTime(value) {
     if (!value) return "-";
     return String(value).replace("T", " ").slice(0, 16);
+  }
+
+  function flightDisplayName(flight) {
+    const airline = flight.airline || flight.airlineName || flight.airlineCode || "航空公司";
+    const flightNo = flight.flightNo || flight.flight_number || flight.FlightNo || "";
+    return `${airline}${flightNo ? ` ${flightNo}` : ""}`;
+  }
+
+  function flightRouteText(flight, direction) {
+    const city = flight.city || flight.destination || flight.origin || flight.City || "-";
+    const code = flight.airportCode ? ` (${flight.airportCode})` : "";
+    return direction === "departure" ? `桃園 → ${city}${code}` : `${city}${code} → 桃園`;
+  }
+
+  function flightStatusClass(status) {
+    const text = String(status || "").toLowerCase();
+    if (/取消|cancel/.test(text)) return "cancelled";
+    if (/延誤|delay/.test(text)) return "delayed";
+    if (/登機|boarding/.test(text)) return "boarding";
+    if (/抵達|已到|arriv|landed/.test(text)) return "landed";
+    if (/出發|depart/.test(text)) return "departed";
+    return "scheduled";
+  }
+
+  function formatFlightList(value) {
+    if (Array.isArray(value)) return value.filter(Boolean).join("、");
+    return String(value || "").trim();
   }
 
   function airlineLogoUrl(value) {

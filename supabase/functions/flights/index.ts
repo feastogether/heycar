@@ -132,6 +132,23 @@ function firstValue(row: Record<string, unknown>, keys: string[]) {
   return "";
 }
 
+function listValue(row: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (Array.isArray(value) && value.length) {
+      return value.map((item) => {
+        if (typeof item !== "object" || item === null) return String(item).trim();
+        const entry = item as Record<string, unknown>;
+        const airline = firstValue(entry, ["AirlineID", "AirlineCode"]);
+        const number = firstValue(entry, ["FlightNumber", "FlightNo", "FlightNoDisplay"]);
+        return `${airline}${number}`.trim() || JSON.stringify(entry);
+      }).filter(Boolean).join("、");
+    }
+    if (value !== undefined && value !== null && value !== "") return String(value).trim();
+  }
+  return "";
+}
+
 function matchFlight(row: Record<string, unknown>, query: string) {
   if (!query) return true;
   const flightNo = `${firstValue(row, ["AirlineID", "AirlineCode"])}${firstValue(row, ["FlightNumber", "FlightNo", "FlightNoDisplay"])}`.replace(/\s+/g, "");
@@ -214,6 +231,9 @@ Deno.serve(async (request) => {
         gate: firstValue(row, ["Gate", "BoardingGate"]),
         baggage: firstValue(row, ["BaggageClaim", "BaggageCarousel"]),
         checkInCounter: firstValue(row, ["CheckCounter", "CheckInCounter"]),
+        aircraftType: firstValue(row, ["AircraftType", "AircraftModel", "Aircraft", "EquipmentType", "Equipment"]),
+        codeShares: listValue(row, ["CodeShareFlights", "CodeShareFlight", "CodeShares", "CodeShare", "ShareFlights", "ShareFlight"]),
+        operatedBy: firstValue(row, ["OperatingAirlineName", "OperatingAirlineID", "OperatedBy"]),
         status: firstValue(row, ["DepartureRemark", "ArrivalRemark", "FlightStatus", "Status"]) || "即時航班",
         statusEn: firstValue(row, ["DepartureRemarkEn", "ArrivalRemarkEn", "FlightStatusEn"]),
         updateTime: firstValue(row, ["UpdateTime"])
