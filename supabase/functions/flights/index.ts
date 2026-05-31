@@ -74,7 +74,26 @@ const airportNames: Record<string, string> = {
   DXB: "杜拜",
   IST: "伊斯坦堡",
   AMS: "阿姆斯特丹",
-  HEL: "赫爾辛基"
+  HEL: "赫爾辛基",
+  CAN: "廣州白雲",
+  CJJ: "清州",
+  CJU: "濟州",
+  DFW: "達拉斯沃斯堡",
+  ONT: "安大略",
+  TAE: "大邱",
+  PVG: "上海浦東",
+  SHA: "上海虹橋",
+  PEK: "北京首都",
+  PKX: "北京大興",
+  SZX: "深圳寶安",
+  HGH: "杭州蕭山",
+  XMN: "廈門高崎",
+  NKG: "南京祿口",
+  CTU: "成都雙流",
+  TFU: "成都天府",
+  CKG: "重慶江北",
+  TAO: "青島膠東",
+  WUH: "武漢天河"
 };
 
 const headers = {
