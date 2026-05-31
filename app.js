@@ -1015,7 +1015,7 @@
                 <small>${escapeHtml(flightRouteText(flight, direction))}</small>
               </div>
             </div>
-            <span class="flight-status ${flightStatusClass(flightStatusText(flight))}">${escapeHtml(flightStatusText(flight))}</span>
+            <span class="flight-status ${flightStatusClass(flightStatusText(flight, direction))}">${escapeHtml(flightStatusText(flight, direction))}</span>
           </div>
           <div class="flight-time-grid">
             <span>
@@ -1071,9 +1071,14 @@
     return "scheduled";
   }
 
-  function flightStatusText(flight) {
+  function flightStatusText(flight, direction) {
     const rawStatus = flight.status || flight.Status || "航班資訊";
-    const delay = flightDelayMinutes(flight.scheduledTime || flight.ScheduledTime, flight.estimatedTime || flight.EstimatedTime || flight.actualTime || flight.ActualTime);
+    const actual = flight.actualTime || flight.ActualTime;
+    const estimated = flight.estimatedTime || flight.EstimatedTime;
+    const scheduled = flight.scheduledTime || flight.ScheduledTime;
+    if (direction === "arrival" && actual) return "已抵達";
+    if (direction === "arrival" && estimated && Date.parse(estimated) + 5 * 60_000 <= Date.now()) return "預計已抵達";
+    const delay = flightDelayMinutes(scheduled, estimated || actual);
     if (/準時|on time/i.test(rawStatus) && delay >= 5) return `預計延後 ${delay} 分`;
     return rawStatus;
   }
