@@ -368,10 +368,53 @@ textarea { min-height: 100px; resize: vertical; }
 .schedule-details strong { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 .flight-search {
   display: grid;
-  grid-template-columns: minmax(200px, 1fr) 130px auto;
+  grid-template-columns: 178px 150px minmax(220px, 1fr) auto;
   gap: 10px;
   margin-bottom: 18px;
 }
+.flight-toggle {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  min-height: 44px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+  isolation: isolate;
+}
+.flight-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.flight-toggle label {
+  z-index: 2;
+  min-height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+  transition: color .2s ease;
+}
+.flight-toggle-thumb {
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  height: calc(100% - 8px);
+  border-radius: 999px;
+  background: var(--brand);
+  box-shadow: 0 8px 18px rgba(239,63,53,.22);
+  transition: transform .22s ease;
+}
+.flight-toggle input:checked + label { color: white; }
+.flight-toggle input[value="departure"]:checked ~ .flight-toggle-thumb { transform: translateX(100%); }
 .flight-fallback {
   grid-column: 1 / -1;
   padding: 30px;
@@ -640,6 +683,8 @@ tr:last-child td { border-bottom: 0; }
   }
   .side-nav button { flex: 0 0 auto; width: auto; white-space: nowrap; padding: 8px 14px; }
   .luxury-card-mesh { grid-template-columns: 1fr; }
+  .flight-search { grid-template-columns: 1fr 1fr; }
+  .flight-search input[name="flight"], .flight-search button { grid-column: 1 / -1; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
   .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; min-width: 0; }
   .rwd-smart-table thead { display: none; }
@@ -688,7 +733,7 @@ tr:last-child td { border-bottom: 0; }
   .airport-weather { flex: 1; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px; }
   .airport-weather small { text-align: right; }
   .driver-page-head h2 { font-size: 21px; }
-  .flight-search { grid-template-columns: 1fr 108px; }
+  .flight-search { grid-template-columns: 1fr; }
   .flight-search button { grid-column: 1 / -1; }
   .flight-meta { grid-template-columns: 1fr; }
   .maintenance-schedule { grid-template-columns: 70px 1fr; padding: 10px; gap: 10px; }

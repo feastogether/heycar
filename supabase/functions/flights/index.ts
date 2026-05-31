@@ -169,13 +169,13 @@ Deno.serve(async (request) => {
     const url = new URL(request.url);
     const query = (url.searchParams.get("q") || "").trim().toLowerCase();
     const endpoint = url.searchParams.get("direction") === "departure" ? "Departure" : "Arrival";
+    const targetDate = (url.searchParams.get("date") || taipeiDate()).slice(0, 10);
     const token = await tdxToken();
     const rows = await readRows(endpoint, token);
-    const today = taipeiDate();
     const flights = rows
       .filter((row: Record<string, unknown>) => {
         const scheduled = firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]);
-        return !scheduled || scheduled.slice(0, 10) >= today;
+        return !scheduled || scheduled.slice(0, 10) === targetDate;
       })
       .filter((row: Record<string, unknown>) => matchFlight(row, query))
       .slice(0, 20)

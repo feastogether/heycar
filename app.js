@@ -477,15 +477,20 @@
   }
 
   function driverFlights() {
+    const defaultDate = today();
     return `
       ${pageHeader("航班資訊")}
       <div class="panel flight-panel">
         <form id="flightSearchForm" class="flight-search">
+          <div class="flight-toggle" role="radiogroup" aria-label="航班類型">
+            <input type="radio" id="flightArrival" name="direction" value="arrival" checked>
+            <label for="flightArrival">抵達</label>
+            <input type="radio" id="flightDeparture" name="direction" value="departure">
+            <label for="flightDeparture">出發</label>
+            <span class="flight-toggle-thumb"></span>
+          </div>
+          <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
           <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off">
-          <select name="direction" aria-label="航班類型">
-            <option value="arrival">抵達</option>
-            <option value="departure">出發</option>
-          </select>
           <button class="primary-btn" type="submit">查詢</button>
         </form>
         <div id="flightList" class="luxury-card-mesh flight-grid"><div class="empty">準備航班查詢中...</div></div>
@@ -963,7 +968,7 @@
     return "雷雨";
   }
 
-  async function loadFlights(query = "", direction = "arrival") {
+  async function loadFlights(query = "", direction = "arrival", date = today()) {
     const box = document.getElementById("flightList");
     if (!box) return;
     if (!cfg.FLIGHT_INFO_URL) {
@@ -981,11 +986,16 @@
       const endpoint = new URL(cfg.FLIGHT_INFO_URL);
       endpoint.searchParams.set("q", query);
       endpoint.searchParams.set("direction", direction);
-      const response = await fetch(endpoint, { cache: "no-store" });
+      endpoint.searchParams.set("date", date || today());
+      const requestHeaders = cfg.SUPABASE_ANON_KEY
+        ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` }
+        : {};
+      const response = await fetch(endpoint, { cache: "no-store", headers: requestHeaders });
       const payload = await response.json();
       if (response.status === 404) throw new Error("航班服務尚未部署到 Supabase");
       if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
-      const flights = Array.isArray(payload) ? payload : payload.data || payload.flights || [];
+      const flights = (Array.isArray(payload) ? payload : payload.data || payload.flights || [])
+        .filter((flight) => !date || String(flight.scheduledTime || flight.ScheduledTime || "").slice(0, 10) === date);
       box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
         <article class="modern-luxury-item flight-card">
           <div class="flight-airline">
@@ -1110,7 +1120,7 @@
     if (e.target.id === "flightSearchForm") {
       e.preventDefault();
       const data = new FormData(e.target);
-      await loadFlights(String(data.get("flight") || "").trim(), String(data.get("direction") || "arrival"));
+      await loadFlights(String(data.get("flight") || "").trim(), String(data.get("direction") || "arrival"), String(data.get("date") || today()));
     }
   });
 
