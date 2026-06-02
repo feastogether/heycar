@@ -713,10 +713,16 @@
 
     layout(`
       <div class="admin-layout">
-        <nav class="side-nav">
-          ${nav.map(([key, text]) => `<button class="ghost-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}">${text}</button>`).join("")}
-        </nav>
-        <section>${body}</section>
+        <aside class="admin-sidebar">
+          <div class="admin-sidebar-head">
+            <strong>管理後台</strong>
+            <small>Fleet Operations</small>
+          </div>
+          <nav class="side-nav">
+            ${nav.map(([key, text]) => `<button class="ghost-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}">${text}</button>`).join("")}
+          </nav>
+        </aside>
+        <section class="admin-workspace">${body}</section>
       </div>
     `);
   }
@@ -793,35 +799,75 @@
   function adminVehicles() {
     return `
       <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-      ${table(["車號", "車輛款式", "車輛品牌", "車身顏色", "油品", "出廠日期", "車輛年齡", "付訂日期", "尾款日期", "領牌日期", "交車日期", "購置總成本", "車輛經銷商", "貸款銀行", "保險公司", "指定駕駛", "原鐵牌所屬", "目前狀態", "目前用途", "代扣車商", "代扣人", "備註", "備註2", "購車補貼", "補貼金額", "操作"], state.data.vehicles.map((v) => [
-        v.plate_no,
-        v.model || "",
-        v.brand || "",
-        v.body_color || "",
-        v.fuel_type || "",
-        fmtDate(v.manufacture_date),
-        vehicleAge(v.manufacture_date),
-        fmtDate(v.deposit_date),
-        fmtDate(v.final_payment_date),
-        fmtDate(v.license_plate_date),
-        fmtDate(v.delivery_date),
-        money(v.purchase_total_cost),
-        v.dealer || "",
-        v.loan_bank || "",
-        v.insurance_company || "",
-        driverName(v.current_driver_id),
-        v.original_plate_owner || "",
-        statusBadge(v.status),
-        v.current_usage || "",
-        v.withholding_dealer || "",
-        v.withholding_person || "",
-        v.notes || "",
-        v.notes2 || "",
-        v.purchase_subsidy_enabled ? "有" : "無",
-        money(v.purchase_subsidy_amount),
-        rowActions("vehicle", "vehicles", v.id)
-      ]))}
+      <div class="asset-card-grid">
+        ${state.data.vehicles.length ? state.data.vehicles.map(vehicleAssetCard).join("") : `<div class="empty">目前沒有車輛資料</div>`}
+      </div>
     `;
+  }
+
+  function vehicleAssetCard(v) {
+    const insuranceDate = insuranceDueDate(v);
+    const maint = latestMaintenance(v.id);
+    return `
+      <article class="asset-card">
+        <div class="asset-card-head">
+          <div>
+            <strong>${escapeHtml(v.plate_no || "-")}</strong>
+            <span>${escapeHtml([v.brand, v.model].filter(Boolean).join(" "))}</span>
+          </div>
+          ${statusBadge(v.status)}
+        </div>
+        <div class="asset-tags">
+          ${assetTag(v.body_color || "未填顏色")}
+          ${assetTag(v.fuel_type || "未填油品")}
+          ${assetTag(v.current_usage || "未設定用途")}
+          ${assetTag(`${vehicleAge(v.manufacture_date)}車齡`)}
+        </div>
+        <div class="asset-section">
+          <h4>購置與交車</h4>
+          ${detailGrid([
+            ["出廠", fmtDate(v.manufacture_date)],
+            ["付訂", fmtDate(v.deposit_date)],
+            ["尾款", fmtDate(v.final_payment_date)],
+            ["領牌", fmtDate(v.license_plate_date)],
+            ["交車", fmtDate(v.delivery_date)],
+            ["總成本", money(v.purchase_total_cost)]
+          ])}
+        </div>
+        <div class="asset-section">
+          <h4>權屬與合作</h4>
+          ${detailGrid([
+            ["經銷商", v.dealer || "-"],
+            ["貸款銀行", v.loan_bank || "-"],
+            ["保險公司", v.insurance_company || "-"],
+            ["鐵牌所屬", v.original_plate_owner || "-"],
+            ["代扣車商", v.withholding_dealer || "-"],
+            ["代扣人", v.withholding_person || "-"]
+          ])}
+        </div>
+        <div class="asset-section alert-section">
+          ${detailGrid([
+            ["保險到期", insuranceDate ? expiryDateBadge(insuranceDate) : "-"],
+            ["下次保養", maint?.next_service_date ? expiryDateBadge(maint.next_service_date) : "-"],
+            ["補貼", v.purchase_subsidy_enabled ? `有 ${money(v.purchase_subsidy_amount)}` : "無"]
+          ])}
+        </div>
+        ${(v.notes || v.notes2) ? `<p class="asset-note">${escapeHtml([v.notes, v.notes2].filter(Boolean).join(" / "))}</p>` : ""}
+        <div class="asset-actions">${rowActions("vehicle", "vehicles", v.id)}</div>
+      </article>
+    `;
+  }
+
+  function assetTag(text) {
+    return `<span>${escapeHtml(text)}</span>`;
+  }
+
+  function detailGrid(items) {
+    return `<dl class="detail-grid">${items.map(([label, value]) => {
+      const text = String(value ?? "-");
+      const safeValue = text.startsWith("<span") ? text : escapeHtml(text);
+      return `<div><dt>${escapeHtml(label)}</dt><dd>${safeValue}</dd></div>`;
+    }).join("")}</dl>`;
   }
 
   function adminVendors() {
@@ -1039,10 +1085,12 @@
       record.vehicle_id = record.vehicle_id || null;
       record.cost = Number(record.cost || 0);
       record.mileage = Number(record.mileage || 0);
-      record.service_interval_months = Number(record.service_interval_months || 6);
+      record.service_interval_months = Number(record.service_interval_months || 0);
       if (record.service_month && !record.service_date) record.service_date = `${record.service_month}-01`;
       if (!record.service_month && record.service_date) record.service_month = String(record.service_date).slice(0, 7);
-      if (!record.next_service_date && record.service_date) record.next_service_date = addMonths(record.service_date, record.service_interval_months);
+      if (!record.next_service_date && record.service_date && record.service_interval_months > 0) {
+        record.next_service_date = addMonths(record.service_date, record.service_interval_months);
+      }
     }
     if (tableName === "insurance_records") {
       record.vehicle_id = record.vehicle_id || null;
@@ -1136,7 +1184,7 @@
       input("service_location", "地點", r.service_location) +
       input("mileage", "里程", r.mileage, "number") +
       input("cost", "費用", r.cost, "number") +
-      input("service_interval_months", "下次保養間隔(月)", r.service_interval_months || 6, "number") +
+      input("service_interval_months", "下次保養間隔(月，選填)", r.service_interval_months || "", "number") +
       input("next_service_date", "下次保養日期", formDate(r.next_service_date), "date") +
       text("items", "保養明細", r.items);
   }
