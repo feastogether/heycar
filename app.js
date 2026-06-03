@@ -282,6 +282,15 @@
   }
 
   function layout(content) {
+    if (state.admin) {
+      app.innerHTML = `
+        <div class="app-shell admin-shell">
+          <main class="main admin-main">${content}</main>
+        </div>
+      `;
+      return;
+    }
+
     app.innerHTML = `
       <div class="app-shell">
         <header class="topbar">
@@ -304,8 +313,8 @@
             <button class="ghost-btn" data-action="logout">登出</button>
           </div>
         </header>
-        ${!state.admin ? renderMarquee() : ""}
-        <main class="main ${state.admin ? "admin-main" : ""}">${content}</main>
+        ${renderMarquee()}
+        <main class="main">${content}</main>
       </div>
     `;
     loadAirportWeather();
@@ -668,16 +677,15 @@
             <div class="admin-sidebar-brand">
               <img class="admin-logo-full" src="${logoUrl}" alt="heycar logo">
               <span class="admin-logo-icon">H</span>
-              <div>
-                <strong>後台管理</strong>
-                <small>亞菲得車隊</small>
-              </div>
             </div>
             <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="收合側邊欄">${state.adminCollapsed ? "›" : "‹"}</button>
           </div>
           <nav class="side-nav">
             ${nav.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${text}"><span class="nav-icon">${icon}</span><span class="nav-label">${text}</span></button>`).join("")}
           </nav>
+          <div class="admin-sidebar-footer">
+            <button class="nav-btn logout-nav-btn" data-action="logout" title="登出"><span class="nav-icon">↩</span><span class="nav-label">登出</span></button>
+          </div>
         </aside>
         <section class="admin-workspace">${body}</section>
       </div>
