@@ -1,0 +1,33 @@
+alter table if exists public.drivers
+  add column if not exists employment_type text,
+  add column if not exists onboard_date date,
+  add column if not exists personality text,
+  add column if not exists photo_url text,
+  add column if not exists residence_city text,
+  add column if not exists service_area text,
+  add column if not exists service_shift text,
+  add column if not exists training_completed_date date,
+  add column if not exists resigned_date date,
+  add column if not exists emergency_contact_name text,
+  add column if not exists emergency_contact_phone text,
+  add column if not exists residential_address text,
+  add column if not exists birthday date,
+  add column if not exists email text,
+  add column if not exists driver_status text default '未上線',
+  add column if not exists referrer text;
+
+alter table if exists public.vehicles
+  add column if not exists body_color text,
+  add column if not exists fuel_type text,
+  add column if not exists manufacture_date date,
+  add column if not exists deposit_date date,
+  add column if not exists final_payment_date date,
+  add column if not exists license_plate_date date,
+  add column if not exists delivery_date date,
+  add column if not exists purchase_total_cost numeric default 0,
+  add column if not exists dealer text,
+  add column if not exists loan_bank text,
+  add column if not exists original_plate_owner text,
+  add column if not exists current_usage text,
+  add column if not exists withholding_dealer text,
+  add column if not exists withholding_person text;

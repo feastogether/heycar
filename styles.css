@@ -763,8 +763,14 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .check-field input[type="checkbox"] { width: auto; }
 
-.admin-layout { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
-.side-nav {
+.admin-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.admin-layout.is-collapsed { grid-template-columns: 72px minmax(0, 1fr); }
+.admin-sidebar {
   display: grid;
   gap: 8px;
   background: white;
@@ -773,8 +779,61 @@ button.calendar-pill:hover { filter: brightness(.96); }
   padding: 12px;
   position: sticky;
   top: 80px;
+  box-shadow: 0 10px 24px rgba(24,32,51,.05);
 }
-.side-nav button { text-align: left; width: 100%; }
+.admin-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.admin-sidebar-head strong { display: block; font-size: 15px; font-weight: 900; }
+.admin-sidebar-head small { color: var(--muted); font-size: 11px; font-weight: 700; }
+.icon-btn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  flex-shrink: 0;
+}
+.side-nav {
+  display: grid;
+  gap: 8px;
+}
+.side-nav button { text-align: left; width: 100%; justify-content: flex-start; }
+.admin-workspace { min-width: 0; }
+.admin-layout.is-collapsed .admin-sidebar { padding: 10px; }
+.admin-layout.is-collapsed .admin-sidebar-head div,
+.admin-layout.is-collapsed .side-nav span { display: none; }
+.admin-layout.is-collapsed .side-nav button {
+  width: 48px;
+  height: 42px;
+  justify-content: center;
+  padding: 0;
+}
+.form-section-title {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 900;
+  border: 1px solid var(--line);
+}
+.driver-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: inline-grid;
+  place-items: center;
+  background: #f1f5f9;
+  color: var(--ink);
+  font-weight: 900;
+  border: 1px solid var(--line);
+}
 .table-wrap {
   overflow-x: auto;
   background: white;
@@ -833,6 +892,12 @@ tr:last-child td { border-bottom: 0; }
   .login-hero { padding: 30px 40px 8px; border-right: 0; }
   .login-card { padding: 28px 28px 34px; }
   .admin-layout { grid-template-columns: 1fr; gap: 14px; }
+  .admin-layout.is-collapsed { grid-template-columns: 1fr; }
+  .admin-sidebar {
+    position: static;
+    padding: 8px;
+  }
+  .admin-sidebar-head { display: none; }
   .side-nav {
     display: flex;
     flex-direction: row;
@@ -842,6 +907,12 @@ tr:last-child td { border-bottom: 0; }
     position: static;
   }
   .side-nav button { flex: 0 0 auto; width: auto; white-space: nowrap; padding: 8px 14px; }
+  .admin-layout.is-collapsed .side-nav span { display: inline; }
+  .admin-layout.is-collapsed .side-nav button {
+    width: auto;
+    height: auto;
+    padding: 8px 14px;
+  }
   .luxury-card-mesh { grid-template-columns: 1fr; }
   .flight-search { grid-template-columns: 1fr 1fr; }
   .flight-search input[name="flight"], .flight-search button { grid-column: 1 / -1; }
