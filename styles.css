@@ -129,6 +129,12 @@ a { text-decoration: none; }
 .airport-weather strong { font-size: 14px; }
 .airport-weather small { font-size: 11px; color: var(--muted); }
 .main { width: min(1200px, calc(100% - 32px)); margin: 24px auto 60px; flex: 1; }
+.main.admin-main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 18px 22px 44px 0;
+}
 
 .marquee-alert {
   overflow: hidden;
@@ -768,6 +774,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
   grid-template-columns: 260px minmax(0, 1fr);
   gap: 20px;
   align-items: start;
+  width: 100%;
 }
 .admin-layout.is-collapsed { grid-template-columns: 72px minmax(0, 1fr); }
 .admin-sidebar {
@@ -775,11 +782,13 @@ button.calendar-pill:hover { filter: brightness(.96); }
   gap: 8px;
   background: white;
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-left: 0;
+  border-radius: 0 var(--radius) var(--radius) 0;
   padding: 12px;
   position: sticky;
   top: 80px;
   box-shadow: 0 10px 24px rgba(24,32,51,.05);
+  min-height: calc(100vh - 98px);
 }
 .admin-sidebar-head {
   display: flex;
@@ -833,6 +842,28 @@ button.calendar-pill:hover { filter: brightness(.96); }
   color: var(--ink);
   font-weight: 900;
   border: 1px solid var(--line);
+}
+.photo-upload-field .driver-avatar {
+  width: 92px;
+  height: 92px;
+  border-radius: 14px;
+  font-size: 28px;
+}
+.photo-upload-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+}
+.photo-upload-row small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 12px;
 }
 .table-wrap {
   overflow-x: auto;
@@ -891,11 +922,15 @@ tr:last-child td { border-bottom: 0; }
   .login-panel { grid-template-columns: 1fr; max-width: 430px; }
   .login-hero { padding: 30px 40px 8px; border-right: 0; }
   .login-card { padding: 28px 28px 34px; }
+  .main.admin-main { width: calc(100% - 28px); margin: 14px auto 50px; padding: 0; }
   .admin-layout { grid-template-columns: 1fr; gap: 14px; }
   .admin-layout.is-collapsed { grid-template-columns: 1fr; }
   .admin-sidebar {
     position: static;
     padding: 8px;
+    min-height: 0;
+    border-left: 1px solid var(--line);
+    border-radius: var(--radius);
   }
   .admin-sidebar-head { display: none; }
   .side-nav {
@@ -1008,4 +1043,6 @@ tr:last-child td { border-bottom: 0; }
   .calendar-events { display: none; }
   .calendar-count { display: grid; }
   .modal { padding: 18px; }
+  .photo-upload-row { grid-template-columns: 1fr; }
+  .photo-upload-field .driver-avatar { width: 84px; height: 84px; }
 }

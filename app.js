@@ -305,7 +305,7 @@
           </div>
         </header>
         ${!state.admin ? renderMarquee() : ""}
-        <main class="main">${content}</main>
+        <main class="main ${state.admin ? "admin-main" : ""}">${content}</main>
       </div>
     `;
     loadAirportWeather();
@@ -910,7 +910,17 @@
       <div class="form-section-title field full">基本資料</div>
       ${input("name", "姓名", d.name, "text", true)}
       ${input("phone", "手機號碼（登入用）", d.phone, "tel", true)}
-      ${input("photo_url", "司機照片網址", d.photo_url)}
+      <div class="field full photo-upload-field">
+        <label>司機照片</label>
+        <div class="photo-upload-row">
+          ${driverPhoto(d)}
+          <div>
+            <input type="hidden" name="photo_url" value="${escapeHtml(d.photo_url || "")}" data-photo-url>
+            <input type="file" accept="image/*" data-photo-upload>
+            <small>可直接選擇照片，上傳後會存入司機資料；建議使用小圖。</small>
+          </div>
+        </div>
+      </div>
       ${input("birthday", "生日", formDate(d.birthday), "date")}
       ${input("email", "電子信箱", d.email, "email")}
       ${input("residence_city", "居住地", d.residence_city)}
@@ -1431,6 +1441,31 @@
         String(data.get("source") || "tdx")
       );
     }
+  });
+
+  document.addEventListener("change", (e) => {
+    const input = e.target.closest("[data-photo-upload]");
+    if (!input || !input.files?.[0]) return;
+    const file = input.files[0];
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const modal = input.closest(".modal");
+      const hidden = modal?.querySelector("[data-photo-url]");
+      if (hidden) hidden.value = reader.result;
+      const preview = modal?.querySelector(".photo-upload-row .driver-avatar");
+      if (!preview) return;
+      if (preview.tagName === "IMG") {
+        preview.src = reader.result;
+      } else {
+        const img = document.createElement("img");
+        img.className = preview.className;
+        img.alt = "driver photo";
+        img.src = reader.result;
+        preview.replaceWith(img);
+      }
+    };
+    reader.readAsDataURL(file);
   });
 
   loadAll().then(() => {
