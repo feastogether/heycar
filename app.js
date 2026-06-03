@@ -639,15 +639,15 @@
 
   function renderAdmin() {
     const nav = [
-      ["drivers", "駕駛管理"],
-      ["vehicles", "車輛管理"],
-      ["calendar", "共同行事曆"],
-      ["maintenanceRecords", "保養管理"],
-      ["maintenanceNotifications", "保養通知"],
-      ["announcements", "公告管理"],
-      ["personalMessages", "個人訊息"],
-      ["payments", "繳費通知"],
-      ["marquee", "跑馬燈通知"]
+      ["drivers", "駕駛管理", "👤"],
+      ["vehicles", "車輛管理", "🚐"],
+      ["calendar", "共同行事曆", "📅"],
+      ["maintenanceRecords", "保養管理", "🧰"],
+      ["maintenanceNotifications", "保養通知", "🔔"],
+      ["announcements", "公告管理", "📢"],
+      ["personalMessages", "個人訊息", "✉️"],
+      ["payments", "繳費通知", "💳"],
+      ["marquee", "跑馬燈通知", "🚨"]
     ];
     const body = {
       drivers: adminDrivers,
@@ -665,14 +665,18 @@
       <div class="admin-layout ${state.adminCollapsed ? "is-collapsed" : ""}">
         <aside class="admin-sidebar">
           <div class="admin-sidebar-head">
-            <div>
-              <strong>後台管理</strong>
-              <small>亞菲得</small>
+            <div class="admin-sidebar-brand">
+              <img class="admin-logo-full" src="${logoUrl}" alt="heycar logo">
+              <span class="admin-logo-icon">H</span>
+              <div>
+                <strong>後台管理</strong>
+                <small>亞菲得車隊</small>
+              </div>
             </div>
             <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="收合側邊欄">${state.adminCollapsed ? "›" : "‹"}</button>
           </div>
           <nav class="side-nav">
-            ${nav.map(([key, text]) => `<button class="ghost-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${text}"><span>${text}</span></button>`).join("")}
+            ${nav.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${text}"><span class="nav-icon">${icon}</span><span class="nav-label">${text}</span></button>`).join("")}
           </nav>
         </aside>
         <section class="admin-workspace">${body}</section>
