@@ -675,7 +675,11 @@
         <aside class="admin-sidebar">
           <div class="admin-sidebar-head">
             <div class="admin-sidebar-brand">
-              <img class="admin-logo-full" src="${logoUrl}" alt="heycar logo">
+              <span class="admin-brand-dot" aria-hidden="true"></span>
+              <span class="admin-brand-text">
+                <strong>Hey!car</strong>
+                <small>亞菲得租車</small>
+              </span>
               <span class="admin-logo-icon">H</span>
             </div>
             <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="收合側邊欄">${state.adminCollapsed ? "›" : "‹"}</button>
