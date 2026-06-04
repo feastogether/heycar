@@ -138,7 +138,7 @@ a { text-decoration: none; }
   padding: 0;
 }
 .admin-shell {
-  background: #eef2f4;
+  background: var(--bg);
 }
 
 .marquee-alert {
@@ -775,37 +775,58 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .check-field input[type="checkbox"] { width: auto; }
 
 .admin-layout {
-  display: grid;
-  grid-template-columns: 276px minmax(0, 1fr);
-  gap: 0;
-  align-items: stretch;
   width: 100%;
-  min-height: 100vh;
+  min-height: calc(100vh - 65px);
 }
-.admin-layout.is-collapsed { grid-template-columns: 76px minmax(0, 1fr); }
+.admin-topbar {
+  box-shadow: 0 8px 22px rgba(24,32,51,.04);
+}
+.menu-btn {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 20px;
+  color: var(--ink);
+}
+.admin-menu-backdrop {
+  position: fixed;
+  inset: 65px 0 0;
+  z-index: 130;
+  background: rgba(15,23,42,.22);
+  backdrop-filter: blur(1px);
+}
 .admin-sidebar {
   display: grid;
   grid-template-rows: auto 1fr auto;
   align-content: start;
-  gap: 22px;
+  gap: 18px;
   background: #fff;
   color: var(--ink);
-  border: 0;
+  border: 1px solid var(--line);
   border-left: 0;
-  border-radius: 0;
-  padding: 24px 16px 18px;
-  position: sticky;
-  top: 0;
-  box-shadow: 10px 0 28px rgba(24,32,51,.06);
-  min-height: 100vh;
+  border-radius: 0 14px 14px 0;
+  padding: 18px 14px;
+  position: fixed;
+  z-index: 140;
+  left: 0;
+  top: 65px;
+  width: min(288px, calc(100vw - 44px));
+  height: calc(100vh - 65px);
+  box-shadow: 16px 0 36px rgba(24,32,51,.14);
   overflow: hidden;
+  transform: translateX(-105%);
+  transition: transform .22s ease;
+}
+.admin-layout.is-menu-open .admin-sidebar {
+  transform: translateX(0);
 }
 .admin-sidebar-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 0 0 22px;
+  gap: 10px;
+  padding: 0 0 16px;
   border-bottom: 1px solid var(--line);
 }
 .admin-sidebar-brand {
@@ -821,8 +842,8 @@ button.calendar-pill:hover { filter: brightness(.96); }
   box-shadow: none;
 }
 .admin-brand-dot {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 999px;
   background: var(--pine-dark);
   box-shadow: inset 0 0 0 8px #fff, 0 0 0 1px var(--line);
@@ -837,7 +858,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .admin-brand-text strong {
   display: block;
-  font-size: 23px;
+  font-size: 20px;
   font-weight: 900;
   color: var(--pine-dark);
   white-space: nowrap;
@@ -845,7 +866,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .admin-brand-text small {
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -861,8 +882,8 @@ button.calendar-pill:hover { filter: brightness(.96); }
   border: 1px solid rgba(184,145,80,.35);
 }
 .icon-btn {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   padding: 0;
   flex-shrink: 0;
   border-radius: 12px;
@@ -872,19 +893,21 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .side-nav {
   display: grid;
-  gap: 12px;
+  gap: 8px;
   align-content: start;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 .nav-btn {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 12px;
   width: 100%;
-  min-height: 52px;
-  padding: 12px 18px;
-  border-radius: 11px;
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 10px;
   color: #50615d;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 900;
   border: 0;
   background: transparent;
@@ -898,7 +921,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .nav-btn.active {
   background: #fbf6ec;
   color: #8a6429;
-  box-shadow: inset 4px 0 0 #c99b50;
+  box-shadow: inset 3px 0 0 #c99b50;
 }
 .nav-icon {
   width: 24px;
@@ -914,13 +937,13 @@ button.calendar-pill:hover { filter: brightness(.96); }
   text-overflow: ellipsis;
 }
 .admin-sidebar-footer {
-  padding-top: 16px;
+  padding-top: 12px;
   border-top: 1px solid var(--line);
 }
 .logout-nav-btn {
   color: var(--pine-dark);
   background: #f8fafc;
-  min-height: 56px;
+  min-height: 48px;
 }
 .logout-nav-btn:hover {
   color: #b91c1c;
@@ -928,41 +951,8 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .admin-workspace {
   min-width: 0;
-  padding: 30px clamp(20px, 3vw, 42px) 48px;
-  background:
-    radial-gradient(circle at top right, rgba(184,145,80,.11), transparent 28rem),
-    #eef2f4;
-}
-.admin-layout.is-collapsed .admin-sidebar { padding: 20px 10px 16px; }
-.admin-layout.is-collapsed .admin-sidebar-brand {
-  justify-content: center;
-  padding: 0;
-}
-.admin-layout.is-collapsed .admin-brand-dot,
-.admin-layout.is-collapsed .admin-brand-text,
-.admin-layout.is-collapsed .nav-label { display: none; }
-.admin-layout.is-collapsed .admin-logo-icon { display: grid; }
-.admin-layout.is-collapsed .admin-sidebar-head {
-  justify-content: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.admin-layout.is-collapsed .icon-btn {
-  width: 48px;
-  height: 38px;
-}
-.admin-layout.is-collapsed .nav-btn {
-  width: 54px;
-  height: 50px;
-  justify-content: center;
-  padding: 0;
-  margin: 0 auto;
-}
-.admin-layout.is-collapsed .nav-btn.active {
-  box-shadow: inset 0 -3px 0 #d4a85a;
-}
-.admin-layout.is-collapsed .admin-sidebar-footer .nav-btn {
-  width: 48px;
+  width: min(1200px, calc(100% - 32px));
+  margin: 24px auto 60px;
 }
 .form-section-title {
   margin-top: 4px;
@@ -1066,18 +1056,9 @@ tr:last-child td { border-bottom: 0; }
   .login-hero { padding: 30px 40px 8px; border-right: 0; }
   .login-card { padding: 28px 28px 34px; }
   .main.admin-main { width: 100%; margin: 0; padding: 0; }
-  .admin-layout { grid-template-columns: 1fr; gap: 14px; }
-  .admin-layout.is-collapsed { grid-template-columns: 1fr; }
   .admin-sidebar {
-    position: static;
-    padding: 12px;
-    min-height: 0;
-    border-radius: 0 0 14px 14px;
-    box-shadow: 0 12px 28px rgba(0,46,39,.14);
-  }
-  .admin-sidebar-head {
-    display: flex;
-    padding-bottom: 10px;
+    top: 61px;
+    height: calc(100vh - 61px);
   }
   .admin-brand-dot {
     width: 34px;
@@ -1089,34 +1070,10 @@ tr:last-child td { border-bottom: 0; }
   .admin-brand-text small {
     font-size: 12px;
   }
-  .side-nav {
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    padding: 2px;
-    gap: 8px;
-    position: static;
-  }
-  .nav-btn,
-  .admin-layout.is-collapsed .nav-btn {
-    flex: 0 0 auto;
-    width: auto;
-    height: 42px;
-    min-height: 42px;
-    white-space: nowrap;
-    padding: 8px 14px;
-    margin: 0;
-    justify-content: center;
-    font-size: 14px;
-  }
-  .admin-layout.is-collapsed .nav-label { display: inline; }
-  .admin-layout.is-collapsed .nav-btn.active {
-    box-shadow: inset 0 -3px 0 #d4a85a;
-  }
-  .admin-sidebar-footer { display: none; }
+  .admin-menu-backdrop { inset: 61px 0 0; }
   .admin-workspace {
-    padding: 8px 14px 34px;
-    background: #eef2f4;
+    width: calc(100% - 28px);
+    margin: 14px auto 50px;
   }
   .luxury-card-mesh { grid-template-columns: 1fr; }
   .flight-search { grid-template-columns: 1fr 1fr; }

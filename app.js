@@ -13,7 +13,7 @@
     admin: false,
     view: "home",
     adminView: "drivers",
-    adminCollapsed: localStorage.getItem("afide-admin-collapsed") === "true",
+    adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
     data: {},
@@ -285,9 +285,24 @@
     if (state.admin) {
       app.innerHTML = `
         <div class="app-shell admin-shell">
+          <header class="topbar admin-topbar">
+            <div class="brand compact-brand">
+              <button class="ghost-btn menu-btn" data-action="toggle-admin-sidebar" aria-label="開啟選單">☰</button>
+              <img src="${logoUrl}" alt="heycar logo">
+              <div class="brand-copy">
+                <div class="brand-title">管理後台</div>
+                <div class="brand-subtitle">亞菲得車隊管理</div>
+              </div>
+            </div>
+            <div class="userbox">
+              <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
+              <button class="ghost-btn" data-action="logout">登出</button>
+            </div>
+          </header>
           <main class="main admin-main">${content}</main>
         </div>
       `;
+      loadAirportWeather();
       return;
     }
 
@@ -671,7 +686,8 @@
     }[state.adminView]();
 
     layout(`
-      <div class="admin-layout ${state.adminCollapsed ? "is-collapsed" : ""}">
+      <div class="admin-layout ${state.adminCollapsed ? "" : "is-menu-open"}">
+        ${state.adminCollapsed ? "" : `<button class="admin-menu-backdrop" data-action="toggle-admin-sidebar" aria-label="關閉選單"></button>`}
         <aside class="admin-sidebar">
           <div class="admin-sidebar-head">
             <div class="admin-sidebar-brand">
@@ -1408,6 +1424,8 @@
     }
     if (target.dataset.adminView) {
       state.adminView = target.dataset.adminView;
+      state.adminCollapsed = true;
+      localStorage.setItem("afide-admin-collapsed", "true");
       render();
     }
     if (target.dataset.page) {
