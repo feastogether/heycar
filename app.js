@@ -690,15 +690,8 @@
         ${state.adminCollapsed ? "" : `<button class="admin-menu-backdrop" data-action="toggle-admin-sidebar" aria-label="關閉選單"></button>`}
         <aside class="admin-sidebar">
           <div class="admin-sidebar-head">
-            <div class="admin-sidebar-brand">
-              <span class="admin-brand-dot" aria-hidden="true"></span>
-              <span class="admin-brand-text">
-                <strong>Hey!car</strong>
-                <small>亞菲得租車</small>
-              </span>
-              <span class="admin-logo-icon">H</span>
-            </div>
-            <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="收合側邊欄">${state.adminCollapsed ? "›" : "‹"}</button>
+            <strong>功能選單</strong>
+            <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="關閉選單">×</button>
           </div>
           <nav class="side-nav">
             ${nav.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${text}"><span class="nav-icon">${icon}</span><span class="nav-label">${text}</span></button>`).join("")}
