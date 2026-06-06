@@ -838,18 +838,21 @@
     if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
     return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
       <article class="vehicle-management-row">
-        <div class="vehicle-primary"><strong>${escapeHtml(vehicle.plate_no || "-")}</strong></div>
+        <div class="vehicle-row-head">
+          <div class="vehicle-primary">
+            <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
+            <span>${escapeHtml(vehicle.brand || "-")}　${escapeHtml(vehicle.model || "-")}</span>
+          </div>
+          <div class="vehicle-head-status">${statusBadge(vehicle.status)}</div>
+          <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        </div>
         <dl class="vehicle-row-facts">
-          <div><dt>品牌</dt><dd>${escapeHtml(vehicle.brand || "-")}</dd></div>
-          <div><dt>款式</dt><dd>${escapeHtml(vehicle.model || "-")}</dd></div>
           <div><dt>目前使用人</dt><dd>${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</dd></div>
           <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
-          <div><dt>狀態</dt><dd>${statusBadge(vehicle.status)}</dd></div>
           <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
           <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
         </dl>
-        <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>
     `).join("")}</div>`;
   }
