@@ -13,6 +13,7 @@
     admin: false,
     view: "home",
     adminView: "drivers",
+    driverStatusFilter: "全部",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
@@ -227,9 +228,12 @@
 
   function driverPhoto(driver) {
     const url = String(driver.photo_url || "").trim();
-    if (url) return `<img class="driver-avatar" src="${escapeHtml(url)}" alt="${escapeHtml(driver.name || "driver")}">`;
+    const localUrl = `./assets/drivers/${encodeURIComponent(String(driver.name || "").trim())}.jpg`;
     const initial = String(driver.name || "?").trim().slice(0, 1) || "?";
-    return `<span class="driver-avatar avatar-fallback">${escapeHtml(initial)}</span>`;
+    return `<span class="driver-photo-stack">
+      <img class="driver-avatar" src="${escapeHtml(url || localUrl)}" alt="${escapeHtml(driver.name || "driver")}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">
+      <span class="driver-avatar avatar-fallback" style="display:none">${escapeHtml(initial)}</span>
+    </span>`;
   }
 
   function driverVehicle(driverId) {
@@ -257,6 +261,39 @@
           <div><dt>駕照到期日</dt><dd>${expiryDateBadge(driver.license_expiry, 30)}</dd></div>
         </dl>
         <div class="driver-card-actions">
+          <button class="primary-btn" data-modal="driver" data-id="${driver.id}">查看與編輯</button>
+          <button class="danger-btn" data-delete="drivers:${driver.id}">刪除</button>
+        </div>
+      </article>
+    `).join("")}</div>`;
+  }
+
+  function driverManagementRows() {
+    if (!state.data.drivers.length) return `<div class="empty">目前沒有駕駛資料</div>`;
+    const statusOrder = { "跑趟中": 0, "已上線": 1, "未上線": 2, "已退出": 3 };
+    const drivers = [...state.data.drivers]
+      .filter((driver) => state.driverStatusFilter === "全部" || driver.driver_status === state.driverStatusFilter)
+      .sort((a, b) => (statusOrder[a.driver_status] ?? 9) - (statusOrder[b.driver_status] ?? 9) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
+    if (!drivers.length) return `<div class="empty">此狀態目前沒有駕駛</div>`;
+    return `<div class="driver-management-list">${drivers.map((driver) => `
+      <article class="driver-management-row">
+        <div class="driver-row-identity">
+          ${driverPhoto(driver)}
+          <div>
+            <div class="driver-card-title">
+              <strong>${escapeHtml(driver.name || "未命名")}</strong>
+              <span class="status ${driver.driver_status === "已退出" ? "returned" : "done"}">${escapeHtml(driver.driver_status || "未上線")}</span>
+            </div>
+            <span>${escapeHtml(driver.phone || "-")}</span>
+          </div>
+        </div>
+        <dl class="driver-row-facts">
+          <div><dt>服務區域</dt><dd>${escapeHtml(driver.service_area || driver.region || "-")}</dd></div>
+          <div><dt>服務時段</dt><dd>${escapeHtml(driver.service_shift || driver.dispatch_time || "-")}</dd></div>
+          <div><dt>年資</dt><dd>${escapeHtml(yearsFrom(driver.onboard_date))}</dd></div>
+          <div><dt>駕照到期日</dt><dd>${expiryDateBadge(driver.license_expiry, 30)}</dd></div>
+        </dl>
+        <div class="driver-row-actions">
           <button class="primary-btn" data-modal="driver" data-id="${driver.id}">查看與編輯</button>
           <button class="danger-btn" data-delete="drivers:${driver.id}">刪除</button>
         </div>
@@ -751,9 +788,14 @@
   }
 
   function adminDrivers() {
+    const filters = ["全部", "跑趟中", "已上線", "未上線", "已退出"];
     return `
       <div class="section-head"><h2>駕駛管理</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
-      ${driverManagementCards()}
+      <div class="driver-filter-bar" aria-label="駕駛狀態篩選">
+        <span>狀態篩選</span>
+        ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}</button>`).join("")}
+      </div>
+      ${driverManagementRows()}
     `;
   }
 
@@ -863,7 +905,7 @@
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
-      <div class="modal">
+      <div class="modal ${type === "driver" ? "driver-editor-modal" : ""}">
         <div class="section-head"><h3>${id ? "編輯" : "新增"}${title}</h3><button class="ghost-btn" data-close-modal>關閉</button></div>
         <form id="modalForm" class="form-grid">${formFn(item || {})}
           <div class="field full actions">
@@ -1447,6 +1489,10 @@
       state.adminView = target.dataset.adminView;
       state.adminCollapsed = true;
       localStorage.setItem("afide-admin-collapsed", "true");
+      render();
+    }
+    if (target.dataset.driverFilter) {
+      state.driverStatusFilter = target.dataset.driverFilter;
       render();
     }
     if (target.dataset.page) {

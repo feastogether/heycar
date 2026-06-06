@@ -930,6 +930,13 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-weight: 900;
   border: 1px solid var(--line);
 }
+.driver-photo-stack {
+  display: inline-grid;
+  flex-shrink: 0;
+}
+.driver-photo-stack > * {
+  grid-area: 1 / 1;
+}
 .driver-management-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
@@ -1007,6 +1014,98 @@ button.calendar-pill:hover { filter: brightness(.96); }
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+.driver-management-list {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+.driver-management-row {
+  display: grid;
+  grid-template-columns: minmax(230px, 1.1fr) minmax(460px, 2fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 14px 4px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  transition: background .15s ease;
+}
+.driver-management-row:hover {
+  background: #f8fafc;
+}
+.driver-row-identity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.driver-row-identity .driver-avatar {
+  width: 76px;
+  height: 76px;
+  border-radius: 12px;
+  flex: 0 0 76px;
+  font-size: 24px;
+}
+.driver-row-facts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.driver-row-facts div {
+  min-width: 0;
+  padding: 8px 10px;
+  border-left: 2px solid #e6ebf1;
+}
+.driver-row-facts dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.driver-row-facts dd {
+  margin: 3px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.driver-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.driver-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.driver-filter-bar span {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.filter-btn {
+  min-height: 34px;
+  padding: 6px 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+.filter-btn:hover,
+.filter-btn.active {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: white;
+}
 .photo-upload-field .driver-avatar {
   width: 132px;
   height: 132px;
@@ -1080,6 +1179,13 @@ tr:last-child td { border-bottom: 0; }
   padding: 24px;
   box-shadow: 0 20px 40px rgba(0,0,0,.15);
 }
+.driver-editor-modal {
+  width: min(1180px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
+.driver-editor-modal .form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .modal h3 { margin: 0; font-size: 20px; font-weight: 900; }
 
 @media (max-width: 900px) {
@@ -1097,6 +1203,10 @@ tr:last-child td { border-bottom: 0; }
     margin: 14px auto 50px;
   }
   .luxury-card-mesh { grid-template-columns: 1fr; }
+  .driver-management-row { grid-template-columns: minmax(0, 1fr); }
+  .driver-row-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .driver-row-actions { padding-top: 10px; border-top: 1px solid var(--line); }
+  .driver-editor-modal .form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .flight-search { grid-template-columns: 1fr 1fr; }
   .flight-search input[name="flight"], .flight-search button { grid-column: 1 / -1; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
@@ -1196,4 +1306,14 @@ tr:last-child td { border-bottom: 0; }
   .driver-management-grid { grid-template-columns: 1fr; }
   .driver-card-main .driver-avatar { width: 76px; height: 76px; }
   .driver-card-facts { grid-template-columns: 1fr 1fr; }
+  .driver-row-facts,
+  .driver-editor-modal .form-grid { grid-template-columns: 1fr; }
+  .driver-row-actions { display: grid; grid-template-columns: 1fr 1fr; }
+  .driver-filter-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 10px;
+  }
+  .driver-filter-bar span,
+  .filter-btn { flex: 0 0 auto; }
 }
