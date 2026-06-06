@@ -318,6 +318,17 @@
     return `<span class="status ${status || "pending"}">${escapeHtml(text)}</span>`;
   }
 
+  function vehicleStatusBadge(status) {
+    const statusClass = status === "正常"
+      ? "done"
+      : ["閒置", "備用車"].includes(status)
+        ? "pending"
+        : ["待修", "維修中"].includes(status)
+          ? "returned"
+          : "read";
+    return `<span class="status vehicle-status ${statusClass}">${escapeHtml(status || "未設定")}</span>`;
+  }
+
   function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (c) => ({
       "&": "&amp;",
@@ -838,21 +849,20 @@
     if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
     return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
       <article class="vehicle-management-row">
-        <div class="vehicle-row-head">
-          <div class="vehicle-primary">
-            <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
-            <span>${escapeHtml(vehicle.brand || "-")}　${escapeHtml(vehicle.model || "-")}</span>
-          </div>
-          <div class="vehicle-head-status">${statusBadge(vehicle.status)}</div>
-          <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-primary">
+          <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
+          <span>${escapeHtml(vehicle.brand || "-")}</span>
+          <b>${escapeHtml(vehicle.model || "-")}</b>
         </div>
         <dl class="vehicle-row-facts">
           <div><dt>目前使用人</dt><dd>${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</dd></div>
           <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
+          <div class="vehicle-status-fact"><dt>目前狀態</dt><dd>${vehicleStatusBadge(vehicle.status)}</dd></div>
           <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
           <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
         </dl>
+        <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>
     `).join("")}</div>`;
   }
@@ -962,6 +972,7 @@
       const record = Object.fromEntries(formData.entries());
       if (tableName === "vehicles") {
         const driverIds = formData.getAll("assigned_driver_ids").filter(Boolean);
+        delete record.assigned_driver_ids;
         record.current_driver_id = driverIds[0] || null;
         record.assigned_driver_names = driverIds.length
           ? driverIds.map((driverId) => driverName(driverId)).join("/")
@@ -1038,7 +1049,19 @@
 
   function multiSelect(name, label, selectedValues, options) {
     const selected = new Set(selectedValues || []);
-    return `<div class="field full"><label>${label}</label><select class="multi-select" name="${name}" multiple>${options.map(([value, text]) => `<option value="${escapeHtml(value)}" ${selected.has(value) ? "selected" : ""}>${escapeHtml(text)}</option>`).join("")}</select><small>可按住 Ctrl／Command 複選多位駕駛</small></div>`;
+    return `<div class="field full driver-picker">
+      <label>${label}</label>
+      <div class="driver-picker-toolbar">
+        <input type="search" data-driver-picker-search placeholder="搜尋駕駛姓名">
+        <span data-driver-picker-count>已選擇 ${selected.size} 位</span>
+      </div>
+      <div class="driver-picker-list">
+        ${options.map(([value, text]) => `<label class="driver-picker-option" data-driver-picker-option data-search-text="${escapeHtml(String(text).toLowerCase())}">
+          <input type="checkbox" name="${name}" value="${escapeHtml(value)}" ${selected.has(value) ? "checked" : ""}>
+          <span>${escapeHtml(text)}</span>
+        </label>`).join("")}
+      </div>
+    </div>`;
   }
 
   function driverOptions(value) {
@@ -1636,6 +1659,14 @@
       render();
       return;
     }
+    const driverPickerCheckbox = e.target.closest(".driver-picker-option input");
+    if (driverPickerCheckbox) {
+      const picker = driverPickerCheckbox.closest(".driver-picker");
+      const count = picker?.querySelectorAll('.driver-picker-option input:checked').length || 0;
+      const countLabel = picker?.querySelector("[data-driver-picker-count]");
+      if (countLabel) countLabel.textContent = `已選擇 ${count} 位`;
+      return;
+    }
     const input = e.target.closest("[data-photo-upload]");
     if (!input || !input.files?.[0]) return;
     const file = input.files[0];
@@ -1662,6 +1693,15 @@
     } finally {
       input.disabled = false;
     }
+  });
+
+  document.addEventListener("input", (e) => {
+    const search = e.target.closest("[data-driver-picker-search]");
+    if (!search) return;
+    const keyword = String(search.value || "").trim().toLowerCase();
+    search.closest(".driver-picker")?.querySelectorAll("[data-driver-picker-option]").forEach((option) => {
+      option.hidden = keyword && !String(option.dataset.searchText || "").includes(keyword);
+    });
   });
 
   loadAll().then(() => {
