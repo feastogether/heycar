@@ -14,6 +14,7 @@
     view: "home",
     adminView: "drivers",
     driverStatusFilter: "全部",
+    vehicleSearch: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
@@ -205,6 +206,13 @@
     return digits;
   }
 
+  function phoneMatches(left, right) {
+    const a = normalizePhone(left);
+    const b = normalizePhone(right);
+    if (!a || !b) return false;
+    return a === b || a.slice(-9) === b.slice(-9);
+  }
+
   function yearsFrom(dateValue) {
     if (!dateValue) return "-";
     const start = new Date(`${fmtDate(dateValue)}T00:00:00`);
@@ -231,7 +239,7 @@
     const localUrl = `./assets/drivers/${encodeURIComponent(String(driver.name || "").trim())}.jpg`;
     const initial = String(driver.name || "?").trim().slice(0, 1) || "?";
     return `<span class="driver-photo-stack">
-      <img class="driver-avatar" src="${escapeHtml(url || localUrl)}" alt="${escapeHtml(driver.name || "driver")}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">
+      <img class="driver-avatar" src="${localUrl}" alt="${escapeHtml(driver.name || "driver")}" data-remote-photo="${escapeHtml(url)}" onerror="if(this.dataset.remotePhoto && this.src !== this.dataset.remotePhoto){this.src=this.dataset.remotePhoto;return}this.style.display='none';this.nextElementSibling.style.display='grid'">
       <span class="driver-avatar avatar-fallback" style="display:none">${escapeHtml(initial)}</span>
     </span>`;
   }
@@ -789,32 +797,45 @@
 
   function adminDrivers() {
     const filters = ["全部", "跑趟中", "已上線", "未上線", "已退出"];
+    const counts = state.data.drivers.reduce((result, driver) => {
+      result[driver.driver_status || "未上線"] = (result[driver.driver_status || "未上線"] || 0) + 1;
+      return result;
+    }, {});
     return `
       <div class="section-head"><h2>駕駛管理</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
       <div class="driver-filter-bar" aria-label="駕駛狀態篩選">
         <span>狀態篩選</span>
-        ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}</button>`).join("")}
+        ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? state.data.drivers.length : (counts[status] || 0)}</b></button>`).join("")}
       </div>
       ${driverManagementRows()}
     `;
   }
 
   function adminVehicles() {
+    const search = state.vehicleSearch.trim().toUpperCase();
+    const vehicles = [...state.data.vehicles]
+      .filter((vehicle) => !search || String(vehicle.plate_no || "").toUpperCase().includes(search))
+      .sort((a, b) => String(a.plate_no || "").localeCompare(String(b.plate_no || "")));
     return `
       <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-      ${table(["車號", "車輛款式", "車輛品牌", "油品", "保險公司", "原鐵牌所屬", "目前狀態", "司機", "強制險到期", "任意險到期", "操作"], state.data.vehicles.map((v) => [
-        v.plate_no,
+      <form id="vehicleSearchForm" class="vehicle-search-bar">
+        <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="輸入車牌號碼快速查看" autocomplete="off">
+        <button class="primary-btn" type="submit">搜尋</button>
+        ${state.vehicleSearch ? `<button class="ghost-btn" type="button" data-action="clear-vehicle-search">清除</button>` : ""}
+      </form>
+      ${table(["車號", "車輛款式", "區域", "目前使用人／用途", "車輛品牌", "油品", "保險公司", "目前狀態", "強制險到期", "任意險到期", "操作"], vehicles.map((v) => [
+        `<strong class="plate-number">${escapeHtml(v.plate_no)}</strong>`,
         v.model || "",
+        v.vehicle_region || "-",
+        v.assigned_driver_names || v.current_usage || driverName(v.current_driver_id),
         v.brand || "",
         v.fuel_type || "-",
         v.insurance_company || "-",
-        v.original_plate_owner || "-",
         statusBadge(v.status),
-        driverName(v.current_driver_id),
         expiryDateBadge(v.compulsory_insurance_expiry, 30),
         expiryDateBadge(v.voluntary_insurance_expiry, 30),
         rowActions("vehicle", "vehicles", v.id)
-      ]))}
+      ]), "vehicle-management-table")}
     `;
   }
 
@@ -872,11 +893,11 @@
     return [driverName(x.driver_id), x.title || "", x.content || "", statusBadge(x.status), fmtDate(x.created_at), rowActions("personalMessage", tableName, x.id)];
   }
 
-  function table(headers, rows) {
+  function table(headers, rows, className = "") {
     if (!rows.length) return `<div class="empty">目前沒有資料</div>`;
     return `
       <div class="panel table-wrap">
-        <table class="rwd-smart-table">
+        <table class="rwd-smart-table ${className}">
           <thead><tr>${headers.map((h) => `<th>${h}</th>`).join("")}</tr></thead>
           <tbody>${rows.map((row) => `<tr>${row.map((cell, index) => `<td data-label="${escapeHtml(headers[index])}">${cell ?? ""}</td>`).join("")}</tr>`).join("")}</tbody>
         </table>
@@ -1065,6 +1086,8 @@
       ${input("brand", "車輛品牌", v.brand)}
       ${input("insurance_company", "保險公司", v.insurance_company)}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}
+      ${input("vehicle_region", "區域", v.vehicle_region)}
+      ${input("assigned_driver_names", "目前使用人／用途", v.assigned_driver_names || v.current_usage)}
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
       ${select("current_driver_id", "司機", v.current_driver_id || "", [["", "未指定"], ...state.data.drivers.map((d) => [d.id, d.name])])}
       ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
@@ -1156,7 +1179,12 @@
       return;
     }
     const loginPhone = normalizePhone(value);
-    const driver = state.data.drivers.find((d) => normalizePhone(d.phone) === loginPhone);
+    let driver = state.data.drivers.find((d) => phoneMatches(d.phone, loginPhone));
+    if (!driver && hasSupabase) {
+      const { data } = await db.from("drivers").select("*");
+      driver = (data || []).find((item) => phoneMatches(item.phone, loginPhone));
+      if (driver && !state.data.drivers.some((item) => item.id === driver.id)) state.data.drivers.unshift(driver);
+    }
     if (!driver) {
       state.error = "找不到此手機號碼，請確認後台已建立駕駛資料。";
       renderLogin();
@@ -1491,6 +1519,10 @@
       localStorage.setItem("afide-admin-collapsed", "true");
       render();
     }
+    if (target.dataset.action === "clear-vehicle-search") {
+      state.vehicleSearch = "";
+      render();
+    }
     if (target.dataset.driverFilter) {
       state.driverStatusFilter = target.dataset.driverFilter;
       render();
@@ -1541,6 +1573,11 @@
         String(data.get("date") || today()),
         String(data.get("source") || "tdx")
       );
+    }
+    if (e.target.id === "vehicleSearchForm") {
+      e.preventDefault();
+      state.vehicleSearch = String(new FormData(e.target).get("plate") || "").trim();
+      render();
     }
   });
 

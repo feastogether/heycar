@@ -933,6 +933,8 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .driver-photo-stack {
   display: inline-grid;
   flex-shrink: 0;
+  width: 64px;
+  height: 64px;
 }
 .driver-photo-stack > * {
   grid-area: 1 / 1;
@@ -1047,6 +1049,10 @@ button.calendar-pill:hover { filter: brightness(.96); }
   flex: 0 0 76px;
   font-size: 24px;
 }
+.driver-row-identity .driver-photo-stack {
+  width: 76px;
+  height: 76px;
+}
 .driver-row-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1100,11 +1106,41 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-size: 13px;
   font-weight: 800;
 }
+.filter-btn b {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: #eef2f6;
+  color: var(--muted);
+  font-size: 11px;
+}
 .filter-btn:hover,
 .filter-btn.active {
   border-color: var(--ink);
   background: var(--ink);
   color: white;
+}
+.filter-btn.active b {
+  background: rgba(255,255,255,.18);
+  color: white;
+}
+.vehicle-search-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 420px) auto auto;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.plate-number,
+.vehicle-management-table th,
+.vehicle-management-table td {
+  white-space: nowrap;
+}
+.vehicle-management-table .actions {
+  flex-wrap: nowrap;
 }
 .photo-upload-field .driver-avatar {
   width: 132px;
@@ -1316,4 +1352,6 @@ tr:last-child td { border-bottom: 0; }
   }
   .driver-filter-bar span,
   .filter-btn { flex: 0 0 auto; }
+  .vehicle-search-bar { grid-template-columns: minmax(0, 1fr) auto; }
+  .vehicle-search-bar .ghost-btn { grid-column: 1 / -1; }
 }
