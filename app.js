@@ -45,7 +45,7 @@
     paid: "已確認"
   };
 
-  const vehicleStatuses = ["正常", "出借", "出租", "待修中", "維修中", "出保中", "閒置", "報廢", "其他"];
+  const vehicleStatuses = ["正常", "待修", "維修中", "閒置", "備用車", "公務車"];
   const fleets = ["亞菲得車隊", "亞緻車隊", "合作車隊"];
 
   const featureIcons = {
@@ -232,6 +232,38 @@
     return `<span class="driver-avatar avatar-fallback">${escapeHtml(initial)}</span>`;
   }
 
+  function driverVehicle(driverId) {
+    return state.data.vehicles.find((vehicle) => vehicle.current_driver_id === driverId) || {};
+  }
+
+  function driverManagementCards() {
+    if (!state.data.drivers.length) return `<div class="empty">目前沒有駕駛資料</div>`;
+    return `<div class="driver-management-grid">${state.data.drivers.map((driver) => `
+      <article class="driver-management-card">
+        <div class="driver-card-main">
+          ${driverPhoto(driver)}
+          <div class="driver-card-identity">
+            <div class="driver-card-title">
+              <strong>${escapeHtml(driver.name || "未命名")}</strong>
+              <span class="status ${driver.driver_status === "已退出" ? "returned" : "done"}">${escapeHtml(driver.driver_status || "未上線")}</span>
+            </div>
+            <span>${escapeHtml(driver.phone || "-")}</span>
+          </div>
+        </div>
+        <dl class="driver-card-facts">
+          <div><dt>服務區域</dt><dd>${escapeHtml(driver.service_area || driver.region || "-")}</dd></div>
+          <div><dt>服務時段</dt><dd>${escapeHtml(driver.service_shift || driver.dispatch_time || "-")}</dd></div>
+          <div><dt>年資</dt><dd>${escapeHtml(yearsFrom(driver.onboard_date))}</dd></div>
+          <div><dt>駕照到期日</dt><dd>${expiryDateBadge(driver.license_expiry, 30)}</dd></div>
+        </dl>
+        <div class="driver-card-actions">
+          <button class="primary-btn" data-modal="driver" data-id="${driver.id}">查看與編輯</button>
+          <button class="danger-btn" data-delete="drivers:${driver.id}">刪除</button>
+        </div>
+      </article>
+    `).join("")}</div>`;
+  }
+
   function statusBadge(status) {
     const text = labels[status] || status || "待處理";
     return `<span class="status ${status || "pending"}">${escapeHtml(text)}</span>`;
@@ -252,7 +284,7 @@
     return String(value).slice(0, 10);
   }
 
-  function expiryDateBadge(value) {
+  function expiryDateBadge(value, warningDays = 30) {
     if (!value) return "-";
     const dateText = fmtDate(value);
     const target = new Date(`${dateText}T00:00:00`);
@@ -262,7 +294,7 @@
     if (daysLeft < 0) {
       return `<span class="expiry-badge expired">${escapeHtml(dateText)}<small>已過期</small></span>`;
     }
-    if (daysLeft <= 10) {
+    if (daysLeft <= warningDays) {
       return `<span class="expiry-badge urgent">${escapeHtml(dateText)}<small>${daysLeft === 0 ? "今天到期" : `${daysLeft} 天內到期`}</small></span>`;
     }
     return `<span class="expiry-badge normal">${escapeHtml(dateText)}</span>`;
@@ -270,6 +302,19 @@
 
   function formDate(value) {
     return value ? String(value).slice(0, 10) : "";
+  }
+
+  async function compressPhoto(file) {
+    const source = await createImageBitmap(file);
+    const maxSize = 720;
+    const scale = Math.min(1, maxSize / Math.max(source.width, source.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(source.width * scale));
+    canvas.height = Math.max(1, Math.round(source.height * scale));
+    const context = canvas.getContext("2d");
+    context.drawImage(source, 0, 0, canvas.width, canvas.height);
+    source.close?.();
+    return canvas.toDataURL("image/jpeg", 0.78);
   }
 
   function render() {
@@ -708,44 +753,24 @@
   function adminDrivers() {
     return `
       <div class="section-head"><h2>駕駛管理</h2><button class="primary-btn" data-modal="driver">新增駕駛</button></div>
-      ${table(["照片", "姓名", "手機登入", "型態", "目前狀態", "服務區域", "服務時段", "到職日", "年資", "教育訓練", "緊急聯絡", "備註", "操作"], state.data.drivers.map((d) => [
-        driverPhoto(d),
-        d.name,
-        d.phone,
-        d.employment_type || "-",
-        d.driver_status || "未上線",
-        d.service_area || "-",
-        d.service_shift || "-",
-        fmtDate(d.onboard_date),
-        yearsFrom(d.onboard_date),
-        fmtDate(d.training_completed_date),
-        [d.emergency_contact_name, d.emergency_contact_phone].filter(Boolean).join(" / ") || "-",
-        d.notes || "",
-        rowActions("driver", "drivers", d.id)
-      ]))}
+      ${driverManagementCards()}
     `;
   }
 
   function adminVehicles() {
     return `
       <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-      ${table(["車牌", "車輛品牌", "型號", "顏色", "油品", "出廠日", "車齡", "狀態", "用途", "指定駕駛", "購置成本", "經銷商", "貸款銀行", "保險公司", "鐵牌所屬", "代扣資訊", "操作"], state.data.vehicles.map((v) => [
+      ${table(["車號", "車輛款式", "車輛品牌", "油品", "保險公司", "原鐵牌所屬", "目前狀態", "司機", "強制險到期", "任意險到期", "操作"], state.data.vehicles.map((v) => [
         v.plate_no,
-        v.brand || "",
         v.model || "",
-        v.body_color || "",
-        v.fuel_type || "",
-        fmtDate(v.manufacture_date),
-        yearsFrom(v.manufacture_date),
+        v.brand || "",
+        v.fuel_type || "-",
+        v.insurance_company || "-",
+        v.original_plate_owner || "-",
         statusBadge(v.status),
-        v.current_usage || "",
         driverName(v.current_driver_id),
-        money(v.purchase_total_cost),
-        v.dealer || "",
-        v.loan_bank || "",
-        v.insurance_company || "",
-        v.original_plate_owner || "",
-        [v.withholding_dealer, v.withholding_person].filter(Boolean).join(" / ") || "-",
+        expiryDateBadge(v.compulsory_insurance_expiry, 30),
+        expiryDateBadge(v.voluntary_insurance_expiry, 30),
         rowActions("vehicle", "vehicles", v.id)
       ]))}
     `;
@@ -869,13 +894,15 @@
       record.status = record.status || "pending";
     }
     if (tableName === "drivers") {
-      blankToNull(record, ["license_expiry", "onboard_date", "training_completed_date", "resigned_date", "birthday"]);
+      blankToNull(record, ["license_expiry", "onboard_date", "resigned_date", "birthday", "planned_vehicle_change_date"]);
+      record.private_trip_count = Number(record.private_trip_count || 0);
+      record.child_seat_count = Number(record.child_seat_count || 0);
+      record.booster_seat_count = Number(record.booster_seat_count || 0);
       record.driver_status = record.driver_status || "未上線";
     }
     if (tableName === "vehicles") {
       record.current_driver_id = record.current_driver_id || null;
-      record.purchase_total_cost = Number(record.purchase_total_cost || 0);
-      blankToNull(record, ["manufacture_date", "deposit_date", "final_payment_date", "license_plate_date", "delivery_date", "insurance_expiry", "last_inspection_date", "next_inspection_date", "last_self_inspection_date"]);
+      blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
     }
     if (tableName === "maintenance_notifications") {
       record.driver_id = record.driver_id || null;
@@ -931,8 +958,10 @@
   }
 
   function driverForm(d) {
+    const vehicle = driverVehicle(d.id);
     return `
-      <div class="form-section-title field full">基本資料</div>
+      <div class="form-section-title field full">識別與狀態</div>
+      ${input("driver_code", "編號", d.driver_code)}
       ${input("name", "姓名", d.name, "text", true)}
       ${input("phone", "手機號碼（登入用）", d.phone, "tel", true)}
       <div class="field full photo-upload-field">
@@ -942,65 +971,64 @@
           <div>
             <input type="hidden" name="photo_url" value="${escapeHtml(d.photo_url || "")}" data-photo-url>
             <input type="file" accept="image/*" data-photo-upload>
-            <small>可直接選擇照片，上傳後會存入司機資料；建議使用小圖。</small>
+            <small>選擇照片後會自動縮小並壓縮，再存入司機資料。</small>
           </div>
         </div>
       </div>
+      ${input("region", "區域", d.region)}
+      ${input("group_name", "編組", d.group_name)}
+      ${select("driver_status", "狀態", d.driver_status || "未上線", [["未上線", "未上線"], ["已上線", "已上線"], ["跑趟中", "跑趟中"], ["已退出", "已退出"]])}
+      ${input("onboard_date", "入隊時間", formDate(d.onboard_date), "date")}
+      ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
+      <div class="field"><label>服務時長（自動計算）</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
+      ${input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date")}
+      <div class="form-section-title field full">聯絡與個人資料</div>
+      ${input("residence_city", "居住區", d.residence_city)}
+      ${input("residential_address", "聯繫地址", d.residential_address)}
       ${input("birthday", "生日", formDate(d.birthday), "date")}
       ${input("email", "電子信箱", d.email, "email")}
-      ${input("residence_city", "居住地", d.residence_city)}
-      ${input("residential_address", "居住地址", d.residential_address)}
-      <div class="form-section-title field full">任職與服務</div>
+      ${input("personality", "個人特質", d.personality)}
+      ${input("second_language", "第二外語", d.second_language)}
+      ${input("guide_license", "導遊證", d.guide_license)}
+      <div class="form-section-title field full">服務與趟次</div>
       ${fleetOptions("fleet_name", "所屬車隊", d.fleet_name)}
-      ${select("employment_type", "任職型態", d.employment_type || "全職", [["全職", "全職"], ["兼職", "兼職"]])}
-      ${input("onboard_date", "到職日期", formDate(d.onboard_date), "date")}
-      ${select("driver_status", "目前狀態", d.driver_status || "未上線", [["未上線", "未上線"], ["已上線", "已上線"], ["跑趟中", "跑趟中"], ["已退出", "已退出"]])}
       ${input("service_area", "服務區域", d.service_area)}
       ${select("service_shift", "服務時段", d.service_shift || "", [["", "未設定"], ["早", "早"], ["中", "中"], ["晚", "晚"], ["早/中", "早/中"], ["中/晚", "中/晚"], ["早/中/晚", "早/中/晚"]])}
-      ${input("training_completed_date", "教育訓練完成日", formDate(d.training_completed_date), "date")}
-      ${input("resigned_date", "離職日期", formDate(d.resigned_date), "date")}
-      <div class="form-section-title field full">聯絡與補充</div>
+      ${input("dispatch_time", "排趟時間", d.dispatch_time)}
+      ${input("private_trip_count", "私趟數量", d.private_trip_count, "number")}
+      ${text("private_trip_notes", "私趟備註", d.private_trip_notes)}
+      <div class="form-section-title field full">目前指派車輛（由車輛管理自動帶入）</div>
+      <div class="field"><label>車輛品牌</label><input value="${escapeHtml(vehicle.brand || "-")}" disabled></div>
+      <div class="field"><label>車輛款式</label><input value="${escapeHtml(vehicle.model || "-")}" disabled></div>
+      <div class="field"><label>油品</label><input value="${escapeHtml(vehicle.fuel_type || "-")}" disabled></div>
+      <div class="field"><label>車號</label><input value="${escapeHtml(vehicle.plate_no || "-")}" disabled></div>
+      <div class="form-section-title field full">推薦、緊急聯絡與用車偏好</div>
+      ${input("referrer", "加入推薦人", d.referrer)}
       ${input("emergency_contact_name", "緊急聯絡人", d.emergency_contact_name)}
       ${input("emergency_contact_phone", "緊急聯絡人電話", d.emergency_contact_phone, "tel")}
-      ${input("referrer", "推薦人", d.referrer)}
-      ${input("personality", "司機個性", d.personality)}
-      ${input("national_id", "身分證字號（備查）", d.national_id)}
-      ${input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date")}
+      ${input("emergency_contact_relationship", "關係", d.emergency_contact_relationship)}
+      ${input("planned_vehicle_change_date", "預計換車時間", formDate(d.planned_vehicle_change_date), "date")}
+      ${input("ideal_vehicle_model", "理想車款", d.ideal_vehicle_model)}
+      ${input("child_seat_count", "安全座椅數量", d.child_seat_count, "number")}
+      ${input("booster_seat_count", "增高墊數量", d.booster_seat_count, "number")}
       ${text("notes", "備註", d.notes)}
     `;
   }
 
   function vehicleForm(v) {
     return `
-      <div class="form-section-title field full">車輛基本資料</div>
-      ${input("plate_no", "車牌", v.plate_no, "text", true)}
+      <div class="form-section-title field full">車輛管理資料</div>
+      ${input("plate_no", "車號", v.plate_no, "text", true)}
+      ${input("model", "車輛款式", v.model)}
       ${input("brand", "車輛品牌", v.brand)}
-      ${input("model", "型號", v.model)}
-      ${input("body_color", "車身顏色", v.body_color)}
-      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
-      ${input("manufacture_date", "出廠日期", formDate(v.manufacture_date), "date")}
-      <div class="form-section-title field full">購置與交車</div>
-      ${input("deposit_date", "付訂日期", formDate(v.deposit_date), "date")}
-      ${input("final_payment_date", "尾款日期", formDate(v.final_payment_date), "date")}
-      ${input("license_plate_date", "領牌日期", formDate(v.license_plate_date), "date")}
-      ${input("delivery_date", "交車日期", formDate(v.delivery_date), "date")}
-      ${input("purchase_total_cost", "購置總成本", v.purchase_total_cost, "number")}
-      ${input("dealer", "車輛經銷商", v.dealer)}
-      <div class="form-section-title field full">權屬與營運</div>
-      ${fleetOptions("fleet_name", "車隊", v.fleet_name)}
-      ${input("loan_bank", "貸款銀行", v.loan_bank)}
       ${input("insurance_company", "保險公司", v.insurance_company)}
-      ${select("current_driver_id", "指定駕駛", v.current_driver_id || "", [["", "未指定"], ...state.data.drivers.map((d) => [d.id, d.name])])}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
-      ${input("current_usage", "目前用途", v.current_usage)}
-      ${input("withholding_dealer", "代扣車商", v.withholding_dealer)}
-      ${input("withholding_person", "代扣人", v.withholding_person)}
-      <div class="form-section-title field full">原有追蹤欄位</div>
-      ${input("insurance_expiry", "保險到期日", formDate(v.insurance_expiry), "date")}
-      ${input("last_inspection_date", "上次檢驗日期", formDate(v.last_inspection_date), "date")}
-      ${input("next_inspection_date", "下次檢驗日期", formDate(v.next_inspection_date), "date")}
-      ${input("last_self_inspection_date", "上次自檢日", formDate(v.last_self_inspection_date), "date")}
+      ${select("current_driver_id", "司機", v.current_driver_id || "", [["", "未指定"], ...state.data.drivers.map((d) => [d.id, d.name])])}
+      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
+      ${fleetOptions("fleet_name", "車隊", v.fleet_name)}
+      ${input("compulsory_insurance_expiry", "強制險到期日", formDate(v.compulsory_insurance_expiry), "date")}
+      ${input("voluntary_insurance_expiry", "任意險到期日", formDate(v.voluntary_insurance_expiry), "date")}
       ${text("notes", "備註", v.notes)}
     `;
   }
@@ -1470,29 +1498,33 @@
     }
   });
 
-  document.addEventListener("change", (e) => {
+  document.addEventListener("change", async (e) => {
     const input = e.target.closest("[data-photo-upload]");
     if (!input || !input.files?.[0]) return;
     const file = input.files[0];
     if (!file.type.startsWith("image/")) return;
-    const reader = new FileReader();
-    reader.onload = () => {
+    try {
+      input.disabled = true;
+      const compressed = await compressPhoto(file);
       const modal = input.closest(".modal");
       const hidden = modal?.querySelector("[data-photo-url]");
-      if (hidden) hidden.value = reader.result;
+      if (hidden) hidden.value = compressed;
       const preview = modal?.querySelector(".photo-upload-row .driver-avatar");
       if (!preview) return;
       if (preview.tagName === "IMG") {
-        preview.src = reader.result;
+        preview.src = compressed;
       } else {
         const img = document.createElement("img");
         img.className = preview.className;
         img.alt = "driver photo";
-        img.src = reader.result;
+        img.src = compressed;
         preview.replaceWith(img);
       }
-    };
-    reader.readAsDataURL(file);
+    } catch {
+      alert("照片處理失敗，請改用 JPG 或 PNG 圖片。");
+    } finally {
+      input.disabled = false;
+    }
   });
 
   loadAll().then(() => {

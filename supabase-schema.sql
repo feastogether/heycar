@@ -121,7 +121,22 @@ create table if not exists public.marquee_messages (
 
 -- Existing projects can run these migrations safely after deploying new frontend fields.
 alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.drivers add column if not exists driver_code text;
+alter table public.drivers add column if not exists region text;
+alter table public.drivers add column if not exists group_name text;
+alter table public.drivers add column if not exists emergency_contact_relationship text;
+alter table public.drivers add column if not exists second_language text;
+alter table public.drivers add column if not exists guide_license text;
+alter table public.drivers add column if not exists dispatch_time text;
+alter table public.drivers add column if not exists private_trip_count integer default 0;
+alter table public.drivers add column if not exists private_trip_notes text;
+alter table public.drivers add column if not exists planned_vehicle_change_date date;
+alter table public.drivers add column if not exists ideal_vehicle_model text;
+alter table public.drivers add column if not exists child_seat_count integer default 0;
+alter table public.drivers add column if not exists booster_seat_count integer default 0;
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
+alter table public.vehicles add column if not exists compulsory_insurance_expiry date;
+alter table public.vehicles add column if not exists voluntary_insurance_expiry date;
 alter table public.vehicles add column if not exists insurance_expiry date;
 alter table public.vehicles add column if not exists insurance_company text;
 alter table public.vehicles add column if not exists last_inspection_date date;

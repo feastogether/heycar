@@ -919,9 +919,9 @@ button.calendar-pill:hover { filter: brightness(.96); }
   border: 1px solid var(--line);
 }
 .driver-avatar {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
   object-fit: cover;
   display: inline-grid;
   place-items: center;
@@ -930,11 +930,88 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-weight: 900;
   border: 1px solid var(--line);
 }
-.photo-upload-field .driver-avatar {
-  width: 92px;
-  height: 92px;
-  border-radius: 14px;
+.driver-management-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 16px;
+}
+.driver-management-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: 0 8px 24px rgba(24,32,51,.04);
+}
+.driver-card-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.driver-card-main .driver-avatar {
+  width: 88px;
+  height: 88px;
+  border-radius: 16px;
   font-size: 28px;
+  flex-shrink: 0;
+}
+.driver-card-identity {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.driver-card-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.driver-card-title strong {
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
+}
+.driver-card-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+}
+.driver-card-facts div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.driver-card-facts dt {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.driver-card-facts dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.driver-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.photo-upload-field .driver-avatar {
+  width: 132px;
+  height: 132px;
+  border-radius: 14px;
+  font-size: 36px;
 }
 .photo-upload-row {
   display: grid;
@@ -1115,5 +1192,8 @@ tr:last-child td { border-bottom: 0; }
   .calendar-count { display: grid; }
   .modal { padding: 18px; }
   .photo-upload-row { grid-template-columns: 1fr; }
-  .photo-upload-field .driver-avatar { width: 84px; height: 84px; }
+  .photo-upload-field .driver-avatar { width: 112px; height: 112px; }
+  .driver-management-grid { grid-template-columns: 1fr; }
+  .driver-card-main .driver-avatar { width: 76px; height: 76px; }
+  .driver-card-facts { grid-template-columns: 1fr 1fr; }
 }
