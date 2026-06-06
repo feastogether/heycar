@@ -15,6 +15,9 @@
     adminView: "drivers",
     driverStatusFilter: "全部",
     vehicleSearch: "",
+    vehicleStatusFilter: "",
+    vehicleRegionFilter: "",
+    vehicleFuelFilter: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
@@ -35,7 +38,8 @@
     "personal_messages",
     "payment_notices",
     "calendar_events",
-    "marquee_messages"
+    "marquee_messages",
+    "emergency_events"
   ];
 
   const labels = {
@@ -56,6 +60,7 @@
     payments: "M4 7h16v10H4V7Zm2 3h12M7 14h4",
     messages: "M4 5h16v11H8l-4 3V5Zm4 5h8M8 13h5",
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
+    broadcast: "M4 6h16v12H4V6Zm6 12v2m4-2v2M8 22h8M9 10l6 2-6 2v-4Z",
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
   };
@@ -76,7 +81,10 @@
     personal_messages: [],
     payment_notices: [],
     calendar_events: [],
-    marquee_messages: []
+    marquee_messages: [],
+    emergency_events: [
+      { id: uid(), title: "車輛事故處理流程", category: "交通事故", summary: "確保人員安全、保留現場資料並立即回報。", content: "1. 先確認人員安全並開啟警示燈。\n2. 撥打 110，必要時撥打 119。\n3. 拍攝現場、車損與對方資料。\n4. 聯絡車隊管理人員並依指示處理。", active: true }
+    ]
   };
 
   function uid() {
@@ -143,7 +151,7 @@
     const result = {};
     for (const table of tables) {
       const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
-      if (error && ["calendar_events", "marquee_messages"].includes(table)) {
+      if (error && ["calendar_events", "marquee_messages", "emergency_events"].includes(table)) {
         result[table] = [];
         continue;
       }
@@ -377,6 +385,23 @@
     return canvas.toDataURL("image/jpeg", 0.78);
   }
 
+  async function uploadAttachment(file) {
+    if (file.size > 10 * 1024 * 1024) throw new Error("附件不可超過 10 MB");
+    if (!hasSupabase) {
+      return await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+    }
+    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
+    const path = `${new Date().toISOString().slice(0, 10)}/${uid()}-${safeName}`;
+    const { error } = await db.storage.from("attachments").upload(path, file, { contentType: file.type, upsert: false });
+    if (error) throw error;
+    return db.storage.from("attachments").getPublicUrl(path).data.publicUrl;
+  }
+
   function render() {
     if (!state.user && !state.admin) {
       renderLogin();
@@ -495,7 +520,8 @@
           ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
           ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
-          ${feature("emergency", "緊急通知", "待開發", 0)}
+          ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
+          ${feature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
         </div>
       `);
       return;
@@ -507,6 +533,7 @@
       payments: () => driverTaskList("payment_notices", "繳費中心"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       emergency: driverEmergency,
+      broadcast: driverBroadcast,
       flights: driverFlights,
       calendar: () => renderCalendar(false)
     };
@@ -567,6 +594,7 @@
               ${statusBadge(isAnnouncementRead(a.id) ? "read" : "pending")}
             </div>
             <div class="lux-item-body">${escapeHtml(a.content)}</div>
+            ${attachmentLink(a)}
             ${!isAnnouncementRead(a.id) ? `<div class="lux-item-actions"><button class="primary-btn" data-read-ann="${a.id}">確認已閱讀</button></div>` : ""}
           </article>
         `).join("") : `<div class="empty">目前沒有公告</div>`}
@@ -602,6 +630,7 @@
               ${isMaint ? maintenanceSchedule(item) : ""}
               ${escapeHtml(item.content || item.description || item.memo || "無詳細內容")}
             </div>
+            ${attachmentLink(item)}
             ${item.status === "pending" ? `
               <div class="lux-item-actions">
                 <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
@@ -638,7 +667,41 @@
   }
 
   function driverEmergency() {
-    return `${pageHeader("緊急通知")}<div class="panel">此功能待開發。</div>`;
+    const items = (state.data.emergency_events || []).filter((item) => item.active !== false);
+    return `
+      ${pageHeader("緊急事件")}
+      <div class="emergency-intro">遇到突發狀況時，請先確保人身安全，再依照對應流程處理並回報車隊。</div>
+      <div class="qa-list">
+        ${items.length ? items.map((item) => `
+          <details class="qa-item">
+            <summary>
+              <span><small>${escapeHtml(item.category || "緊急處理")}</small><strong>${escapeHtml(item.title)}</strong></span>
+              <b>＋</b>
+            </summary>
+            ${item.summary ? `<p class="qa-summary">${escapeHtml(item.summary)}</p>` : ""}
+            <div class="qa-content">${escapeHtml(item.content || "").replace(/\n/g, "<br>")}</div>
+          </details>
+        `).join("") : `<div class="empty">目前沒有緊急事件處理流程</div>`}
+      </div>
+    `;
+  }
+
+  function driverBroadcast() {
+    const streams = [
+      ["桃園機場即時轉播 1", "y3_x8el5ZJY"],
+      ["桃園機場即時轉播 2", "wWEnxWA7nnY"]
+    ];
+    return `
+      ${pageHeader("機場轉播")}
+      <div class="broadcast-grid">
+        ${streams.map(([title, id]) => `
+          <article class="broadcast-item">
+            <div class="broadcast-video"><iframe src="https://www.youtube-nocookie.com/embed/${id}?rel=0" title="${title}" loading="lazy" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe></div>
+            <div class="broadcast-caption"><strong>${title}</strong><a href="https://youtu.be/${id}" target="_blank" rel="noreferrer">在 YouTube 開啟</a></div>
+          </article>
+        `).join("")}
+      </div>
+    `;
   }
 
   function driverFlights() {
@@ -664,7 +727,7 @@
             <span>日期</span>
             <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
           </label>
-          <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off" inputmode="none" data-flight-input>
+          <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off" autocapitalize="characters">
           <button class="primary-btn" type="submit">查詢</button>
         </form>
         <div id="flightList" class="luxury-card-mesh flight-grid"><div class="empty">準備航班查詢中...</div></div>
@@ -776,7 +839,8 @@
       ["announcements", "公告管理", "📢"],
       ["personalMessages", "個人訊息", "✉️"],
       ["payments", "繳費通知", "💳"],
-      ["marquee", "跑馬燈通知", "🚨"]
+      ["marquee", "跑馬燈通知", "🚨"],
+      ["emergencyEvents", "緊急事件", "🆘"]
     ];
     const body = {
       drivers: adminDrivers,
@@ -787,7 +851,8 @@
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
       payments: () => adminTaskManager("payment_notices", "繳費通知"),
       calendar: () => renderCalendar(true),
-      marquee: adminMarquee
+      marquee: adminMarquee,
+      emergencyEvents: adminEmergencyEvents
     }[state.adminView]();
 
     layout(`
@@ -829,15 +894,27 @@
   function adminVehicles() {
     const search = state.vehicleSearch.trim().toUpperCase();
     const vehicles = [...state.data.vehicles]
-      .filter((vehicle) => !search || String(vehicle.plate_no || "").toUpperCase().includes(search))
+      .filter((vehicle) => {
+        const searchable = [vehicle.plate_no, vehicle.brand, vehicle.model, vehicle.assigned_driver_names].join(" ").toUpperCase();
+        return (!search || searchable.includes(search))
+          && (!state.vehicleStatusFilter || vehicle.status === state.vehicleStatusFilter)
+          && (!state.vehicleRegionFilter || vehicle.vehicle_region === state.vehicleRegionFilter)
+          && (!state.vehicleFuelFilter || vehicle.fuel_type === state.vehicleFuelFilter);
+      })
       .sort((a, b) => String(a.plate_no || "").localeCompare(String(b.plate_no || "")));
+    const statuses = [...new Set(state.data.vehicles.map((item) => item.status).filter(Boolean))].sort();
+    const regions = [...new Set(state.data.vehicles.map((item) => item.vehicle_region).filter(Boolean))].sort();
+    const fuels = [...new Set(state.data.vehicles.map((item) => item.fuel_type).filter(Boolean))].sort();
     return `
       <div class="vehicle-toolbar">
-        <h2>車輛管理</h2>
+        <div><h2>車輛管理</h2><small>共 ${vehicles.length} 輛符合條件</small></div>
         <form id="vehicleSearchForm" class="vehicle-search-bar">
-          <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="輸入車牌快速查看" autocomplete="off">
-          <button class="primary-btn" type="submit">搜尋</button>
-          ${state.vehicleSearch ? `<button class="ghost-btn" type="button" data-action="clear-vehicle-search">清除</button>` : ""}
+          <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="搜尋車牌、品牌、車款或駕駛" autocomplete="off">
+          <select name="status"><option value="">全部狀態</option>${statuses.map((value) => `<option ${state.vehicleStatusFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select name="region"><option value="">全部區域</option>${regions.map((value) => `<option ${state.vehicleRegionFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select name="fuel"><option value="">全部油品</option>${fuels.map((value) => `<option ${state.vehicleFuelFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <button class="primary-btn" type="submit">套用篩選</button>
+          <button class="ghost-btn" type="button" data-action="clear-vehicle-search">重設</button>
         </form>
         <button class="primary-btn" data-modal="vehicle">新增車輛</button>
       </div>
@@ -850,8 +927,8 @@
     return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
       <article class="vehicle-management-row">
         <div class="vehicle-primary">
-          <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
-          <span>${escapeHtml(vehicle.brand || "-")}</span>
+          <strong class="plate-visual">${escapeHtml(vehicle.plate_no || "-")}</strong>
+          <span>品牌 · ${escapeHtml(vehicle.brand || "-")}</span>
           <b>${escapeHtml(vehicle.model || "-")}</b>
         </div>
         <dl class="vehicle-row-facts">
@@ -892,7 +969,7 @@
     return `
       <div class="section-head"><h2>公告管理</h2><button class="primary-btn" data-modal="announcement">新增公告</button></div>
       ${table(["標題", "通知車隊", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [
-        a.title, a.target_fleet || "全部車隊", a.content, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
+        a.title, a.target_fleet || "全部車隊", `${escapeHtml(a.content || "")}${attachmentLink(a)}`, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
       ]))}
     `;
   }
@@ -916,7 +993,7 @@
       return [driverName(x.driver_id), vehicleName(x.vehicle_id), fmtDate(x.service_date), x.service_time || "-", x.content || "", x.vendor || "", statusBadge(x.status), rowActions("maintenanceNotification", tableName, x.id)];
     }
     if (tableName === "payment_notices") {
-      return [driverName(x.driver_id), x.fee_type || "", Number(x.amount || 0).toLocaleString(), fmtDate(x.due_date), x.content || "", statusBadge(x.status), rowActions("paymentNotice", tableName, x.id)];
+      return [driverName(x.driver_id), x.fee_type || "", Number(x.amount || 0).toLocaleString(), fmtDate(x.due_date), `${escapeHtml(x.content || "")}${attachmentLink(x)}`, statusBadge(x.status), rowActions("paymentNotice", tableName, x.id)];
     }
     return [driverName(x.driver_id), x.title || "", x.content || "", statusBadge(x.status), fmtDate(x.created_at), rowActions("personalMessage", tableName, x.id)];
   }
@@ -947,7 +1024,8 @@
       personalMessage: ["個人訊息", "personal_messages", personalMessageForm],
       paymentNotice: ["繳費通知", "payment_notices", paymentNoticeForm],
       calendarEvent: ["行程", "calendar_events", calendarEventForm],
-      marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm]
+      marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
+      emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm]
     };
     const [title, tableName, formFn] = map[type];
     const item = id ? state.data[tableName].find((row) => row.id === id) : preset;
@@ -1017,6 +1095,7 @@
       record.event_time = record.event_time || null;
     }
     if (tableName === "marquee_messages") record.active = record.active === "true";
+    if (tableName === "emergency_events") record.active = record.active === "true";
     if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
     if (tableName === "maintenance_records") {
       record.cost = Number(record.cost || 0);
@@ -1047,6 +1126,23 @@
     return `<div class="field"><label class="check-field"><input type="hidden" name="${name}" value="false"><input name="${name}" type="checkbox" value="true" ${checked ? "checked" : ""}>${label}</label></div>`;
   }
 
+  function attachmentField(item) {
+    return `<div class="field full attachment-field">
+      <label>夾帶檔案</label>
+      <input type="hidden" name="attachment_url" value="${escapeHtml(item.attachment_url || "")}" data-attachment-url>
+      <input type="hidden" name="attachment_name" value="${escapeHtml(item.attachment_name || "")}" data-attachment-name>
+      <div class="attachment-upload-row">
+        <input type="file" data-attachment-upload>
+        <span data-attachment-status>${item.attachment_url ? `已附加：${escapeHtml(item.attachment_name || "查看檔案")}` : "尚未選擇檔案"}</span>
+      </div>
+    </div>`;
+  }
+
+  function attachmentLink(item) {
+    if (!item?.attachment_url) return "";
+    return `<div class="attachment-link"><a href="${escapeHtml(item.attachment_url)}" target="_blank" rel="noreferrer">📎 ${escapeHtml(item.attachment_name || "查看附件")}</a></div>`;
+  }
+
   function multiSelect(name, label, selectedValues, options) {
     const selected = new Set(selectedValues || []);
     return `<div class="field full driver-picker">
@@ -1066,6 +1162,17 @@
 
   function driverOptions(value) {
     return select("driver_id", "指定駕駛", value || "", [["", "請選擇"], ...state.data.drivers.map((d) => [d.id, d.name])]);
+  }
+
+  function searchableDriverOptions(value) {
+    return `<div class="field full driver-picker single-driver-picker">
+      <label>指定駕駛</label>
+      <div class="driver-picker-toolbar"><input type="search" data-driver-picker-search placeholder="輸入姓名快速搜尋"><span data-driver-picker-count>${value ? "已選擇 1 位" : "尚未選擇"}</span></div>
+      <div class="driver-picker-list">
+        <label class="driver-picker-option" data-driver-picker-option data-search-text="未指定"><input type="radio" name="driver_id" value="" ${!value ? "checked" : ""}><span>未指定</span></label>
+        ${state.data.drivers.map((driver) => `<label class="driver-picker-option" data-driver-picker-option data-search-text="${escapeHtml(String(driver.name).toLowerCase())}"><input type="radio" name="driver_id" value="${driver.id}" ${value === driver.id ? "checked" : ""}><span>${escapeHtml(driver.name)}</span></label>`).join("")}
+      </div>
+    </div>`;
   }
 
   function vehicleOptions(value) {
@@ -1136,6 +1243,21 @@
     `;
   }
 
+  function adminEmergencyEvents() {
+    return `
+      <div class="section-head"><h2>緊急事件處理流程</h2><button class="primary-btn" data-modal="emergencyEvent">新增事件</button></div>
+      <div class="admin-qa-list">
+        ${(state.data.emergency_events || []).length ? state.data.emergency_events.map((item) => `
+          <article class="admin-qa-item">
+            <div><small>${escapeHtml(item.category || "緊急處理")}</small><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.summary || item.content || "")}</p></div>
+            <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
+            ${rowActions("emergencyEvent", "emergency_events", item.id)}
+          </article>
+        `).join("") : `<div class="empty">目前沒有緊急事件處理流程</div>`}
+      </div>
+    `;
+  }
+
   function vehicleForm(v) {
     const selectedDriverIds = state.data.drivers
       .filter((driver) => String(v.assigned_driver_names || "").split("/").includes(driver.name))
@@ -1168,7 +1290,7 @@
   }
 
   function announcementForm(a) {
-    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車隊", a.target_fleet, true) + text("content", "公告內容", a.content);
+    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車隊", a.target_fleet, true) + text("content", "公告內容", a.content) + attachmentField(a);
   }
 
   function maintenanceNotificationForm(n) {
@@ -1188,7 +1310,7 @@
     return driverOptions(p.driver_id) + input("fee_type", "費用類型", p.fee_type || "罰單", "text", true) +
       input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
-      text("content", "繳費內容", p.content);
+      text("content", "繳費內容", p.content) + attachmentField(p);
   }
 
   function calendarEventForm(item) {
@@ -1197,13 +1319,21 @@
       select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["tires", "調胎"], ["other", "其他"]]) +
       fleetOptions("fleet_name", "通知車隊", item.fleet_name) +
       input("plate_no", "車牌", item.plate_no, "text", true) +
-      driverOptions(item.driver_id) +
+      searchableDriverOptions(item.driver_id) +
       input("vendor", "保養廠", item.vendor) +
       text("content", "內容", item.content);
   }
 
   function marqueeMessageForm(item) {
     return text("message", "紅色跑馬燈通知內容", item.message) + checkbox("active", "啟用通知", item.active !== false);
+  }
+
+  function emergencyEventForm(item) {
+    return input("title", "事件標題", item.title, "text", true)
+      + input("category", "分類", item.category || "緊急處理")
+      + text("summary", "簡短說明", item.summary)
+      + text("content", "完整處理流程", item.content)
+      + checkbox("active", "啟用此事件", item.active !== false);
   }
 
   async function syncCalendarNotification(item) {
@@ -1469,77 +1599,10 @@
     return code ? `https://images.kiwi.com/airlines/64/${code}.png` : "";
   }
 
-  function handleFlightKeyboard(key) {
-    const input = document.querySelector('#flightSearchForm input[name="flight"]');
-    if (!input) return;
-    const current = String(input.value || "").toUpperCase();
-    if (key === "clear") input.value = "";
-    else if (key === "backspace") input.value = current.slice(0, -1);
-    else if (key === "enter") {
-      hideFlightKeyboard();
-      document.getElementById("flightSearchForm")?.requestSubmit();
-      return;
-    }
-    else input.value = `${current}${key}`.replace(/[^A-Z0-9]/g, "");
-    input.focus();
-  }
-
-  function showFlightKeyboard() {
-    let keyboard = document.getElementById("flightKeyboard");
-    if (!keyboard) {
-      keyboard = document.createElement("div");
-      keyboard.id = "flightKeyboard";
-      keyboard.className = "flight-keyboard-sheet";
-      keyboard.innerHTML = `
-        <div class="keyboard-grip"></div>
-        <div class="keyboard-row digit-row">
-          ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"].map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
-        </div>
-        <div class="keyboard-row qwerty-row qwerty-top">
-          ${"QWERTYUIOP".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
-        </div>
-        <div class="keyboard-row qwerty-row qwerty-middle">
-          ${"ASDFGHJKL".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
-        </div>
-        <div class="keyboard-row qwerty-row qwerty-bottom">
-          <button type="button" class="keyboard-action keyboard-collapse" data-flight-key="close">⌄</button>
-          ${"ZXCVBNM".split("").map((key) => `<button type="button" data-flight-key="${key}">${key}</button>`).join("")}
-          <button type="button" class="keyboard-action keyboard-backspace" data-flight-key="backspace">⌫</button>
-        </div>
-        <div class="keyboard-row action-row">
-          <button type="button" class="keyboard-action" data-flight-key="clear">清除</button>
-          <button type="button" class="keyboard-done" data-flight-key="enter">Enter 搜尋</button>
-        </div>
-      `;
-      document.body.appendChild(keyboard);
-    }
-    keyboard.classList.add("is-open");
-    document.body.classList.add("flight-keyboard-open");
-  }
-
-  function hideFlightKeyboard() {
-    document.getElementById("flightKeyboard")?.classList.remove("is-open");
-    document.body.classList.remove("flight-keyboard-open");
-  }
-
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
-    const flightInput = e.target.closest("[data-flight-input]");
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
-    if (flightInput) {
-      showFlightKeyboard();
-      return;
-    }
-    if (target?.dataset.flightKey) {
-      if (target.dataset.flightKey === "close") hideFlightKeyboard();
-      else handleFlightKeyboard(target.dataset.flightKey);
-      return;
-    }
-    if (!target && !cellDate) {
-      hideFlightKeyboard();
-      return;
-    }
-    if (!e.target.closest("#flightKeyboard") && !e.target.closest("#flightSearchForm")) hideFlightKeyboard();
+    if (!target && !cellDate) return;
     if (target?.dataset.modal) {
       openModal(target.dataset.modal, target.dataset.id);
       return;
@@ -1588,6 +1651,9 @@
     }
     if (target.dataset.action === "clear-vehicle-search") {
       state.vehicleSearch = "";
+      state.vehicleStatusFilter = "";
+      state.vehicleRegionFilter = "";
+      state.vehicleFuelFilter = "";
       render();
     }
     if (target.dataset.driverFilter) {
@@ -1647,7 +1713,11 @@
     }
     if (e.target.id === "vehicleSearchForm") {
       e.preventDefault();
-      state.vehicleSearch = String(new FormData(e.target).get("plate") || "").trim();
+      const data = new FormData(e.target);
+      state.vehicleSearch = String(data.get("plate") || "").trim();
+      state.vehicleStatusFilter = String(data.get("status") || "");
+      state.vehicleRegionFilter = String(data.get("region") || "");
+      state.vehicleFuelFilter = String(data.get("fuel") || "");
       render();
     }
   });
@@ -1664,7 +1734,27 @@
       const picker = driverPickerCheckbox.closest(".driver-picker");
       const count = picker?.querySelectorAll('.driver-picker-option input:checked').length || 0;
       const countLabel = picker?.querySelector("[data-driver-picker-count]");
-      if (countLabel) countLabel.textContent = `已選擇 ${count} 位`;
+      if (countLabel) countLabel.textContent = count ? `已選擇 ${count} 位` : "尚未選擇";
+      return;
+    }
+    const attachmentInput = e.target.closest("[data-attachment-upload]");
+    if (attachmentInput?.files?.[0]) {
+      const file = attachmentInput.files[0];
+      const field = attachmentInput.closest(".attachment-field");
+      const status = field?.querySelector("[data-attachment-status]");
+      try {
+        attachmentInput.disabled = true;
+        if (status) status.textContent = "檔案上傳中...";
+        const url = await uploadAttachment(file);
+        field.querySelector("[data-attachment-url]").value = url;
+        field.querySelector("[data-attachment-name]").value = file.name;
+        if (status) status.textContent = `已附加：${file.name}`;
+      } catch (error) {
+        if (status) status.textContent = "上傳失敗";
+        alert(error.message || error);
+      } finally {
+        attachmentInput.disabled = false;
+      }
       return;
     }
     const input = e.target.closest("[data-photo-upload]");
