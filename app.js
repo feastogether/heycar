@@ -302,6 +302,10 @@
           <div><dt>駕照到期日</dt><dd>${expiryDateBadge(driver.license_expiry, 30)}</dd></div>
         </dl>
         <div class="driver-row-actions">
+          <label class="permission-switch" title="控制此駕駛是否可以登入">
+            <input type="checkbox" data-driver-login="${driver.id}" ${driver.login_enabled === false ? "" : "checked"}>
+            <span></span><b>${driver.login_enabled === false ? "禁止登入" : "允許登入"}</b>
+          </label>
           <button class="primary-btn" data-modal="driver" data-id="${driver.id}">查看與編輯</button>
           <button class="danger-btn" data-delete="drivers:${driver.id}">刪除</button>
         </div>
@@ -817,26 +821,37 @@
       .filter((vehicle) => !search || String(vehicle.plate_no || "").toUpperCase().includes(search))
       .sort((a, b) => String(a.plate_no || "").localeCompare(String(b.plate_no || "")));
     return `
-      <div class="section-head"><h2>車輛管理</h2><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
-      <form id="vehicleSearchForm" class="vehicle-search-bar">
-        <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="輸入車牌號碼快速查看" autocomplete="off">
-        <button class="primary-btn" type="submit">搜尋</button>
-        ${state.vehicleSearch ? `<button class="ghost-btn" type="button" data-action="clear-vehicle-search">清除</button>` : ""}
-      </form>
-      ${table(["車號", "車輛款式", "區域", "目前使用人／用途", "車輛品牌", "油品", "保險公司", "目前狀態", "強制險到期", "任意險到期", "操作"], vehicles.map((v) => [
-        `<strong class="plate-number">${escapeHtml(v.plate_no)}</strong>`,
-        v.model || "",
-        v.vehicle_region || "-",
-        v.assigned_driver_names || v.current_usage || driverName(v.current_driver_id),
-        v.brand || "",
-        v.fuel_type || "-",
-        v.insurance_company || "-",
-        statusBadge(v.status),
-        expiryDateBadge(v.compulsory_insurance_expiry, 30),
-        expiryDateBadge(v.voluntary_insurance_expiry, 30),
-        rowActions("vehicle", "vehicles", v.id)
-      ]), "vehicle-management-table")}
+      <div class="vehicle-toolbar">
+        <h2>車輛管理</h2>
+        <form id="vehicleSearchForm" class="vehicle-search-bar">
+          <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="輸入車牌快速查看" autocomplete="off">
+          <button class="primary-btn" type="submit">搜尋</button>
+          ${state.vehicleSearch ? `<button class="ghost-btn" type="button" data-action="clear-vehicle-search">清除</button>` : ""}
+        </form>
+        <button class="primary-btn" data-modal="vehicle">新增車輛</button>
+      </div>
+      ${vehicleManagementRows(vehicles)}
     `;
+  }
+
+  function vehicleManagementRows(vehicles) {
+    if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
+    return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
+      <article class="vehicle-management-row">
+        <div class="vehicle-primary"><strong>${escapeHtml(vehicle.plate_no || "-")}</strong></div>
+        <dl class="vehicle-row-facts">
+          <div><dt>品牌</dt><dd>${escapeHtml(vehicle.brand || "-")}</dd></div>
+          <div><dt>款式</dt><dd>${escapeHtml(vehicle.model || "-")}</dd></div>
+          <div><dt>目前使用人</dt><dd>${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</dd></div>
+          <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
+          <div><dt>狀態</dt><dd>${statusBadge(vehicle.status)}</dd></div>
+          <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
+          <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
+          <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
+        </dl>
+        <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+      </article>
+    `).join("")}</div>`;
   }
 
   function adminMarquee() {
@@ -927,9 +942,11 @@
     modal.className = "modal-backdrop";
     modal.innerHTML = `
       <div class="modal ${type === "driver" ? "driver-editor-modal" : ""}">
-        <div class="section-head"><h3>${id ? "編輯" : "新增"}${title}</h3><button class="ghost-btn" data-close-modal>關閉</button></div>
-        <form id="modalForm" class="form-grid">${formFn(item || {})}
-          <div class="field full actions">
+        <div class="modal-title"><h3>${id ? "編輯" : "新增"}${title}</h3></div>
+        <form id="modalForm" class="modal-form">
+          <div class="modal-form-body form-grid">${formFn(item || {})}</div>
+          <div class="modal-actions">
+            <button class="ghost-btn" type="button" data-close-modal>關閉</button>
             <button class="primary-btn" type="submit">儲存</button>
           </div>
         </form>
@@ -938,7 +955,15 @@
     document.body.appendChild(modal);
     modal.querySelector("#modalForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const record = Object.fromEntries(new FormData(e.currentTarget).entries());
+      const formData = new FormData(e.currentTarget);
+      const record = Object.fromEntries(formData.entries());
+      if (tableName === "vehicles") {
+        const driverIds = formData.getAll("assigned_driver_ids").filter(Boolean);
+        record.current_driver_id = driverIds[0] || null;
+        record.assigned_driver_names = driverIds.length
+          ? driverIds.map((driverId) => driverName(driverId)).join("/")
+          : (item?.assigned_driver_names || item?.current_usage || "");
+      }
       try {
         const saved = id
           ? await update(tableName, id, normalizeRecord(tableName, record))
@@ -962,6 +987,7 @@
       record.child_seat_count = Number(record.child_seat_count || 0);
       record.booster_seat_count = Number(record.booster_seat_count || 0);
       record.driver_status = record.driver_status || "未上線";
+      record.login_enabled = record.login_enabled === "true";
     }
     if (tableName === "vehicles") {
       record.current_driver_id = record.current_driver_id || null;
@@ -1007,6 +1033,11 @@
     return `<div class="field"><label class="check-field"><input type="hidden" name="${name}" value="false"><input name="${name}" type="checkbox" value="true" ${checked ? "checked" : ""}>${label}</label></div>`;
   }
 
+  function multiSelect(name, label, selectedValues, options) {
+    const selected = new Set(selectedValues || []);
+    return `<div class="field full"><label>${label}</label><select class="multi-select" name="${name}" multiple>${options.map(([value, text]) => `<option value="${escapeHtml(value)}" ${selected.has(value) ? "selected" : ""}>${escapeHtml(text)}</option>`).join("")}</select><small>可按住 Ctrl／Command 複選多位駕駛</small></div>`;
+  }
+
   function driverOptions(value) {
     return select("driver_id", "指定駕駛", value || "", [["", "請選擇"], ...state.data.drivers.map((d) => [d.id, d.name])]);
   }
@@ -1041,6 +1072,7 @@
       ${input("region", "區域", d.region)}
       ${input("group_name", "編組", d.group_name)}
       ${select("driver_status", "狀態", d.driver_status || "未上線", [["未上線", "未上線"], ["已上線", "已上線"], ["跑趟中", "跑趟中"], ["已退出", "已退出"]])}
+      ${checkbox("login_enabled", "允許此駕駛登入", d.login_enabled !== false)}
       ${input("onboard_date", "入隊時間", formDate(d.onboard_date), "date")}
       ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
       <div class="field"><label>服務時長（自動計算）</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
@@ -1079,6 +1111,10 @@
   }
 
   function vehicleForm(v) {
+    const selectedDriverIds = state.data.drivers
+      .filter((driver) => String(v.assigned_driver_names || "").split("/").includes(driver.name))
+      .map((driver) => driver.id);
+    if (!selectedDriverIds.length && v.current_driver_id) selectedDriverIds.push(v.current_driver_id);
     return `
       <div class="form-section-title field full">車輛管理資料</div>
       ${input("plate_no", "車號", v.plate_no, "text", true)}
@@ -1089,7 +1125,7 @@
       ${input("vehicle_region", "區域", v.vehicle_region)}
       ${input("assigned_driver_names", "目前使用人／用途", v.assigned_driver_names || v.current_usage)}
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
-      ${select("current_driver_id", "司機", v.current_driver_id || "", [["", "未指定"], ...state.data.drivers.map((d) => [d.id, d.name])])}
+      ${multiSelect("assigned_driver_ids", "目前使用人（可複選）", selectedDriverIds, state.data.drivers.map((d) => [d.id, d.name]))}
       ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
       ${fleetOptions("fleet_name", "車隊", v.fleet_name)}
       ${input("compulsory_insurance_expiry", "強制險到期日", formDate(v.compulsory_insurance_expiry), "date")}
@@ -1184,6 +1220,11 @@
       const { data } = await db.from("drivers").select("*");
       driver = (data || []).find((item) => phoneMatches(item.phone, loginPhone));
       if (driver && !state.data.drivers.some((item) => item.id === driver.id)) state.data.drivers.unshift(driver);
+    }
+    if (driver?.login_enabled === false) {
+      state.error = "此帳號目前已停用，請聯絡管理人員。";
+      renderLogin();
+      return;
     }
     if (!driver) {
       state.error = "找不到此手機號碼，請確認後台已建立駕駛資料。";
@@ -1527,6 +1568,10 @@
       state.driverStatusFilter = target.dataset.driverFilter;
       render();
     }
+    if (target.dataset.driverLogin) {
+      await update("drivers", target.dataset.driverLogin, { login_enabled: target.checked });
+      render();
+    }
     if (target.dataset.page) {
       state.page = Number(target.dataset.page);
       render();
@@ -1582,6 +1627,12 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const loginToggle = e.target.closest("[data-driver-login]");
+    if (loginToggle) {
+      await update("drivers", loginToggle.dataset.driverLogin, { login_enabled: loginToggle.checked });
+      render();
+      return;
+    }
     const input = e.target.closest("[data-photo-upload]");
     if (!input || !input.files?.[0]) return;
     const file = input.files[0];

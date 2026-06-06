@@ -134,6 +134,7 @@ alter table public.drivers add column if not exists planned_vehicle_change_date 
 alter table public.drivers add column if not exists ideal_vehicle_model text;
 alter table public.drivers add column if not exists child_seat_count integer default 0;
 alter table public.drivers add column if not exists booster_seat_count integer default 0;
+alter table public.drivers add column if not exists login_enabled boolean not null default true;
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.vehicles add column if not exists compulsory_insurance_expiry date;
 alter table public.vehicles add column if not exists voluntary_insurance_expiry date;
