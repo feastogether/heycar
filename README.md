@@ -1,134 +1,26 @@
 # heycar
 
-亞菲得車隊管理系統。這是一個可部署到 GitHub Pages 的靜態網頁應用，資料可串接 Supabase。沒有填 Supabase 設定時會自動使用瀏覽器 localStorage 示範資料。
+亞菲得車隊管理系統。
 
-## 檔案
+## 系統功能
 
-- `index.html`：入口頁面
-- `styles.css`：響應式樣式
-- `app.js`：前台、後台與資料操作
-- `config.example.js`：Supabase 與系統設定
-- `supabase-schema.sql`：Supabase 資料表與示範政策
+- 司機手機登入與前台通知
+- 駕駛、車輛、保養與繳費管理
+- 共同行事曆與航班查詢
+- 公告、私人訊息與緊急事件
+- Supabase 資料庫與附件儲存
 
-## 本機測試
+## 主要檔案
 
-直接開啟 `index.html` 即可測試。
+- `index.html`：網頁入口
+- `styles.css`：響應式介面樣式
+- `app.js`：前後台功能
+- `supabase/migrations/`：資料庫結構更新
+- `supabase/functions/`：伺服器端功能
 
-示範帳號：
+## 安全原則
 
-- 司機身分證：`A123456789`
-- 後台 PIN：`123456`
-
-## Supabase 設定
-
-1. 到 Supabase 建立新專案。
-2. 進入 SQL Editor，貼上 `supabase-schema.sql` 並執行。
-3. 到 Project Settings > API 複製 Project URL 與 anon public key。
-4. 編輯 `config.example.js`：
-
-```js
-window.AFIDE_CONFIG = {
-  SUPABASE_URL: "你的 Supabase Project URL",
-  SUPABASE_ANON_KEY: "你的 anon public key",
-  ADMIN_PIN: "請改成自己的後台 PIN",
-  FLIGHT_INFO_URL: ""
-};
-```
-
-### 既有資料庫升級
-
-已經建好資料表的專案，請在 Supabase SQL Editor 再執行以下欄位升級，才可以使用車隊公告分流與保養時間：
-
-```sql
-alter table public.drivers add column if not exists fleet_name text not null default '亞菲得車隊';
-alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
-alter table public.vehicles add column if not exists insurance_expiry date;
-alter table public.vehicles add column if not exists insurance_company text;
-alter table public.vehicles add column if not exists last_inspection_date date;
-alter table public.vehicles add column if not exists next_inspection_date date;
-alter table public.vehicles add column if not exists last_self_inspection_date date;
-alter table public.announcements add column if not exists target_fleet text not null default '全部車隊';
-alter table public.maintenance_notifications add column if not exists service_time time;
-
-create table if not exists public.calendar_events (
-  id uuid primary key default gen_random_uuid(),
-  event_date date not null,
-  event_time time,
-  event_type text not null default 'other' check (event_type in ('maintenance', 'tires', 'other')),
-  fleet_name text not null default '亞菲得車隊',
-  plate_no text not null,
-  driver_id uuid references public.drivers(id) on delete set null,
-  vendor text,
-  maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null,
-  content text,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-alter table public.calendar_events enable row level security;
-drop policy if exists "demo read calendar events" on public.calendar_events;
-drop policy if exists "demo write calendar events" on public.calendar_events;
-create policy "demo read calendar events" on public.calendar_events for select using (true);
-create policy "demo write calendar events" on public.calendar_events for all using (true) with check (true);
-
-alter table public.calendar_events add column if not exists vendor text;
-alter table public.calendar_events add column if not exists maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null;
-
-create table if not exists public.marquee_messages (
-  id uuid primary key default gen_random_uuid(),
-  message text not null,
-  active boolean not null default true,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-alter table public.marquee_messages enable row level security;
-drop policy if exists "demo read marquee messages" on public.marquee_messages;
-drop policy if exists "demo write marquee messages" on public.marquee_messages;
-create policy "demo read marquee messages" on public.marquee_messages for select using (true);
-create policy "demo write marquee messages" on public.marquee_messages for all using (true) with check (true);
-
-```
-
-行事曆中建立或編輯「保養」及「調胎」行程並指定駕駛時，系統會自動同步一筆保養通知給該駕駛；後續修改同一行程會更新原通知。
-
-## GitHub Pages 部署
-
-1. 到 GitHub 建立 repository，名稱填 `heycar`。
-2. 將這些檔案推到 GitHub repository。
-3. 到 repository 的 Settings > Pages。
-4. Source 選 `Deploy from a branch`。
-5. Branch 選 `main`，資料夾選 `/root`。
-6. 儲存後等待 GitHub Pages 產生網址，通常會是 `https://你的帳號.github.io/heycar/`。
-
-## 天氣與航班資訊
-
-登入後頁首會直接顯示桃園機場座標的目前天氣，來源為 [Open-Meteo Current Weather API](https://open-meteo.com/en/docs)。
-
-航班查詢頁使用 TDX 運輸資料流通服務的桃園機場即時航班 API：
-
-- 出發：`Air/FIDS/Airport/Departure/TPE`
-- 抵達：`Air/FIDS/Airport/Arrival/TPE`
-
-TDX API 需要授權，因此由 Supabase Edge Function 安全保管金鑰並代前台取得資料。
-
-1. 在 [TDX 平台](https://tdx.transportdata.tw/) 註冊並取得 `Client Id` 與 `Client Secret`。
-2. 將憑證存入 Supabase Edge Function secrets：
-
-```powershell
-supabase secrets set TDX_CLIENT_ID="你的 Client Id" TDX_CLIENT_SECRET="你的 Client Secret"
-```
-
-3. 部署航班函式：
-
-```powershell
-supabase functions deploy flights --no-verify-jwt
-```
-
-4. 確認 `config.example.js` 指向航班函式網址：
-
-```js
-FLIGHT_INFO_URL: "https://chnvwziuqcqnllcjqobj.supabase.co/functions/v1/flights"
-```
-
-## 正式上線注意
-
-目前 `supabase-schema.sql` 內的 RLS policy 是方便原型測試的開放政策。正式營運前請改成 Supabase Auth、Edge Functions 或伺服器端 API，避免任何人用 anon key 修改後台資料。
+- 機密金鑰只存放於 Supabase Edge Function secrets。
+- 正式環境應使用 Supabase Auth 與 Row Level Security。
+- 司機可維持手機號碼登入，建議搭配簡訊 OTP 驗證本人身分。
+- 後台管理權限不應依賴前端 PIN。
