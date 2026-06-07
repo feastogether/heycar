@@ -1097,37 +1097,26 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-management-list { display: grid; border-top: 1px solid var(--line); }
 .vehicle-management-row {
   display: grid;
-  grid-template-columns: minmax(210px, .9fr) minmax(0, 3fr) auto;
+  grid-template-columns: minmax(280px, 1.15fr) minmax(0, 3fr) auto;
   align-items: center;
-  gap: 20px;
-  padding: 15px 4px;
+  gap: 18px;
+  padding: 14px 10px;
   border-bottom: 1px solid var(--line);
   transition: background .15s ease;
 }
 .vehicle-management-row:hover { background: #f8fafc; }
-.vehicle-primary { display: grid; gap: 3px; min-width: 0; }
-.vehicle-primary strong { color: var(--ink); font-size: 19px; white-space: nowrap; }
-.vehicle-primary span { color: var(--muted); font-size: 11px; font-weight: 800; }
-.vehicle-primary b { color: var(--ink); font-size: 15px; overflow-wrap: anywhere; }
-.plate-visual {
-  width: fit-content;
-  min-width: 148px;
-  padding: 7px 12px;
-  border: 2px solid #26313d;
-  border-radius: 6px;
-  background: #fff;
-  box-shadow: inset 0 0 0 2px #e8edf2;
-  text-align: center;
-  letter-spacing: 1px;
-  line-height: 1;
-}
+.vehicle-primary { display: grid; grid-template-columns: 110px minmax(0, 1fr); align-items: center; gap: 15px; min-width: 0; }
+.vehicle-primary > strong { padding-left: 10px; border-left: 4px solid var(--brand); color: var(--ink); font-size: 18px; white-space: nowrap; letter-spacing: 0; }
+.vehicle-make-model { display: grid; grid-template-columns: minmax(70px, .75fr) minmax(110px, 1.25fr); gap: 8px; min-width: 0; }
+.vehicle-make-model span { display: grid; gap: 2px; min-width: 0; color: var(--ink); font-size: 13px; font-weight: 900; overflow-wrap: anywhere; }
+.vehicle-make-model small { color: var(--muted); font-size: 10px; font-weight: 700; }
 .vehicle-row-facts {
   display: grid;
   grid-template-columns: 1.45fr .55fr .8fr 1fr 1fr 1fr;
   gap: 8px;
   margin: 0;
 }
-.vehicle-row-facts div { min-width: 0; padding: 8px 10px; border-left: 2px solid #e7ebf0; }
+.vehicle-row-facts div { min-width: 0; padding: 8px 10px; border-left: 1px solid #e7ebf0; }
 .vehicle-row-facts dt { color: var(--muted); font-size: 11px; font-weight: 800; white-space: nowrap; }
 .vehicle-row-facts dd { margin: 4px 0 0; color: var(--ink); font-size: 13px; font-weight: 900; white-space: normal; overflow-wrap: anywhere; }
 .vehicle-status { min-width: 62px; text-align: center; }
@@ -1335,6 +1324,7 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-search-bar { grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-search-bar input { grid-column: 1 / -1; }
   .vehicle-management-row { grid-template-columns: 1fr; gap: 12px; }
+  .vehicle-primary { grid-template-columns: 110px minmax(0, 1fr); }
   .vehicle-row-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .vehicle-row-actions { padding-top: 9px; border-top: 1px solid var(--line); }
   .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1424,8 +1414,10 @@ tr:last-child td { border-bottom: 0; }
   .calendar-cell { min-height: 78px; padding: 3px; }
   .calendar-day-button { font-size: 12px; min-height: 22px; padding-bottom: 3px; }
   .calendar-day-button small { display: none; }
-  .calendar-events { display: none; }
-  .calendar-count { display: grid; }
+  .calendar-events { display: grid; gap: 2px; }
+  .calendar-events .calendar-pill { display: none; padding: 2px 3px; font-size: 9px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .calendar-events .calendar-pill:first-child { display: block; }
+  .calendar-count { display: grid; right: 3px; bottom: 3px; min-width: 18px; height: 18px; padding: 0 4px; font-size: 9px; }
   .modal-title { padding: 16px 18px 12px; }
   .modal-form-body { padding: 14px 18px 18px; }
   .modal-actions { padding: 10px 18px; }
@@ -1450,6 +1442,9 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-toolbar h2,
   .vehicle-toolbar > .primary-btn { grid-column: auto; }
   .vehicle-row-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vehicle-primary { grid-template-columns: 1fr; gap: 8px; }
+  .vehicle-primary > strong { font-size: 19px; }
+  .vehicle-make-model { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .driver-picker-list { grid-template-columns: 1fr; }
   .vehicle-search-bar { grid-template-columns: 1fr; }
   .vehicle-search-bar input { grid-column: auto; }

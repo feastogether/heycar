@@ -766,7 +766,7 @@
           <div class="calendar-events">
             ${events.map((item) => isAdmin
               ? `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}" data-modal="calendarEvent" data-id="${item.id}">${escapeHtml(item.plate_no)}</button>`
-              : `<span class="calendar-pill ${escapeHtml(item.event_type || "other")}">${escapeHtml(item.plate_no)}</span>`
+              : `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}" data-calendar-open-date="${value}">${escapeHtml(item.plate_no)}</button>`
             ).join("")}
           </div>
         </div>
@@ -927,9 +927,11 @@
     return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
       <article class="vehicle-management-row">
         <div class="vehicle-primary">
-          <strong class="plate-visual">${escapeHtml(vehicle.plate_no || "-")}</strong>
-          <span>品牌 · ${escapeHtml(vehicle.brand || "-")}</span>
-          <b>${escapeHtml(vehicle.model || "-")}</b>
+          <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
+          <div class="vehicle-make-model">
+            <span><small>品牌</small>${escapeHtml(vehicle.brand || "-")}</span>
+            <span><small>車款</small>${escapeHtml(vehicle.model || "-")}</span>
+          </div>
         </div>
         <dl class="vehicle-row-facts">
           <div><dt>目前使用人</dt><dd>${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</dd></div>
@@ -1614,6 +1616,10 @@
     }
     if (target?.dataset.closeModal !== undefined) {
       target.closest(".modal-backdrop").remove();
+      return;
+    }
+    if (target?.dataset.calendarOpenDate) {
+      openCalendarDay(target.dataset.calendarOpenDate);
       return;
     }
     if (!target && cellDate) {
