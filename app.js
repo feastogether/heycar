@@ -3,6 +3,7 @@
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
+  const dataApiUrl = cfg.DATA_API_URL || `${cfg.SUPABASE_URL}/functions/v1/data-api`;
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -25,7 +26,8 @@
     weather: null,
     weatherFetchedAt: 0,
     weatherLoading: false,
-    error: ""
+    error: "",
+    apiSession: ""
   };
 
   const tables = [
@@ -112,8 +114,12 @@
     localStorage.setItem("afide-data", JSON.stringify(state.data));
   }
 
-  function saveSession(type, id) {
-    localStorage.setItem("afide-session", JSON.stringify({ type, id }));
+  function emptyData() {
+    return Object.fromEntries(tables.map((table) => [table, []]));
+  }
+
+  function saveSession(type, user, token) {
+    localStorage.setItem("afide-session", JSON.stringify({ type, user, token }));
   }
 
   function clearSession() {
@@ -125,14 +131,14 @@
     if (!raw) return;
     try {
       const saved = JSON.parse(raw);
+      state.apiSession = saved.token || "";
       if (saved.type === "admin") {
         state.admin = true;
         state.user = null;
         return;
       }
-      const driver = state.data.drivers.find((d) => d.id === saved.id);
-      if (driver) {
-        state.user = driver;
+      if (saved.user) {
+        state.user = saved.user;
         state.admin = false;
       } else {
         clearSession();
@@ -142,30 +148,40 @@
     }
   }
 
+  async function apiRequest(action, payload = {}) {
+    const response = await fetch(dataApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cfg.SUPABASE_ANON_KEY ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` } : {}),
+        ...(state.apiSession ? { "x-afide-session": state.apiSession } : {})
+      },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "資料服務連線失敗");
+    return result;
+  }
+
   async function loadAll() {
     state.error = "";
+    if (hasSupabase && state.apiSession) {
+      const result = await apiRequest("load");
+      state.data = result.data || emptyData();
+      if (result.user) state.user = result.user;
+      return;
+    }
     if (!hasSupabase) {
       state.data = localLoad();
       return;
     }
-    const result = {};
-    for (const table of tables) {
-      const { data, error } = await db.from(table).select("*").order("created_at", { ascending: false, nullsFirst: false });
-      if (error && ["calendar_events", "marquee_messages", "emergency_events"].includes(table)) {
-        result[table] = [];
-        continue;
-      }
-      if (error) throw error;
-      result[table] = data || [];
-    }
-    state.data = result;
+    state.data = emptyData();
   }
 
   async function insert(table, record) {
     const item = { id: uid(), created_at: now(), ...record };
-    if (hasSupabase) {
-      const { data, error } = await db.from(table).insert(item).select().single();
-      if (error) throw error;
+    if (hasSupabase && state.apiSession) {
+      const { data } = await apiRequest("insert", { table, record: item });
       state.data[table].unshift(data);
       return data;
     }
@@ -177,9 +193,8 @@
 
   async function update(table, id, patch) {
     const item = { ...patch, updated_at: now() };
-    if (hasSupabase) {
-      const { data, error } = await db.from(table).update(item).eq("id", id).select().single();
-      if (error) throw error;
+    if (hasSupabase && state.apiSession) {
+      const { data } = await apiRequest("update", { table, id, record: item });
       state.data[table] = state.data[table].map((row) => row.id === id ? data : row);
       return data;
     }
@@ -190,10 +205,7 @@
 
   async function remove(table, id) {
     if (!confirm("確定要刪除這筆資料嗎？")) return;
-    if (hasSupabase) {
-      const { error } = await db.from(table).delete().eq("id", id);
-      if (error) throw error;
-    }
+    if (hasSupabase && state.apiSession) await apiRequest("delete", { table, id });
     state.data[table] = state.data[table].filter((row) => row.id !== id);
     localSave();
     render();
@@ -493,8 +505,8 @@
             <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
             <form id="loginForm" class="form-grid">
               <div class="field full">
-                <label>${state.mode === "driver" ? "手機號碼" : "管理 PIN"}</label>
-                <input name="login" autocomplete="off" inputmode="${state.mode === "driver" ? "tel" : "text"}" required>
+                <label>${state.mode === "driver" ? "手機號碼" : "管理碼"}</label>
+                <input name="login" autocomplete="off" inputmode="numeric" required>
               </div>
               <button class="primary-btn field full" type="submit">登入</button>
             </form>
@@ -1360,40 +1372,36 @@
 
   async function handleLogin(value) {
     state.error = "";
-    if (state.mode === "admin") {
-      if (value === (cfg.ADMIN_PIN || "123456")) {
-        state.admin = true;
-        state.user = null;
-        saveSession("admin", "admin");
+    try {
+      if (hasSupabase) {
+        const result = await apiRequest(
+          state.mode === "admin" ? "login_admin" : "login_driver",
+          state.mode === "admin" ? { code: value } : { phone: value }
+        );
+        state.apiSession = result.token;
+        state.admin = state.mode === "admin";
+        state.user = result.user || null;
+        saveSession(state.mode, state.user, result.token);
+        await loadAll();
+        state.view = "home";
         render();
-      } else {
-        state.error = "管理 PIN 不正確";
-        renderLogin();
+        return;
       }
-      return;
-    }
-    const loginPhone = normalizePhone(value);
-    let driver = state.data.drivers.find((d) => phoneMatches(d.phone, loginPhone));
-    if (!driver && hasSupabase) {
-      const { data } = await db.from("drivers").select("*");
-      driver = (data || []).find((item) => phoneMatches(item.phone, loginPhone));
-      if (driver && !state.data.drivers.some((item) => item.id === driver.id)) state.data.drivers.unshift(driver);
-    }
-    if (driver?.login_enabled === false) {
-      state.error = "此帳號目前已停用，請聯絡管理人員。";
+      const driver = state.data.drivers.find((item) => phoneMatches(item.phone, value));
+      if (!driver) throw new Error("找不到此手機號碼");
+      state.user = driver;
+      state.admin = false;
+      saveSession("driver", driver, "");
+      render();
+    } catch (error) {
+      const messages = {
+        DRIVER_LOGIN_FAILED: "找不到此手機號碼，或此帳號目前已停用。",
+        ADMIN_LOGIN_FAILED: "管理碼不正確。",
+        SESSION_EXPIRED: "登入已逾時，請重新登入。"
+      };
+      state.error = messages[error.message] || error.message || String(error);
       renderLogin();
-      return;
     }
-    if (!driver) {
-      state.error = "找不到此手機號碼，請確認後台已建立駕駛資料。";
-      renderLogin();
-      return;
-    }
-    state.user = driver;
-    state.admin = false;
-    state.view = "home";
-    saveSession("driver", driver.id);
-    render();
   }
 
   async function loadAirportWeather() {
@@ -1632,9 +1640,11 @@
       state.error = "";
       renderLogin();
     }
-        if (target.dataset.action === "logout") {
+    if (target.dataset.action === "logout") {
       state.user = null;
       state.admin = false;
+      state.apiSession = "";
+      state.data = emptyData();
       state.view = "home";
       clearSession();
       render();
@@ -1800,13 +1810,16 @@
     });
   });
 
+  restoreSession();
   loadAll().then(() => {
-    restoreSession();
     render();
   }).catch((err) => {
     state.error = err.message || String(err);
-    state.data = localLoad();
-    restoreSession();
+    state.user = null;
+    state.admin = false;
+    state.apiSession = "";
+    state.data = hasSupabase ? emptyData() : localLoad();
+    clearSession();
     render();
   });
 })();

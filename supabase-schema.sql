@@ -160,33 +160,20 @@ alter table public.personal_messages enable row level security;
 alter table public.payment_notices enable row level security;
 alter table public.calendar_events enable row level security;
 alter table public.marquee_messages enable row level security;
+alter table public.emergency_events enable row level security;
 
--- Prototype policy for GitHub Pages demo. For production, replace with Supabase Auth
--- or Edge Functions so admin writes are protected server-side.
-drop policy if exists "demo read calendar events" on public.calendar_events;
-drop policy if exists "demo write calendar events" on public.calendar_events;
-create policy "demo read calendar events" on public.calendar_events for select using (true);
-create policy "demo write calendar events" on public.calendar_events for all using (true) with check (true);
-drop policy if exists "demo read marquee messages" on public.marquee_messages;
-drop policy if exists "demo write marquee messages" on public.marquee_messages;
-create policy "demo read marquee messages" on public.marquee_messages for select using (true);
-create policy "demo write marquee messages" on public.marquee_messages for all using (true) with check (true);
-create policy "demo read drivers" on public.drivers for select using (true);
-create policy "demo write drivers" on public.drivers for all using (true) with check (true);
-create policy "demo read vehicles" on public.vehicles for select using (true);
-create policy "demo write vehicles" on public.vehicles for all using (true) with check (true);
-create policy "demo read maintenance records" on public.maintenance_records for select using (true);
-create policy "demo write maintenance records" on public.maintenance_records for all using (true) with check (true);
-create policy "demo read announcements" on public.announcements for select using (true);
-create policy "demo write announcements" on public.announcements for all using (true) with check (true);
-create policy "demo read announcement reads" on public.announcement_reads for select using (true);
-create policy "demo write announcement reads" on public.announcement_reads for all using (true) with check (true);
-create policy "demo read maintenance notifications" on public.maintenance_notifications for select using (true);
-create policy "demo write maintenance notifications" on public.maintenance_notifications for all using (true) with check (true);
-create policy "demo read personal messages" on public.personal_messages for select using (true);
-create policy "demo write personal messages" on public.personal_messages for all using (true) with check (true);
-create policy "demo read payment notices" on public.payment_notices for select using (true);
-create policy "demo write payment notices" on public.payment_notices for all using (true) with check (true);
+create table if not exists public.app_sessions (
+  id uuid primary key default gen_random_uuid(),
+  token text unique not null,
+  session_type text not null check (session_type in ('admin', 'driver')),
+  driver_id uuid references public.drivers(id) on delete cascade,
+  expires_at timestamptz not null,
+  created_at timestamptz default now()
+);
+alter table public.app_sessions enable row level security;
+
+-- Public policies are intentionally omitted. The data-api Edge Function is the
+-- only application data access path and uses short-lived server sessions.
 
 insert into public.drivers (national_id, phone, name, fleet_name, license_expiry, notes)
 values ('A123456789', '0912345678', '王小明', '亞菲得車隊', '2027-12-31', '示範司機')
