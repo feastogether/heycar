@@ -27,7 +27,8 @@
     weatherFetchedAt: 0,
     weatherLoading: false,
     error: "",
-    apiSession: ""
+    apiSession: "",
+    loginLoading: false
   };
 
   const tables = [
@@ -491,6 +492,7 @@
   }
 
   function renderLogin() {
+    const loadingText = state.mode === "driver" ? "正在驗證司機身分" : "正在驗證管理權限";
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-panel">
@@ -499,17 +501,28 @@
           </div>
           <div class="login-card">
             <div class="mode-tabs">
-              <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver">司機前台</button>
-              <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin">管理後台</button>
+              <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver" ${state.loginLoading ? "disabled" : ""}>司機前台</button>
+              <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin" ${state.loginLoading ? "disabled" : ""}>管理後台</button>
             </div>
             <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
-            <form id="loginForm" class="form-grid">
+            <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
               <div class="field full">
                 <label>${state.mode === "driver" ? "手機號碼" : "管理碼"}</label>
-                <input name="login" autocomplete="off" inputmode="numeric" required>
+                <input name="login" autocomplete="off" inputmode="numeric" required ${state.loginLoading ? "disabled" : ""}>
               </div>
-              <button class="primary-btn field full" type="submit">登入</button>
+              <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
+                ${state.loginLoading ? `<span class="login-spinner" aria-hidden="true"></span><span>${loadingText}</span>` : "登入"}
+              </button>
             </form>
+            ${state.loginLoading ? `
+              <div class="login-loading-panel" role="status" aria-live="polite">
+                <div class="login-loading-row">
+                  <span>${loadingText}</span>
+                  <strong>請稍候</strong>
+                </div>
+                <div class="login-progress"><span></span></div>
+              </div>
+            ` : ""}
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
           </div>
         </section>
@@ -1372,6 +1385,8 @@
 
   async function handleLogin(value) {
     state.error = "";
+    state.loginLoading = true;
+    renderLogin();
     try {
       if (hasSupabase) {
         const result = await apiRequest(
@@ -1384,6 +1399,7 @@
         saveSession(state.mode, state.user, result.token);
         await loadAll();
         state.view = "home";
+        state.loginLoading = false;
         render();
         return;
       }
@@ -1392,6 +1408,7 @@
       state.user = driver;
       state.admin = false;
       saveSession("driver", driver, "");
+      state.loginLoading = false;
       render();
     } catch (error) {
       const messages = {
@@ -1400,6 +1417,7 @@
         SESSION_EXPIRED: "登入已逾時，請重新登入。"
       };
       state.error = messages[error.message] || error.message || String(error);
+      state.loginLoading = false;
       renderLogin();
     }
   }
@@ -1636,6 +1654,7 @@
       return;
     }
     if (target.dataset.mode) {
+      if (state.loginLoading) return;
       state.mode = target.dataset.mode;
       state.error = "";
       renderLogin();
@@ -1644,6 +1663,7 @@
       state.user = null;
       state.admin = false;
       state.apiSession = "";
+      state.loginLoading = false;
       state.data = emptyData();
       state.view = "home";
       clearSession();
@@ -1715,6 +1735,7 @@
   document.addEventListener("submit", async (e) => {
     if (e.target.id === "loginForm") {
       e.preventDefault();
+      if (state.loginLoading) return;
       await handleLogin(new FormData(e.target).get("login"));
     }
     if (e.target.id === "flightSearchForm") {

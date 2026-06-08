@@ -194,6 +194,65 @@ a { text-decoration: none; }
 .login-hero img { width: 100%; max-width: 180px; display: block; }
 .login-card { padding: 40px; display: flex; flex-direction: column; justify-content: center; }
 .login-card h2 { margin: 0 0 22px; font-size: 24px; font-weight: 900; }
+.login-submit { min-height: 44px; }
+.login-submit:disabled,
+.mode-tabs .tab-btn:disabled,
+#loginForm input:disabled {
+  cursor: wait;
+  opacity: .82;
+}
+.login-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255,255,255,.42);
+  border-top-color: #fff;
+  border-radius: 999px;
+  animation: login-spin .72s linear infinite;
+}
+.login-loading-panel {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid rgba(239,63,53,.18);
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(239,63,53,.055), rgba(31,122,140,.045));
+}
+.login-loading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+.login-loading-row strong {
+  color: var(--brand);
+  white-space: nowrap;
+}
+.login-progress {
+  position: relative;
+  overflow: hidden;
+  height: 6px;
+  margin-top: 11px;
+  border-radius: 999px;
+  background: #e9eef5;
+}
+.login-progress span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+  animation: login-progress 1.15s ease-in-out infinite;
+}
+@keyframes login-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes login-progress {
+  0% { transform: translateX(-105%); }
+  50% { transform: translateX(85%); }
+  100% { transform: translateX(245%); }
+}
 .mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; }
 .mode-tabs .tab-btn {
   border: 1px solid var(--line);
