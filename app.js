@@ -4,6 +4,7 @@
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const dataApiUrl = cfg.DATA_API_URL || `${cfg.SUPABASE_URL}/functions/v1/data-api`;
+  const aircraftPositionUrl = cfg.AIRCRAFT_POSITION_URL || `${cfg.SUPABASE_URL}/functions/v1/aircraft-position`;
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -28,7 +29,9 @@
     weatherLoading: false,
     error: "",
     apiSession: "",
-    loginLoading: false
+    loginLoading: false,
+    aircraftMap: null,
+    aircraftRefreshTimer: null
   };
 
   const tables = [
@@ -65,6 +68,7 @@
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
     broadcast: "M4 6h16v12H4V6Zm6 12v2m4-2v2M8 22h8M9 10l6 2-6 2v-4Z",
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
+    aircraft: "M12 2l2.2 7.2 6.8 3.3v2l-6.8-1.2L13 21h-2l-1.2-7.7L3 14.5v-2l6.8-3.3L12 2Z",
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
   };
 
@@ -545,6 +549,7 @@
           ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
           ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
+          ${feature("aircraft", "航機即時位置", "桃園機場周邊航機動態", 0)}
           ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
           ${feature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
         </div>
@@ -560,10 +565,12 @@
       emergency: driverEmergency,
       broadcast: driverBroadcast,
       flights: driverFlights,
+      aircraft: driverAircraft,
       calendar: () => renderCalendar(false)
     };
     layout(views[state.view]());
     if (state.view === "flights") loadFlights();
+    if (state.view === "aircraft") startAircraftTracking();
   }
 
   function feature(view, title, desc, count) {
@@ -914,6 +921,159 @@
       </div>
       ${driverManagementRows()}
     `;
+  }
+
+  function driverAircraft() {
+    return `
+      ${pageHeader("航機即時位置")}
+      <div class="aircraft-toolbar">
+        <div>
+          <strong>桃園國際機場周邊 25 海里</strong>
+          <span id="aircraftUpdateText">準備載入即時 ADS-B 資料</span>
+        </div>
+        <button class="primary-btn" data-action="refresh-aircraft">重新整理</button>
+      </div>
+      <div class="aircraft-map-wrap">
+        <div id="aircraftMap" aria-label="桃園機場周邊即時航機地圖"></div>
+        <div class="aircraft-map-legend"><span></span>航機位置每 15 秒更新</div>
+      </div>
+      <div id="aircraftSummary" class="aircraft-summary"></div>
+      <div id="aircraftList" class="aircraft-list"><div class="empty">正在接收航機位置...</div></div>
+      <div class="aircraft-source">資料來源：ADSB.lol 公開 ADS-B 資料。位置可能因接收涵蓋率而短暫缺漏，不可作為飛航操作依據。</div>
+    `;
+  }
+
+  function startAircraftTracking() {
+    stopAircraftTracking();
+    loadAircraftPositions();
+    state.aircraftRefreshTimer = setInterval(() => {
+      if (state.view === "aircraft") loadAircraftPositions();
+    }, 15_000);
+  }
+
+  function stopAircraftTracking() {
+    if (state.aircraftRefreshTimer) clearInterval(state.aircraftRefreshTimer);
+    state.aircraftRefreshTimer = null;
+    if (state.aircraftMap) {
+      state.aircraftMap.remove();
+      state.aircraftMap = null;
+    }
+  }
+
+  async function loadAircraftPositions() {
+    const list = document.getElementById("aircraftList");
+    if (!list || !window.L) return;
+    const updateText = document.getElementById("aircraftUpdateText");
+    try {
+      const response = await fetch(aircraftPositionUrl, {
+        headers: cfg.SUPABASE_ANON_KEY ? {
+          apikey: cfg.SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}`
+        } : {}
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "航機資料讀取失敗");
+      renderAircraftMap(payload.aircraft || []);
+      renderAircraftList(payload.aircraft || []);
+      const updated = new Date(payload.updatedAt);
+      if (updateText) updateText.textContent = `共 ${payload.total || 0} 架航機｜更新 ${updated.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
+    } catch (error) {
+      list.innerHTML = `<div class="empty">暫時無法取得航機位置，請稍後重新整理。<br><small>${escapeHtml(error.message || String(error))}</small></div>`;
+      if (updateText) updateText.textContent = "即時資料連線失敗";
+    }
+  }
+
+  function renderAircraftMap(aircraft) {
+    const mapBox = document.getElementById("aircraftMap");
+    if (!mapBox || !window.L) return;
+    if (state.aircraftMap) state.aircraftMap.remove();
+    const map = window.L.map(mapBox, { zoomControl: true }).setView([25.0797, 121.2342], 9);
+    state.aircraftMap = map;
+    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+    window.L.circle([25.0797, 121.2342], {
+      radius: 25 * 1852, color: "#ef3f35", weight: 1, fillColor: "#ef3f35", fillOpacity: .035
+    }).addTo(map);
+    window.L.circleMarker([25.0797, 121.2342], {
+      radius: 7, color: "#fff", weight: 2, fillColor: "#ef3f35", fillOpacity: 1
+    }).bindPopup("<strong>桃園國際機場 TPE</strong>").addTo(map);
+    aircraft.forEach((item) => {
+      const label = escapeHtml(item.flight || item.registration || item.hex || "航機");
+      const icon = window.L.divIcon({
+        className: "aircraft-marker",
+        html: `<span style="transform:rotate(${Number(item.track || 0)}deg)">✈</span><b>${label}</b>`,
+        iconSize: [92, 34],
+        iconAnchor: [17, 17]
+      });
+      window.L.marker([Number(item.lat), Number(item.lon)], { icon })
+        .bindPopup(aircraftPopup(item))
+        .addTo(map);
+    });
+    setTimeout(() => map.invalidateSize(), 0);
+  }
+
+  function aircraftPopup(item) {
+    return `
+      <div class="aircraft-popup">
+        <strong>${escapeHtml(item.flight || item.registration || item.hex || "未知航機")}</strong>
+        <span>註冊號：${escapeHtml(item.registration || "-")}</span>
+        <span>機型：${escapeHtml(item.aircraftType || "-")}</span>
+        <span>高度：${escapeHtml(aircraftAltitude(item.altitude))}</span>
+        <span>地速：${escapeHtml(aircraftSpeed(item.groundSpeed))}</span>
+        <span>距機場：${escapeHtml(aircraftDistance(item.distanceNm))}</span>
+      </div>
+    `;
+  }
+
+  function renderAircraftList(aircraft) {
+    const list = document.getElementById("aircraftList");
+    const summary = document.getElementById("aircraftSummary");
+    if (!list || !summary) return;
+    const airborne = aircraft.filter((item) => item.altitude !== "ground").length;
+    const descending = aircraft.filter((item) => Number(item.verticalRate) < -300).length;
+    summary.innerHTML = `
+      <span><small>範圍內航機</small><strong>${aircraft.length}</strong></span>
+      <span><small>空中航機</small><strong>${airborne}</strong></span>
+      <span><small>下降中</small><strong>${descending}</strong></span>
+    `;
+    list.innerHTML = aircraft.length ? aircraft.map((item) => `
+      <article class="aircraft-row">
+        <div class="aircraft-identity">
+          <span class="aircraft-plane" style="transform:rotate(${Number(item.track || 0)}deg)">✈</span>
+          <span><strong>${escapeHtml(item.flight || item.registration || item.hex || "未知航機")}</strong><small>${escapeHtml([item.registration, item.aircraftType].filter(Boolean).join(" · ") || "未提供機型資料")}</small></span>
+        </div>
+        <div class="aircraft-facts">
+          <span><small>高度</small><strong>${escapeHtml(aircraftAltitude(item.altitude))}</strong></span>
+          <span><small>地速</small><strong>${escapeHtml(aircraftSpeed(item.groundSpeed))}</strong></span>
+          <span><small>航向</small><strong>${Number.isFinite(Number(item.track)) ? `${Math.round(Number(item.track))}°` : "-"}</strong></span>
+          <span><small>升降</small><strong class="${Number(item.verticalRate) < -300 ? "descending" : ""}">${escapeHtml(aircraftVerticalRate(item.verticalRate))}</strong></span>
+          <span><small>距機場</small><strong>${escapeHtml(aircraftDistance(item.distanceNm))}</strong></span>
+        </div>
+      </article>
+    `).join("") : `<div class="empty">目前 25 海里範圍內沒有可接收的航機位置。</div>`;
+  }
+
+  function aircraftAltitude(value) {
+    if (value === "ground") return "地面";
+    return Number.isFinite(Number(value)) ? `${Math.round(Number(value)).toLocaleString()} 呎` : "-";
+  }
+
+  function aircraftSpeed(value) {
+    return Number.isFinite(Number(value)) ? `${Math.round(Number(value))} 節` : "-";
+  }
+
+  function aircraftDistance(value) {
+    return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} 海里` : "-";
+  }
+
+  function aircraftVerticalRate(value) {
+    const rate = Number(value);
+    if (!Number.isFinite(rate)) return "-";
+    if (rate > 200) return `上升 ${Math.round(rate).toLocaleString()} 呎/分`;
+    if (rate < -200) return `下降 ${Math.abs(Math.round(rate)).toLocaleString()} 呎/分`;
+    return "平飛";
   }
 
   function adminVehicles() {
@@ -1660,6 +1820,7 @@
       renderLogin();
     }
     if (target.dataset.action === "logout") {
+      stopAircraftTracking();
       state.user = null;
       state.admin = false;
       state.apiSession = "";
@@ -1675,10 +1836,12 @@
       render();
     }
     if (target.dataset.view) {
+      if (state.view === "aircraft" && target.dataset.view !== "aircraft") stopAircraftTracking();
       state.view = target.dataset.view;
       state.page = 1;
       render();
     }
+    if (target.dataset.action === "refresh-aircraft") loadAircraftPositions();
     if (target.dataset.adminView) {
       state.adminView = target.dataset.adminView;
       state.adminCollapsed = true;

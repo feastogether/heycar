@@ -1258,6 +1258,121 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .broadcast-caption a { color: var(--blue); font-size: 12px; font-weight: 800; white-space: nowrap; }
 .broadcast-video { position: relative; aspect-ratio: 16 / 9; background: #111; }
 .broadcast-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.aircraft-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+.aircraft-toolbar > div { display: grid; gap: 3px; }
+.aircraft-toolbar strong { font-size: 18px; }
+.aircraft-toolbar span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.aircraft-map-wrap {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #dfe8ee;
+}
+#aircraftMap { height: min(58vh, 560px); min-height: 390px; width: 100%; }
+.aircraft-map-legend {
+  position: absolute;
+  z-index: 500;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid rgba(255,255,255,.8);
+  border-radius: 7px;
+  background: rgba(255,255,255,.92);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 800;
+}
+.aircraft-map-legend span { width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
+.aircraft-marker { background: transparent; border: 0; }
+.aircraft-marker span {
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #192231;
+  color: #fff;
+  font-size: 16px;
+}
+.aircraft-marker b {
+  position: absolute;
+  left: 34px;
+  top: 8px;
+  max-width: 58px;
+  overflow: hidden;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.9);
+  color: #192231;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.aircraft-popup { display: grid; gap: 4px; min-width: 150px; }
+.aircraft-popup strong { margin-bottom: 3px; font-size: 15px; }
+.aircraft-popup span { color: #475467; font-size: 12px; }
+.aircraft-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 14px 0;
+}
+.aircraft-summary span {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.aircraft-summary small { color: var(--muted); font-weight: 700; }
+.aircraft-summary strong { font-size: 22px; }
+.aircraft-list { display: grid; gap: 8px; }
+.aircraft-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(420px, 2fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.aircraft-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.aircraft-plane {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
+  border-radius: 50%;
+  background: #192231;
+  color: #fff;
+  font-size: 20px;
+}
+.aircraft-identity > span:last-child { display: grid; min-width: 0; }
+.aircraft-identity strong { font-size: 16px; }
+.aircraft-identity small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.aircraft-facts { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.aircraft-facts span { display: grid; gap: 2px; padding-left: 10px; border-left: 1px solid var(--line); }
+.aircraft-facts small { color: var(--muted); font-size: 10px; font-weight: 700; }
+.aircraft-facts strong { font-size: 12px; }
+.aircraft-facts .descending { color: var(--blue); }
+.aircraft-source { margin-top: 14px; color: var(--muted); font-size: 11px; text-align: center; }
 .photo-upload-field .driver-avatar {
   width: 132px;
   height: 132px;
@@ -1389,6 +1504,7 @@ tr:last-child td { border-bottom: 0; }
   .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .single-driver-picker .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .broadcast-grid { grid-template-columns: 1fr; }
+  .aircraft-row { grid-template-columns: 1fr; }
   .flight-search { grid-template-columns: 1fr 1fr; }
   .flight-search input[name="flight"], .flight-search button { grid-column: 1 / -1; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
@@ -1464,6 +1580,13 @@ tr:last-child td { border-bottom: 0; }
   .taoyuan-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .flight-detail-grid span { font-size: 12px; }
   .flight-detail-grid .wide { grid-column: auto; }
+  .aircraft-toolbar { align-items: stretch; flex-direction: column; }
+  #aircraftMap { height: 48vh; min-height: 330px; }
+  .aircraft-summary { gap: 6px; }
+  .aircraft-summary span { padding: 9px; }
+  .aircraft-summary strong { font-size: 18px; }
+  .aircraft-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aircraft-facts span { min-height: 42px; padding: 6px 8px; border: 0; border-radius: 6px; background: #f8fafc; }
   .maintenance-schedule { grid-template-columns: 70px 1fr; padding: 10px; gap: 10px; }
   .schedule-date strong { font-size: 30px; }
   .calendar-panel { padding: 8px; }
