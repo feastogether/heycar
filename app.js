@@ -28,11 +28,7 @@
     weatherLoading: false,
     error: "",
     apiSession: "",
-    loginLoading: false,
-    aircraftMap: null,
-    aircraftRefreshTimer: null,
-    aircraftMarkers: new Map(),
-    aircraftRangeCircle: null
+    loginLoading: false
   };
 
   const tables = [
@@ -61,24 +57,6 @@
   const vehicleStatuses = ["正常", "待修", "維修中", "閒置", "備用車", "公務車"];
   const fleets = ["亞菲得車隊", "亞緻車隊", "合作車隊"];
 
-  const aircraftAirlines = {
-    CAL: "中華航空", EVA: "長榮航空", TTW: "台灣虎航", SJX: "星宇航空",
-    CPA: "國泰航空", HDA: "香港航空", CRK: "香港快運", JAL: "日本航空",
-    ANA: "全日空", APJ: "樂桃航空", KAL: "大韓航空", AAR: "韓亞航空",
-    CCA: "中國國際航空", CES: "中國東方航空", CSN: "中國南方航空",
-    CHH: "海南航空", PAL: "菲律賓航空", CEB: "宿霧太平洋航空",
-    HVN: "越南航空", VJC: "越捷航空", THA: "泰國航空", TGW: "酷鳥航空",
-    SIA: "新加坡航空", SCO: "酷航", MAS: "馬來西亞航空", AXM: "亞洲航空",
-    UAE: "阿聯酋航空", QTR: "卡達航空", FDX: "聯邦快遞", UPS: "優比速"
-  };
-  const aircraftTypes = {
-    A20N: "空中巴士 A320neo", A21N: "空中巴士 A321neo", A320: "空中巴士 A320",
-    A321: "空中巴士 A321", A333: "空中巴士 A330-300", A359: "空中巴士 A350-900",
-    A35K: "空中巴士 A350-1000", B738: "波音 737-800", B38M: "波音 737 MAX 8",
-    B789: "波音 787-9", B788: "波音 787-8", B77W: "波音 777-300ER",
-    B744: "波音 747-400", B748: "波音 747-8", B763: "波音 767-300"
-  };
-
   const featureIcons = {
     announcements: "M4 6.5A2.5 2.5 0 0 1 6.5 4H20v13H7.5A3.5 3.5 0 0 0 4 20.5v-14Zm3 0h10M7.5 10h8M7.5 13.5h6",
     maintenance: "M14.7 6.3a4.5 4.5 0 0 0-5.9 5.9L4 17l3 3 4.8-4.8a4.5 4.5 0 0 0 5.9-5.9l-3 3-3-3 3-3Z",
@@ -87,7 +65,6 @@
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
     broadcast: "M4 6h16v12H4V6Zm6 12v2m4-2v2M8 22h8M9 10l6 2-6 2v-4Z",
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
-    aircraft: "M12 2l2.2 7.2 6.8 3.3v2l-6.8-1.2L13 21h-2l-1.2-7.7L3 14.5v-2l6.8-3.3L12 2Z",
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
   };
 
@@ -568,7 +545,6 @@
           ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
           ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
-          ${feature("aircraft", "航機即時位置", "桃園機場周邊航機動態", 0)}
           ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
           ${feature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
         </div>
@@ -584,7 +560,6 @@
       emergency: driverEmergency,
       broadcast: driverBroadcast,
       flights: driverFlights,
-      aircraft: driverAircraft,
       calendar: () => renderCalendar(false)
     };
     layout(views[state.view]());
@@ -939,218 +914,6 @@
       </div>
       ${driverManagementRows()}
     `;
-  }
-
-  function driverAircraft() {
-    return `
-      ${pageHeader("航機即時位置")}
-      <div class="aircraft-toolbar">
-        <div>
-          <strong>桃園國際機場即時航機雷達</strong>
-          <span>ADSB.lol 官方即時地圖，不使用 Supabase 流量</span>
-        </div>
-        <a class="primary-btn" href="https://globe.adsb.lol/?lat=25.0797&lon=121.2342&zoom=8" target="_blank" rel="noreferrer">全螢幕開啟</a>
-      </div>
-      <div class="aircraft-live-frame">
-        <iframe
-          src="https://globe.adsb.lol/?lat=25.0797&lon=121.2342&zoom=8"
-          title="桃園國際機場 ADSB.lol 即時航機雷達"
-          loading="eager"
-          referrerpolicy="no-referrer"
-          allow="fullscreen"
-        ></iframe>
-      </div>
-      <div class="aircraft-code-guide">
-        <strong>常見航空公司代碼</strong>
-        <span>CAL 中華航空</span><span>EVA 長榮航空</span><span>TTW 台灣虎航</span>
-        <span>SJX 星宇航空</span><span>CPA 國泰航空</span><span>JAL 日本航空</span>
-        <span>ANA 全日空</span><span>KAL 大韓航空</span><span>SIA 新加坡航空</span>
-      </div>
-      <div class="aircraft-source">可拖曳、縮放並點選航機查看即時高度、速度、航向與機型。資料來源為 ADSB.lol，不可作為飛航操作依據。</div>
-    `;
-  }
-
-  function startAircraftTracking() {
-    stopAircraftTracking();
-    initializeAircraftMap();
-    loadAircraftPositions();
-    state.aircraftRefreshTimer = setInterval(() => {
-      if (state.view === "aircraft") loadAircraftPositions();
-    }, 12_000);
-  }
-
-  function stopAircraftTracking() {
-    if (state.aircraftRefreshTimer) clearInterval(state.aircraftRefreshTimer);
-    state.aircraftRefreshTimer = null;
-    if (state.aircraftMap) {
-      state.aircraftMap.remove();
-      state.aircraftMap = null;
-    }
-    state.aircraftMarkers = new Map();
-    state.aircraftRangeCircle = null;
-  }
-
-  async function loadAircraftPositions() {
-    const list = document.getElementById("aircraftList");
-    if (!list || !window.L) return;
-    const updateText = document.getElementById("aircraftUpdateText");
-    try {
-      const payload = await fetchAircraftPositions();
-      renderAircraftMap(payload.aircraft || []);
-      renderAircraftList(payload.aircraft || []);
-      const updated = new Date(payload.updatedAt);
-      if (updateText) updateText.textContent = `共 ${payload.total || 0} 架航機｜${payload.accessType}｜更新 ${updated.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}`;
-    } catch (error) {
-      list.innerHTML = `<div class="empty">暫時無法取得航機位置，請稍後重新整理。<br><small>${escapeHtml(error.message || String(error))}</small></div>`;
-      if (updateText) updateText.textContent = "即時資料連線失敗";
-    }
-  }
-
-  async function fetchAircraftPositions() {
-    const response = await fetch(aircraftPositionUrl, {
-      headers: cfg.SUPABASE_ANON_KEY ? {
-        apikey: cfg.SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}`
-      } : {}
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "航機資料讀取失敗");
-    return { ...payload, accessType: "ADSB.lol 即時同步" };
-  }
-
-  function renderAircraftMap(aircraft) {
-    const mapBox = document.getElementById("aircraftMap");
-    if (!mapBox || !window.L) return;
-    initializeAircraftMap();
-    const map = state.aircraftMap;
-    const active = new Set();
-    aircraft.forEach((item) => {
-      const id = item.hex || item.flight || item.registration;
-      active.add(id);
-      const label = escapeHtml(aircraftDisplayName(item));
-      let marker = state.aircraftMarkers.get(id);
-      if (!marker) {
-        marker = window.L.marker([Number(item.lat), Number(item.lon)], {
-          icon: aircraftMarkerIcon(label, item.track)
-        }).addTo(map);
-        state.aircraftMarkers.set(id, marker);
-      } else {
-        marker.setLatLng([Number(item.lat), Number(item.lon)]);
-        const element = marker.getElement();
-        const plane = element?.querySelector(".aircraft-symbol");
-        const name = element?.querySelector("b");
-        if (plane) plane.style.transform = `rotate(${Number(item.track || 0)}deg)`;
-        if (name) name.textContent = aircraftDisplayName(item);
-      }
-      marker.bindPopup(aircraftPopup(item));
-    });
-    state.aircraftMarkers.forEach((marker, id) => {
-      if (!active.has(id)) {
-        map.removeLayer(marker);
-        state.aircraftMarkers.delete(id);
-      }
-    });
-  }
-
-  function initializeAircraftMap() {
-    const mapBox = document.getElementById("aircraftMap");
-    if (!mapBox || !window.L || state.aircraftMap) return;
-    const map = window.L.map(mapBox, { zoomControl: true }).setView([25.0797, 121.2342], 8);
-    state.aircraftMap = map;
-    window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: "&copy; OpenStreetMap"
-    }).addTo(map);
-    state.aircraftRangeCircle = window.L.circle([25.0797, 121.2342], {
-      radius: 50 * 1852, color: "#ef3f35", weight: 1, fillColor: "#ef3f35", fillOpacity: .025
-    }).addTo(map);
-    window.L.circleMarker([25.0797, 121.2342], {
-      radius: 7, color: "#fff", weight: 2, fillColor: "#ef3f35", fillOpacity: 1
-    }).bindPopup("<strong>桃園國際機場 TPE</strong>").addTo(map);
-    setTimeout(() => map.invalidateSize(), 0);
-  }
-
-  function aircraftMarkerIcon(label, track) {
-    return window.L.divIcon({
-      className: "aircraft-marker",
-      html: `<span class="aircraft-symbol" style="transform:rotate(${Number(track || 0)}deg)">✈</span><b>${label}</b>`,
-      iconSize: [126, 34],
-      iconAnchor: [17, 17]
-    });
-  }
-
-  function aircraftPopup(item) {
-    return `
-      <div class="aircraft-popup">
-        <strong>${escapeHtml(aircraftDisplayName(item))}</strong>
-        <span>註冊號：${escapeHtml(item.registration || "-")}</span>
-        <span>機型：${escapeHtml(aircraftTypeName(item.aircraftType))}</span>
-        <span>高度：${escapeHtml(aircraftAltitude(item.altitude))}</span>
-        <span>地速：${escapeHtml(aircraftSpeed(item.groundSpeed))}</span>
-        <span>距機場：${escapeHtml(aircraftDistance(item.distanceNm))}</span>
-      </div>
-    `;
-  }
-
-  function renderAircraftList(aircraft) {
-    const list = document.getElementById("aircraftList");
-    const summary = document.getElementById("aircraftSummary");
-    if (!list || !summary) return;
-    const airborne = aircraft.filter((item) => item.altitude !== "ground").length;
-    const descending = aircraft.filter((item) => Number(item.verticalRate) < -300).length;
-    summary.innerHTML = `
-      <span><small>範圍內航機</small><strong>${aircraft.length}</strong></span>
-      <span><small>空中航機</small><strong>${airborne}</strong></span>
-      <span><small>下降中</small><strong>${descending}</strong></span>
-    `;
-    list.innerHTML = aircraft.length ? aircraft.map((item) => `
-      <article class="aircraft-row">
-        <div class="aircraft-identity">
-          <span class="aircraft-plane" style="transform:rotate(${Number(item.track || 0)}deg)">✈</span>
-          <span><strong>${escapeHtml(aircraftDisplayName(item))}</strong><small>${escapeHtml([item.registration, aircraftTypeName(item.aircraftType)].filter(Boolean).join(" · ") || "未提供機型資料")}</small></span>
-        </div>
-        <div class="aircraft-facts">
-          <span><small>高度</small><strong>${escapeHtml(aircraftAltitude(item.altitude))}</strong></span>
-          <span><small>地速</small><strong>${escapeHtml(aircraftSpeed(item.groundSpeed))}</strong></span>
-          <span><small>航向</small><strong>${Number.isFinite(Number(item.track)) ? `${Math.round(Number(item.track))}°` : "-"}</strong></span>
-          <span><small>升降</small><strong class="${Number(item.verticalRate) < -300 ? "descending" : ""}">${escapeHtml(aircraftVerticalRate(item.verticalRate))}</strong></span>
-          <span><small>距機場</small><strong>${escapeHtml(aircraftDistance(item.distanceNm))}</strong></span>
-        </div>
-      </article>
-    `).join("") : `<div class="empty">目前 50 海里範圍內沒有可接收的航機位置。</div>`;
-  }
-
-  function aircraftDisplayName(item) {
-    const flight = String(item.flight || "").trim();
-    const prefix = flight.slice(0, 3).toUpperCase();
-    const airline = aircraftAirlines[prefix];
-    return airline ? `${airline} ${flight}` : (flight || item.registration || item.hex || "未知航機");
-  }
-
-  function aircraftTypeName(type) {
-    const code = String(type || "").trim().toUpperCase();
-    return aircraftTypes[code] ? `${aircraftTypes[code]} (${code})` : (code || "-");
-  }
-
-  function aircraftAltitude(value) {
-    if (value === "ground") return "地面";
-    return Number.isFinite(Number(value)) ? `${Math.round(Number(value)).toLocaleString()} 呎` : "-";
-  }
-
-  function aircraftSpeed(value) {
-    return Number.isFinite(Number(value)) ? `${Math.round(Number(value))} 節` : "-";
-  }
-
-  function aircraftDistance(value) {
-    return Number.isFinite(Number(value)) ? `${Number(value).toFixed(1)} 海里` : "-";
-  }
-
-  function aircraftVerticalRate(value) {
-    const rate = Number(value);
-    if (!Number.isFinite(rate)) return "-";
-    if (rate > 200) return `上升 ${Math.round(rate).toLocaleString()} 呎/分`;
-    if (rate < -200) return `下降 ${Math.abs(Math.round(rate)).toLocaleString()} 呎/分`;
-    return "平飛";
   }
 
   function adminVehicles() {
