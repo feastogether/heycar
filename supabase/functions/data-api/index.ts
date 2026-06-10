@@ -120,7 +120,9 @@ async function loadPartnerData(partnerId: string) {
   const [requests, vehicles] = await Promise.all([requestQuery, vehicleQuery]);
   if (requests.error) throw requests.error;
   if (vehicles.error) throw vehicles.error;
-  result.insurance_requests = requests.data || [];
+  result.insurance_requests = partner.partner_type === "dealer"
+    ? (requests.data || []).map(({ broker_notes: _brokerNotes, ...item }) => item)
+    : requests.data || [];
   result.vehicles = vehicles.data || [];
   if (partner.partner_type === "broker") {
     const { data: partners, error } = await db.from("insurance_partners").select("id,name,partner_type,contact_name,phone,email,active,notes");
@@ -189,11 +191,39 @@ Deno.serve(async (req) => {
       }
       const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();
       const allowed = partner?.partner_type === "broker"
-        ? ["status", "quote_amount", "quote_notes", "attachment_url", "attachment_name", "drive_file_id", "updated_at"]
-        : ["status", "notes", "updated_at"];
+        ? [
+          "status", "quote_amount", "broker_notes",
+          "quote_url", "quote_name",
+          "application_url", "application_name",
+          "policy_url", "policy_name",
+          "receipt_url", "receipt_name",
+          "updated_at"
+        ]
+        : ["status", "updated_at"];
       body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
-      if (partner?.partner_type === "dealer" && body.record.status !== "confirming_quote") {
+      if (partner?.partner_type === "dealer" && body.record.status !== "quote_confirmed_issue_application") {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      }
+      if (partner?.partner_type === "broker") {
+        const { data: current } = await db.from("insurance_requests").select("status").eq("id", body.id).single();
+        const allowedTransitions: Record<string, string> = {
+          broker_quoting: "awaiting_admin_quote_confirmation",
+          quote_confirmed_issue_application: "stamping",
+          awaiting_policy: "payment_pending",
+          receipt_pending: "completed"
+        };
+        if (body.record.status && allowedTransitions[current?.status] !== body.record.status) {
+          return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
+        }
+        const requiredFile: Record<string, string> = {
+          awaiting_admin_quote_confirmation: "quote_url",
+          stamping: "application_url",
+          payment_pending: "policy_url",
+          completed: "receipt_url"
+        };
+        if (body.record.status && requiredFile[body.record.status] && !body.record[requiredFile[body.record.status]]) {
+          return json({ error: "INSURANCE_FILE_REQUIRED" }, 400);
+        }
       }
     }
 
