@@ -175,6 +175,9 @@ alter table public.app_sessions enable row level security;
 -- Public policies are intentionally omitted. The data-api Edge Function is the
 -- only application data access path and uses short-lived server sessions.
 
+-- Insurance workflow tables are maintained by migration:
+-- supabase/migrations/20260610030000_insurance_workflow.sql
+
 insert into public.drivers (national_id, phone, name, fleet_name, license_expiry, notes)
 values ('A123456789', '0912345678', '王小明', '亞菲得車隊', '2027-12-31', '示範司機')
 on conflict (national_id) do nothing;

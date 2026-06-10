@@ -11,6 +11,7 @@
   const state = {
     mode: "driver",
     user: null,
+    partner: null,
     admin: false,
     view: "home",
     adminView: "drivers",
@@ -42,7 +43,22 @@
     "payment_notices",
     "calendar_events",
     "marquee_messages",
-    "emergency_events"
+    "emergency_events",
+    "insurance_partners",
+    "insurance_requests"
+  ];
+
+  const insuranceStatuses = [
+    ["pending_quote", "待報價"],
+    ["quoted", "報價完成"],
+    ["confirming_quote", "確認報價中"],
+    ["ready_to_issue", "可出單"],
+    ["applying", "要保中"],
+    ["application_stamped", "要保用印完成"],
+    ["policy_issued", "出保單"],
+    ["payment_pending", "付款中"],
+    ["receipt_pending", "等待收據"],
+    ["completed", "完成"]
   ];
 
   const labels = {
@@ -87,7 +103,9 @@
     marquee_messages: [],
     emergency_events: [
       { id: uid(), title: "車輛事故處理流程", category: "交通事故", summary: "確保人員安全、保留現場資料並立即回報。", content: "1. 先確認人員安全並開啟警示燈。\n2. 撥打 110，必要時撥打 119。\n3. 拍攝現場、車損與對方資料。\n4. 聯絡車隊管理人員並依指示處理。", active: true }
-    ]
+    ],
+    insurance_partners: [],
+    insurance_requests: []
   };
 
   function uid() {
@@ -136,10 +154,18 @@
       if (saved.type === "admin") {
         state.admin = true;
         state.user = null;
+        state.partner = null;
+        return;
+      }
+      if (saved.type === "partner" && saved.user) {
+        state.partner = saved.user;
+        state.user = null;
+        state.admin = false;
         return;
       }
       if (saved.user) {
         state.user = saved.user;
+        state.partner = null;
         state.admin = false;
       } else {
         clearSession();
@@ -170,6 +196,7 @@
       const result = await apiRequest("load");
       state.data = result.data || emptyData();
       if (result.user) state.user = result.user;
+      if (result.partner) state.partner = result.partner;
       return;
     }
     if (!hasSupabase) {
@@ -400,6 +427,26 @@
 
   async function uploadAttachment(file) {
     if (file.size > 10 * 1024 * 1024) throw new Error("附件不可超過 10 MB");
+    if (cfg.DRIVE_UPLOAD_URL && state.apiSession) {
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      const response = await fetch(cfg.DRIVE_UPLOAD_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(cfg.SUPABASE_ANON_KEY ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` } : {}),
+          "x-afide-session": state.apiSession
+        },
+        body: JSON.stringify({ name: file.name, type: file.type, base64: String(dataUrl).split(",")[1] })
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Google Drive 上傳失敗");
+      return result.url;
+    }
     if (!hasSupabase) {
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -416,11 +463,12 @@
   }
 
   function render() {
-    if (!state.user && !state.admin) {
+    if (!state.user && !state.admin && !state.partner) {
       renderLogin();
       return;
     }
     if (state.admin) renderAdmin();
+    else if (state.partner) renderInsurancePortal();
     else renderDriver();
   }
 
@@ -461,8 +509,8 @@
               </div>
             ` : `
               <div class="brand-copy">
-                <div class="brand-title driver-name">${escapeHtml(state.user.name)}，您好</div>
-                <div class="brand-subtitle">亞菲得車隊</div>
+                <div class="brand-title driver-name">${escapeHtml(state.partner?.name || state.user?.name)}，您好</div>
+                <div class="brand-subtitle">${state.partner ? (state.partner.partner_type === "broker" ? "保經工作台" : "車商保險中心") : "亞菲得車隊"}</div>
               </div>
             `}
           </div>
@@ -492,7 +540,7 @@
   }
 
   function renderLogin() {
-    const loadingText = state.mode === "driver" ? "正在驗證司機身分" : "正在驗證管理權限";
+    const loadingText = state.mode === "driver" ? "正在驗證司機身分" : state.mode === "partner" ? "正在驗證合作單位" : "正在驗證管理權限";
     app.innerHTML = `
       <div class="login-wrap">
         <section class="login-panel">
@@ -502,12 +550,13 @@
           <div class="login-card">
             <div class="mode-tabs">
               <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver" ${state.loginLoading ? "disabled" : ""}>司機前台</button>
+              <button class="tab-btn ${state.mode === "partner" ? "active" : ""}" data-mode="partner" ${state.loginLoading ? "disabled" : ""}>保險合作單位</button>
               <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin" ${state.loginLoading ? "disabled" : ""}>管理後台</button>
             </div>
-            <h2>${state.mode === "driver" ? "司機登入" : "後台登入"}</h2>
+            <h2>${state.mode === "driver" ? "司機登入" : state.mode === "partner" ? "車商／保經登入" : "後台登入"}</h2>
             <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
               <div class="field full">
-                <label>${state.mode === "driver" ? "手機號碼" : "管理碼"}</label>
+                <label>${state.mode === "driver" ? "手機號碼" : state.mode === "partner" ? "合作單位登入代碼" : "管理碼"}</label>
                 <input name="login" autocomplete="off" inputmode="numeric" required ${state.loginLoading ? "disabled" : ""}>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
@@ -854,10 +903,107 @@
     document.body.appendChild(modal);
   }
 
+  function insuranceStatusLabel(status) {
+    return insuranceStatuses.find(([value]) => value === status)?.[1] || status || "待報價";
+  }
+
+  function insuranceStatusBadge(status) {
+    const index = Math.max(0, insuranceStatuses.findIndex(([value]) => value === status));
+    return `<span class="insurance-status step-${index}">${escapeHtml(insuranceStatusLabel(status))}</span>`;
+  }
+
+  function insuranceControlCenter(requests = state.data.insurance_requests || [], editable = false) {
+    const counts = Object.fromEntries(insuranceStatuses.map(([status]) => [status, requests.filter((item) => item.status === status).length]));
+    return `
+      <div class="insurance-pipeline">
+        ${insuranceStatuses.map(([status, label], index) => `<div class="pipeline-step ${counts[status] ? "has-items" : ""}"><span>${index + 1}</span><strong>${label}</strong><b>${counts[status]}</b></div>`).join("")}
+      </div>
+      <div class="insurance-request-list">
+        ${requests.length ? requests.map((item) => insuranceRequestCard(item, editable)).join("") : `<div class="empty">目前沒有保險需求案件</div>`}
+      </div>
+    `;
+  }
+
+  function insuranceRequestCard(item, editable) {
+    const partner = (state.data.insurance_partners || []).find((row) => row.id === item.dealer_partner_id);
+    const currentIndex = insuranceStatuses.findIndex(([status]) => status === item.status);
+    const nextStatus = insuranceStatuses[currentIndex + 1]?.[0];
+    const canDealerConfirm = state.partner?.partner_type === "dealer" && item.status === "quoted";
+    const canBrokerAdvance = state.partner?.partner_type === "broker" && nextStatus;
+    return `
+      <article class="insurance-request-card">
+        <div class="insurance-card-head">
+          <div><strong class="insurance-plate">${escapeHtml(item.plate_no)}</strong><small>${escapeHtml(item.insurance_type || "保險需求")}｜${escapeHtml(partner?.name || "未指定車商")}</small></div>
+          ${insuranceStatusBadge(item.status)}
+        </div>
+        <div class="insurance-card-facts">
+          <span><small>旅客</small><strong>${escapeHtml(item.passengers || "-")}</strong></span>
+          <span><small>自付額</small><strong>${escapeHtml(item.deductible || "-")}</strong></span>
+          <span><small>抵押權</small><strong>${escapeHtml(item.lienholder || "-")}</strong></span>
+          <span><small>報價金額</small><strong>${item.quote_amount ? `$${Number(item.quote_amount).toLocaleString()}` : "-"}</strong></span>
+        </div>
+        ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ""}
+        ${item.quote_notes ? `<p class="quote-note">報價說明：${escapeHtml(item.quote_notes)}</p>` : ""}
+        ${attachmentLink(item)}
+        <div class="insurance-card-actions">
+          ${editable ? `<button class="soft-btn" data-modal="insuranceRequest" data-id="${item.id}">編輯案件</button>` : ""}
+          ${state.partner?.partner_type === "broker" && item.status === "pending_quote" ? `<button class="primary-btn" data-modal="insuranceQuote" data-id="${item.id}">進行報價</button>` : ""}
+          ${canDealerConfirm ? `<button class="primary-btn" data-insurance-status="${item.id}:confirming_quote">確認報價</button>` : ""}
+          ${canBrokerAdvance && item.status !== "pending_quote" ? `<button class="primary-btn" data-insurance-status="${item.id}:${nextStatus}">推進至「${insuranceStatusLabel(nextStatus)}」</button>` : ""}
+        </div>
+      </article>
+    `;
+  }
+
+  function renderInsurancePortal() {
+    const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+    layout(`
+      <div class="section-head"><div><h2>保險動態管制中心</h2><small>${escapeHtml(state.partner.name)}｜${state.partner.partner_type === "broker" ? "保經視角" : "車商視角"}</small></div></div>
+      ${state.partner.partner_type === "dealer" ? dealerVehicleOverview(requests) : ""}
+      ${insuranceControlCenter(requests, false)}
+    `);
+  }
+
+  function dealerVehicleOverview(requests) {
+    const vehicles = state.data.vehicles || [];
+    return `
+      <section class="dealer-vehicle-overview">
+        <h3>所屬車輛保險狀況</h3>
+        <div class="dealer-vehicle-grid">
+          ${vehicles.length ? vehicles.map((vehicle) => {
+            const latest = requests.find((request) => request.vehicle_id === vehicle.id || request.plate_no === vehicle.plate_no);
+            return `<div><strong>${escapeHtml(vehicle.plate_no)}</strong><span>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</span>${latest ? insuranceStatusBadge(latest.status) : `<span class="insurance-status">尚未發起</span>`}</div>`;
+          }).join("") : `<div class="empty">尚未指定所屬車輛</div>`}
+        </div>
+      </section>
+    `;
+  }
+
+  function adminInsuranceCenter() {
+    const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+    return `
+      <div class="section-head"><div><h2>保險動態管制中心</h2><small>集中掌握每台車的投保進度</small></div><button class="primary-btn" data-modal="insuranceRequest">發起保險需求</button></div>
+      ${insuranceControlCenter(requests, true)}
+    `;
+  }
+
+  function adminInsurancePartners() {
+    return `
+      <div class="section-head"><div><h2>車商與保經管理</h2><small>設定合作單位與前台登入代碼</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
+      ${table(["單位名稱", "類型", "聯絡人", "電話", "狀態", "操作"], (state.data.insurance_partners || []).map((item) => [
+        escapeHtml(item.name), item.partner_type === "broker" ? "保經" : "車商", escapeHtml(item.contact_name || "-"),
+        escapeHtml(item.phone || "-"), item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
+        rowActions("insurancePartner", "insurance_partners", item.id)
+      ]))}
+    `;
+  }
+
   function renderAdmin() {
     const nav = [
       ["drivers", "駕駛管理", "👤"],
       ["vehicles", "車輛管理", "🚐"],
+      ["insuranceCenter", "保險管制中心", "🛡️"],
+      ["insurancePartners", "車商與保經管理", "🏢"],
       ["calendar", "共同行事曆", "📅"],
       ["maintenanceRecords", "保養管理", "🧰"],
       ["maintenanceNotifications", "保養通知", "🔔"],
@@ -870,6 +1016,8 @@
     const body = {
       drivers: adminDrivers,
       vehicles: adminVehicles,
+      insuranceCenter: adminInsuranceCenter,
+      insurancePartners: adminInsurancePartners,
       maintenanceRecords: adminMaintenanceRecords,
       maintenanceNotifications: () => adminTaskManager("maintenance_notifications", "保養通知"),
       announcements: adminAnnouncements,
@@ -1052,7 +1200,10 @@
       paymentNotice: ["繳費通知", "payment_notices", paymentNoticeForm],
       calendarEvent: ["行程", "calendar_events", calendarEventForm],
       marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
-      emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm]
+      emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
+      insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
+      insuranceRequest: ["保險需求", "insurance_requests", insuranceRequestForm],
+      insuranceQuote: ["保險報價", "insurance_requests", insuranceQuoteForm]
     };
     const [title, tableName, formFn] = map[type];
     const item = id ? state.data[tableName].find((row) => row.id === id) : preset;
@@ -1110,7 +1261,14 @@
     }
     if (tableName === "vehicles") {
       record.current_driver_id = record.current_driver_id || null;
+      record.dealer_partner_id = record.dealer_partner_id || null;
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
+    }
+    if (tableName === "insurance_partners") record.active = record.active === "true";
+    if (tableName === "insurance_requests") {
+      record.vehicle_id = record.vehicle_id || null;
+      record.dealer_partner_id = record.dealer_partner_id || null;
+      record.quote_amount = Number(record.quote_amount || 0) || null;
     }
     if (tableName === "maintenance_notifications") {
       record.driver_id = record.driver_id || null;
@@ -1296,6 +1454,7 @@
       ${input("model", "車輛款式", v.model)}
       ${input("brand", "車輛品牌", v.brand)}
       ${input("insurance_company", "保險公司", v.insurance_company)}
+      ${select("dealer_partner_id", "所屬車商", v.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}
       ${input("vehicle_region", "區域", v.vehicle_region)}
       ${input("assigned_driver_names", "目前使用人／用途", v.assigned_driver_names || v.current_usage)}
@@ -1363,6 +1522,41 @@
       + checkbox("active", "啟用此事件", item.active !== false);
   }
 
+  function insurancePartnerForm(item) {
+    return input("name", "單位名稱", item.name, "text", true)
+      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"]])
+      + input("contact_name", "聯絡人", item.contact_name)
+      + input("phone", "電話", item.phone, "tel")
+      + input("email", "電子信箱", item.email, "email")
+      + input("login_code", item.id ? "更新登入代碼（不修改可留白）" : "登入代碼", "", "password", !item.id)
+      + checkbox("active", "啟用合作單位登入", item.active !== false)
+      + text("notes", "備註", item.notes);
+  }
+
+  function insuranceRequestForm(item) {
+    const vehicles = state.data.vehicles || [];
+    return `<div class="field"><label>車輛</label><select name="vehicle_id" data-insurance-vehicle><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>`
+      + input("plate_no", "車牌", item.plate_no, "text", true)
+      + select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((partner) => partner.partner_type === "dealer").map((partner) => [partner.id, partner.name])])
+      + select("insurance_type", "保險種類", item.insurance_type || "強制險＋任意險", [["強制險", "強制險"], ["任意險", "任意險"], ["強制險＋任意險", "強制險＋任意險"], ["其他", "其他"]])
+      + input("passengers", "旅客／乘客資訊", item.passengers)
+      + input("deductible", "自付額", item.deductible)
+      + input("lienholder", "抵押權", item.lienholder)
+      + select("status", "案件狀態", item.status || "pending_quote", insuranceStatuses)
+      + input("quote_amount", "報價金額", item.quote_amount, "number")
+      + text("quote_notes", "報價說明", item.quote_notes)
+      + text("notes", "備註", item.notes)
+      + attachmentField(item);
+  }
+
+  function insuranceQuoteForm(item) {
+    return `<div class="field full"><strong>${escapeHtml(item.plate_no)}｜${escapeHtml(item.insurance_type)}</strong></div>`
+      + input("quote_amount", "報價金額", item.quote_amount, "number", true)
+      + text("quote_notes", "報價內容與說明", item.quote_notes)
+      + `<input type="hidden" name="status" value="quoted">`
+      + attachmentField(item);
+  }
+
   async function syncCalendarNotification(item) {
     if (!["maintenance", "tires"].includes(item.event_type) || !item.driver_id) return;
     const vehicle = state.data.vehicles.find((row) => String(row.plate_no).toUpperCase() === String(item.plate_no).toUpperCase());
@@ -1389,14 +1583,16 @@
     renderLogin();
     try {
       if (hasSupabase) {
+        const action = state.mode === "admin" ? "login_admin" : state.mode === "partner" ? "login_partner" : "login_driver";
         const result = await apiRequest(
-          state.mode === "admin" ? "login_admin" : "login_driver",
-          state.mode === "admin" ? { code: value } : { phone: value }
+          action,
+          state.mode === "driver" ? { phone: value } : { code: value }
         );
         state.apiSession = result.token;
         state.admin = state.mode === "admin";
         state.user = result.user || null;
-        saveSession(state.mode, state.user, result.token);
+        state.partner = result.partner || null;
+        saveSession(state.mode, state.partner || state.user, result.token);
         await loadAll();
         state.view = "home";
         state.loginLoading = false;
@@ -1414,6 +1610,7 @@
       const messages = {
         DRIVER_LOGIN_FAILED: "找不到此手機號碼，或此帳號目前已停用。",
         ADMIN_LOGIN_FAILED: "管理碼不正確。",
+        PARTNER_LOGIN_FAILED: "合作單位登入代碼不正確，或此帳號目前已停用。",
         SESSION_EXPIRED: "登入已逾時，請重新登入。"
       };
       state.error = messages[error.message] || error.message || String(error);
@@ -1661,6 +1858,7 @@
     }
     if (target.dataset.action === "logout") {
       state.user = null;
+      state.partner = null;
       state.admin = false;
       state.apiSession = "";
       state.loginLoading = false;
@@ -1730,6 +1928,11 @@
       await update(tableName, id, { status });
       render();
     }
+    if (target.dataset.insuranceStatus) {
+      const [id, status] = target.dataset.insuranceStatus.split(":");
+      await update("insurance_requests", id, { status });
+      render();
+    }
   });
 
   document.addEventListener("submit", async (e) => {
@@ -1760,6 +1963,14 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const insuranceVehicle = e.target.closest("[data-insurance-vehicle]");
+    if (insuranceVehicle) {
+      const option = insuranceVehicle.selectedOptions[0];
+      const form = insuranceVehicle.closest("form");
+      if (option?.dataset.plate) form.querySelector('[name="plate_no"]').value = option.dataset.plate;
+      if (option?.dataset.dealer) form.querySelector('[name="dealer_partner_id"]').value = option.dataset.dealer;
+      return;
+    }
     const loginToggle = e.target.closest("[data-driver-login]");
     if (loginToggle) {
       await update("drivers", loginToggle.dataset.driverLogin, { login_enabled: loginToggle.checked });
@@ -1837,6 +2048,7 @@
   }).catch((err) => {
     state.error = err.message || String(err);
     state.user = null;
+    state.partner = null;
     state.admin = false;
     state.apiSession = "";
     state.data = hasSupabase ? emptyData() : localLoad();

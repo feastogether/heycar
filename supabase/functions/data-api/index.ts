@@ -10,7 +10,7 @@ const cors = {
 const tables = [
   "drivers", "vehicles", "maintenance_records", "announcements", "announcement_reads",
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
-  "marquee_messages", "emergency_events"
+  "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -29,11 +29,21 @@ const phoneMatches = (left: unknown, right: unknown) => {
   return Boolean(a && b && (a === b || a.slice(-9) === b.slice(-9)));
 };
 
-async function createSession(type: "admin" | "driver", driverId?: string) {
+const hashCode = async (value: unknown) => {
+  const bytes = new TextEncoder().encode(String(value || ""));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+};
+
+async function createSession(type: "admin" | "driver" | "partner", subjectId?: string) {
   const token = crypto.randomUUID() + crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   const { error } = await db.from("app_sessions").insert({
-    token, session_type: type, driver_id: driverId || null, expires_at: expiresAt
+    token,
+    session_type: type,
+    driver_id: type === "driver" ? subjectId || null : null,
+    partner_id: type === "partner" ? subjectId || null : null,
+    expires_at: expiresAt
   });
   if (error) throw error;
   return { token, expires_at: expiresAt };
@@ -85,9 +95,41 @@ async function loadAdminData() {
   for (const table of tables) {
     const { data, error } = await db.from(table).select("*");
     if (error) throw error;
-    result[table] = data || [];
+    result[table] = table === "insurance_partners"
+      ? (data || []).map(({ login_code_hash: _hash, ...item }) => item)
+      : data || [];
   }
   return { data: result };
+}
+
+async function loadPartnerData(partnerId: string) {
+  const { data: partner, error: partnerError } = await db
+    .from("insurance_partners")
+    .select("id,name,partner_type,contact_name,phone,email,active,notes")
+    .eq("id", partnerId)
+    .eq("active", true)
+    .single();
+  if (partnerError || !partner) throw new Error("PARTNER_NOT_FOUND");
+  const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
+  const requestQuery = partner.partner_type === "dealer"
+    ? db.from("insurance_requests").select("*").eq("dealer_partner_id", partnerId)
+    : db.from("insurance_requests").select("*");
+  const vehicleQuery = partner.partner_type === "dealer"
+    ? db.from("vehicles").select("*").eq("dealer_partner_id", partnerId)
+    : db.from("vehicles").select("*");
+  const [requests, vehicles] = await Promise.all([requestQuery, vehicleQuery]);
+  if (requests.error) throw requests.error;
+  if (vehicles.error) throw vehicles.error;
+  result.insurance_requests = requests.data || [];
+  result.vehicles = vehicles.data || [];
+  if (partner.partner_type === "broker") {
+    const { data: partners, error } = await db.from("insurance_partners").select("id,name,partner_type,contact_name,phone,email,active,notes");
+    if (error) throw error;
+    result.insurance_partners = partners || [];
+  } else {
+    result.insurance_partners = [partner];
+  }
+  return { data: result, partner };
 }
 
 Deno.serve(async (req) => {
@@ -107,13 +149,25 @@ Deno.serve(async (req) => {
       }
       return json(await createSession("admin"));
     }
+    if (body.action === "login_partner") {
+      const codeHash = await hashCode(body.code);
+      const { data: partner, error } = await db
+        .from("insurance_partners")
+        .select("id,name,partner_type,contact_name,phone,email,active,notes")
+        .eq("login_code_hash", codeHash)
+        .eq("active", true)
+        .maybeSingle();
+      if (error) throw error;
+      if (!partner) return json({ error: "PARTNER_LOGIN_FAILED" }, 401);
+      return json({ ...(await createSession("partner", partner.id)), partner });
+    }
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
     if (body.action === "load") {
-      return json(session.session_type === "admin"
-        ? await loadAdminData()
-        : await loadDriverData(session.driver_id));
+      if (session.session_type === "admin") return json(await loadAdminData());
+      if (session.session_type === "partner") return json(await loadPartnerData(session.partner_id));
+      return json(await loadDriverData(session.driver_id));
     }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
 
@@ -129,17 +183,45 @@ Deno.serve(async (req) => {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       }
     }
+    if (session.session_type === "partner") {
+      if (body.table !== "insurance_requests" || body.action !== "update") {
+        return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      }
+      const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();
+      const allowed = partner?.partner_type === "broker"
+        ? ["status", "quote_amount", "quote_notes", "attachment_url", "attachment_name", "drive_file_id", "updated_at"]
+        : ["status", "notes", "updated_at"];
+      body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
+      if (partner?.partner_type === "dealer" && body.record.status !== "confirming_quote") {
+        return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      }
+    }
 
     if (body.action === "insert") {
+      if (body.table === "insurance_partners") {
+        if (!body.record.login_code) return json({ error: "PARTNER_CODE_REQUIRED" }, 400);
+        body.record.login_code_hash = await hashCode(body.record.login_code);
+        delete body.record.login_code;
+      }
       const { data, error } = await db.from(body.table).insert(body.record).select().single();
       if (error) throw error;
+      if (body.table === "insurance_partners") delete data.login_code_hash;
       return json({ data });
     }
     if (body.action === "update") {
+      if (body.table === "insurance_partners") {
+        if (body.record.login_code) body.record.login_code_hash = await hashCode(body.record.login_code);
+        delete body.record.login_code;
+      }
       let query = db.from(body.table).update(body.record).eq("id", body.id);
       if (session.session_type === "driver") query = query.eq("driver_id", session.driver_id);
+      if (session.session_type === "partner") {
+        const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();
+        if (partner?.partner_type === "dealer") query = query.eq("dealer_partner_id", session.partner_id);
+      }
       const { data, error } = await query.select().single();
       if (error) throw error;
+      if (body.table === "insurance_partners") delete data.login_code_hash;
       return json({ data });
     }
     if (body.action === "delete" && session.session_type === "admin") {
