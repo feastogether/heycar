@@ -30,7 +30,7 @@
 
 ```powershell
 npx supabase secrets set GOOGLE_SERVICE_ACCOUNT_JSON='<完整 Service Account JSON>'
-npx supabase secrets set GOOGLE_DRIVE_FOLDER_ID='<Drive 資料夾 ID>'
+npx supabase secrets set GOOGLE_DRIVE_FOLDER_ID='1rE6WjR4oINvUsAAb-HkH9Ryj--ddQFqT'
 ```
 
 最後將 `config.example.js` 的 `DRIVE_UPLOAD_URL` 設為：
@@ -38,3 +38,5 @@ npx supabase secrets set GOOGLE_DRIVE_FOLDER_ID='<Drive 資料夾 ID>'
 `https://chnvwziuqcqnllcjqobj.supabase.co/functions/v1/drive-upload`
 
 Service Account JSON 只能放在 Supabase Secret，不可提交至 GitHub。
+
+上傳保險文件時，系統會先在主資料夾內搜尋與車牌完全同名的資料夾；找到後會直接上傳至該車牌資料夾，找不到時則上傳至主資料夾。

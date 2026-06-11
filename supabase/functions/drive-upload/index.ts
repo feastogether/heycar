@@ -18,19 +18,36 @@ Deno.serve(async (req) => {
       .gt("expires_at", new Date().toISOString()).maybeSingle();
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
 
-    const serviceAccount = JSON.parse(Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON") || "");
+    const serviceAccountJson = Deno.env.get("GOOGLE_SERVICE_ACCOUNT_JSON") || "";
     const folderId = Deno.env.get("GOOGLE_DRIVE_FOLDER_ID") || "";
-    if (!folderId) return json({ error: "GOOGLE_DRIVE_NOT_CONFIGURED" }, 503);
+    if (!serviceAccountJson || !folderId) return json({ error: "GOOGLE_DRIVE_NOT_CONFIGURED" }, 503);
+    const serviceAccount = JSON.parse(serviceAccountJson);
 
     const body = await req.json();
     const bytes = Uint8Array.from(atob(String(body.base64 || "")), (char) => char.charCodeAt(0));
     if (!bytes.length || bytes.length > 10 * 1024 * 1024) return json({ error: "INVALID_FILE_SIZE" }, 400);
 
-    const auth = new GoogleAuth({ credentials: serviceAccount, scopes: ["https://www.googleapis.com/auth/drive.file"] });
+    const auth = new GoogleAuth({ credentials: serviceAccount, scopes: ["https://www.googleapis.com/auth/drive"] });
     const client = await auth.getClient();
     const token = await client.getAccessToken();
+    const plateNo = String(body.plate_no || "").trim();
+    let destinationFolderId = folderId;
+    let destinationFolderName = "保險附件";
+    if (plateNo) {
+      const escapedPlate = plateNo.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+      const query = encodeURIComponent(`name='${escapedPlate}' and '${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+      const folderResponse = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=1`, {
+        headers: { Authorization: `Bearer ${token.token}` }
+      });
+      const folderResult = await folderResponse.json();
+      if (!folderResponse.ok) throw new Error(folderResult.error?.message || "GOOGLE_DRIVE_FOLDER_SEARCH_FAILED");
+      if (folderResult.files?.[0]) {
+        destinationFolderId = folderResult.files[0].id;
+        destinationFolderName = folderResult.files[0].name;
+      }
+    }
     const boundary = `afide-${crypto.randomUUID()}`;
-    const metadata = JSON.stringify({ name: String(body.name || "attachment"), parents: [folderId] });
+    const metadata = JSON.stringify({ name: String(body.name || "attachment"), parents: [destinationFolderId] });
     const prefix = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n--${boundary}\r\nContent-Type: ${String(body.type || "application/octet-stream")}\r\n\r\n`;
     const suffix = `\r\n--${boundary}--`;
     const payload = new Uint8Array(new TextEncoder().encode(prefix).length + bytes.length + new TextEncoder().encode(suffix).length);
@@ -45,7 +62,7 @@ Deno.serve(async (req) => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error?.message || "GOOGLE_DRIVE_UPLOAD_FAILED");
-    return json({ id: result.id, name: result.name, url: result.webViewLink || result.webContentLink });
+    return json({ id: result.id, name: result.name, folder: destinationFolderName, url: result.webViewLink || result.webContentLink });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }
