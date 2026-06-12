@@ -1,3 +1,5 @@
 supabase/.temp/
 node_modules/
 scripts/import-data.json
+
+.vercel
