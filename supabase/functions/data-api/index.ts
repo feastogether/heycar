@@ -10,7 +10,8 @@ const cors = {
 const tables = [
   "drivers", "vehicles", "maintenance_records", "announcements", "announcement_reads",
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
-  "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests"
+  "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
+  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -35,7 +36,11 @@ const hashCode = async (value: unknown) => {
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
-async function createSession(type: "admin" | "driver" | "partner", subjectId?: string) {
+async function createSession(
+  type: "admin" | "driver" | "partner",
+  subjectId?: string,
+  admin?: { name?: string; isSuper?: boolean }
+) {
   const token = crypto.randomUUID() + crypto.randomUUID();
   const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString();
   const { error } = await db.from("app_sessions").insert({
@@ -43,6 +48,9 @@ async function createSession(type: "admin" | "driver" | "partner", subjectId?: s
     session_type: type,
     driver_id: type === "driver" ? subjectId || null : null,
     partner_id: type === "partner" ? subjectId || null : null,
+    admin_user_id: type === "admin" && !admin?.isSuper ? subjectId || null : null,
+    admin_name: type === "admin" ? admin?.name || "最高管理員" : null,
+    is_super_admin: type === "admin" ? Boolean(admin?.isSuper) : false,
     expires_at: expiresAt
   });
   if (error) throw error;
@@ -77,11 +85,12 @@ async function loadDriverData(driverId: string) {
     db.from("payment_notices").select("*").eq("driver_id", driverId),
     db.from("calendar_events").select("*").eq("fleet_name", fleet),
     db.from("marquee_messages").select("*").eq("active", true),
-    db.from("emergency_events").select("*").eq("active", true)
+    db.from("emergency_events").select("*").eq("active", true),
+    db.from("feedbacks").select("*").eq("driver_id", driverId)
   ]);
   const names = [
     "vehicles", "announcements", "announcement_reads", "maintenance_notifications",
-    "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events"
+    "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks"
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;
@@ -90,17 +99,64 @@ async function loadDriverData(driverId: string) {
   return { data: result, user: driver };
 }
 
-async function loadAdminData() {
+async function loadAdminData(session: Record<string, unknown>) {
   const result: Record<string, unknown[]> = {};
   for (const table of tables) {
+    const permission = tablePermission[table];
+    if (table === "admin_users" && !session.is_super_admin) {
+      result[table] = [];
+      continue;
+    }
+    if (permission && !(await adminCan(session, permission))) {
+      result[table] = [];
+      continue;
+    }
     const { data, error } = await db.from(table).select("*");
     if (error) throw error;
     result[table] = table === "insurance_partners"
       ? (data || []).map(({ login_code_hash: _hash, ...item }) => item)
+      : table === "admin_users"
+      ? (session.is_super_admin ? (data || []).map(({ login_code_hash: _hash, ...item }) => item) : [])
       : data || [];
   }
-  return { data: result };
+  let adminProfile = {
+    id: session.admin_user_id || null,
+    name: session.admin_name || "最高管理員",
+    is_super_admin: Boolean(session.is_super_admin),
+    permissions: session.is_super_admin ? { all: true } : {}
+  };
+  if (!session.is_super_admin && session.admin_user_id) {
+    const { data } = await db.from("admin_users").select("id,name,active,permissions").eq("id", session.admin_user_id).single();
+    if (!data?.active) throw new Error("ADMIN_DISABLED");
+    adminProfile = { ...adminProfile, ...data, is_super_admin: false };
+  }
+  return { data: result, admin_profile: adminProfile };
 }
+
+async function adminCan(session: Record<string, unknown>, permission: string) {
+  if (session.is_super_admin) return true;
+  if (!session.admin_user_id) return false;
+  const { data } = await db.from("admin_users").select("active,permissions").eq("id", session.admin_user_id).single();
+  return Boolean(data?.active && data.permissions?.[permission]);
+}
+
+const tablePermission: Record<string, string> = {
+  drivers: "drivers",
+  vehicles: "vehicles",
+  vehicle_loans: "loans",
+  vehicle_service_records: "service_records",
+  maintenance_records: "service_records",
+  maintenance_notifications: "service_records",
+  announcements: "messages",
+  announcement_reads: "messages",
+  personal_messages: "messages",
+  marquee_messages: "messages",
+  emergency_events: "messages",
+  feedbacks: "messages",
+  payment_notices: "finance",
+  insurance_partners: "insurance",
+  insurance_requests: "insurance"
+};
 
 async function loadPartnerData(partnerId: string) {
   const { data: partner, error: partnerError } = await db
@@ -146,10 +202,18 @@ Deno.serve(async (req) => {
       return json({ ...(await createSession("driver", driver.id)), user: driver });
     }
     if (body.action === "login_admin") {
-      if (!adminCode || String(body.code || "") !== adminCode) {
-        return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
+      if (adminCode && String(body.code || "") === adminCode) {
+        return json({ ...(await createSession("admin", undefined, { name: "最高管理員", isSuper: true })), admin_profile: { name: "最高管理員", is_super_admin: true, permissions: { all: true } } });
       }
-      return json(await createSession("admin"));
+      const codeHash = await hashCode(body.code);
+      const { data: adminUser, error } = await db.from("admin_users")
+        .select("id,name,active,permissions").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
+      if (error) throw error;
+      if (!adminUser) return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
+      return json({
+        ...(await createSession("admin", adminUser.id, { name: adminUser.name })),
+        admin_profile: { ...adminUser, is_super_admin: false }
+      });
     }
     if (body.action === "login_partner") {
       const codeHash = await hashCode(body.code);
@@ -167,7 +231,7 @@ Deno.serve(async (req) => {
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
     if (body.action === "load") {
-      if (session.session_type === "admin") return json(await loadAdminData());
+      if (session.session_type === "admin") return json(await loadAdminData(session));
       if (session.session_type === "partner") return json(await loadPartnerData(session.partner_id));
       return json(await loadDriverData(session.driver_id));
     }
@@ -176,6 +240,10 @@ Deno.serve(async (req) => {
     if (session.session_type === "driver") {
       if (body.action === "insert" && body.table === "announcement_reads") {
         body.record.driver_id = session.driver_id;
+      } else if (body.action === "insert" && body.table === "feedbacks") {
+        body.record.driver_id = session.driver_id;
+        body.record.driver_name = body.record.driver_name || "司機";
+        body.record.status = "待回覆";
       } else if (
         body.action === "update" &&
         ["maintenance_notifications", "personal_messages", "payment_notices"].includes(body.table)
@@ -183,6 +251,19 @@ Deno.serve(async (req) => {
         body.record = { status: body.record.status, updated_at: new Date().toISOString() };
       } else {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      }
+    }
+    if (session.session_type === "admin") {
+      if (body.table === "admin_users" && !session.is_super_admin) {
+        return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
+      }
+      const permission = tablePermission[body.table];
+      if (permission && !(await adminCan(session, permission))) {
+        return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      }
+      if (body.table === "vehicle_loans" && body.action === "insert") {
+        body.record.requested_by_admin_id = session.admin_user_id || null;
+        body.record.requested_by_name = session.admin_name || "最高管理員";
       }
     }
     if (session.session_type === "partner") {
@@ -233,13 +314,23 @@ Deno.serve(async (req) => {
         body.record.login_code_hash = await hashCode(body.record.login_code);
         delete body.record.login_code;
       }
+      if (body.table === "admin_users") {
+        if (!body.record.login_code) return json({ error: "ADMIN_CODE_REQUIRED" }, 400);
+        body.record.login_code_hash = await hashCode(body.record.login_code);
+        delete body.record.login_code;
+      }
       const { data, error } = await db.from(body.table).insert(body.record).select().single();
       if (error) throw error;
       if (body.table === "insurance_partners") delete data.login_code_hash;
+      if (body.table === "admin_users") delete data.login_code_hash;
       return json({ data });
     }
     if (body.action === "update") {
       if (body.table === "insurance_partners") {
+        if (body.record.login_code) body.record.login_code_hash = await hashCode(body.record.login_code);
+        delete body.record.login_code;
+      }
+      if (body.table === "admin_users") {
         if (body.record.login_code) body.record.login_code_hash = await hashCode(body.record.login_code);
         delete body.record.login_code;
       }
@@ -252,6 +343,7 @@ Deno.serve(async (req) => {
       const { data, error } = await query.select().single();
       if (error) throw error;
       if (body.table === "insurance_partners") delete data.login_code_hash;
+      if (body.table === "admin_users") delete data.login_code_hash;
       return json({ data });
     }
     if (body.action === "delete" && session.session_type === "admin") {
@@ -261,6 +353,11 @@ Deno.serve(async (req) => {
     }
     return json({ error: "ACTION_NOT_ALLOWED" }, 400);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    const message = error instanceof Error
+      ? error.message
+      : error && typeof error === "object" && "message" in error
+      ? String(error.message)
+      : String(error);
+    return json({ error: message }, 500);
   }
 });

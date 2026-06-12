@@ -14,6 +14,7 @@
     user: null,
     partner: null,
     admin: false,
+    adminProfile: null,
     view: "home",
     adminView: "drivers",
     driverStatusFilter: "全部",
@@ -22,6 +23,9 @@
     vehicleRegionFilter: "",
     vehicleFuelFilter: "",
     insuranceStatusFilter: "",
+    serviceSearch: "",
+    serviceTypeFilter: "",
+    loanStatusFilter: "",
     storageFiles: [],
     storageUsedBytes: 0,
     storageQuotaBytes: 1024 * 1024 * 1024,
@@ -51,7 +55,11 @@
     "marquee_messages",
     "emergency_events",
     "insurance_partners",
-    "insurance_requests"
+    "insurance_requests",
+    "admin_users",
+    "vehicle_loans",
+    "vehicle_service_records",
+    "feedbacks"
   ];
 
   const insuranceStatuses = [
@@ -87,6 +95,8 @@
     broadcast: "M4 6h16v12H4V6Zm6 12v2m4-2v2M8 22h8M9 10l6 2-6 2v-4Z",
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
+    ,messagesCenter: "M4 5h16v12H7l-3 3V5Zm4 4h8m-8 4h5"
+    ,feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
   };
 
   const seed = {
@@ -110,7 +120,11 @@
       { id: uid(), title: "車輛事故處理流程", category: "交通事故", summary: "確保人員安全、保留現場資料並立即回報。", content: "1. 先確認人員安全並開啟警示燈。\n2. 撥打 110，必要時撥打 119。\n3. 拍攝現場、車損與對方資料。\n4. 聯絡車隊管理人員並依指示處理。", active: true }
     ],
     insurance_partners: [],
-    insurance_requests: []
+    insurance_requests: [],
+    admin_users: [],
+    vehicle_loans: [],
+    vehicle_service_records: [],
+    feedbacks: []
   };
 
   function uid() {
@@ -142,8 +156,8 @@
     return Object.fromEntries(tables.map((table) => [table, []]));
   }
 
-  function saveSession(type, user, token) {
-    localStorage.setItem("afide-session", JSON.stringify({ type, user, token }));
+  function saveSession(type, user, token, adminProfile = null) {
+    localStorage.setItem("afide-session", JSON.stringify({ type, user, token, adminProfile }));
   }
 
   function clearSession() {
@@ -158,6 +172,7 @@
       state.apiSession = saved.token || "";
       if (saved.type === "admin") {
         state.admin = true;
+        state.adminProfile = saved.adminProfile || { name: "最高管理員", is_super_admin: true, permissions: { all: true } };
         state.user = null;
         state.partner = null;
         return;
@@ -217,6 +232,7 @@
       state.data = result.data || emptyData();
       if (result.user) state.user = result.user;
       if (result.partner) state.partner = result.partner;
+      if (result.admin_profile) state.adminProfile = result.admin_profile;
       return;
     }
     if (!hasSupabase) {
@@ -432,6 +448,11 @@
     return value ? String(value).slice(0, 10) : "";
   }
 
+  function fmtDateTime(value) {
+    if (!value) return "-";
+    return String(value).replace("T", " ").slice(0, 16);
+  }
+
   async function compressPhoto(file) {
     const source = await createImageBitmap(file);
     const maxSize = 720;
@@ -550,7 +571,7 @@
     const messages = activeMarqueeMessages();
     if (!messages.length) return "";
     const text = messages.map((item) => escapeHtml(item.message)).join("　　｜　　");
-    return `<div class="marquee-alert"><div class="marquee-track"><span>${text}</span><span>${text}</span></div></div>`;
+    return `<div class="marquee-alert"><div class="marquee-track"><span>${text}</span><span>${text}</span><span>${text}</span><span>${text}</span></div></div>`;
   }
 
   function renderLogin() {
@@ -602,11 +623,11 @@
     if (state.view === "home") {
       layout(`
         <div class="dashboard-grid">
-          ${feature("announcements", "公佈欄", "查看最新公告", unread)}
+          ${feature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
           ${feature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
-          ${feature("payments", "繳費中心", "罰單與通行費", pendingPay)}
-          ${feature("messages", "私人訊息", "個人派送訊息", pendingMsg)}
+          ${feature("payments", "費用管理", "費用與款項通知", pendingPay)}
+          ${feature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
           ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
           ${feature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
@@ -617,9 +638,11 @@
 
     const views = {
       announcements: driverAnnouncements,
+      messagesCenter: driverMessagesCenter,
       maintenance: () => driverTaskList("maintenance_notifications", "保養維修"),
-      payments: () => driverTaskList("payment_notices", "繳費中心"),
+      payments: () => driverTaskList("payment_notices", "費用管理"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
+      feedback: driverFeedback,
       emergency: driverEmergency,
       broadcast: driverBroadcast,
       flights: driverFlights,
@@ -697,6 +720,43 @@
 
   function isAnnouncementRead(announcementId) {
     return state.data.announcement_reads.some((r) => r.announcement_id === announcementId && r.driver_id === state.user.id);
+  }
+
+  function driverMessagesCenter() {
+    const announcements = visibleAnnouncements().map((item) => ({ ...item, message_kind: "公告" }));
+    const personal = mine("personal_messages").map((item) => ({ ...item, message_kind: "私人訊息" }));
+    const items = [...announcements, ...personal].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    return `
+      ${pageHeader("訊息中心")}
+      <div class="message-center-list">
+        ${items.length ? items.map((item) => {
+          const isAnnouncement = item.message_kind === "公告";
+          const isRead = isAnnouncement ? isAnnouncementRead(item.id) : item.status !== "pending";
+          return `<article class="message-center-row ${isRead ? "is-muted" : ""}">
+            <span class="message-kind ${isAnnouncement ? "announcement" : "personal"}">${item.message_kind}</span>
+            <div><strong>${escapeHtml(item.title || "私人訊息")}</strong><p>${escapeHtml(item.content || "")}</p>${attachmentLink(item)}</div>
+            <time>${fmtDate(item.created_at)}</time>
+            ${isAnnouncement && !isRead ? `<button class="primary-btn" data-read-ann="${item.id}">標記已讀</button>` : ""}
+            ${!isAnnouncement && item.status === "pending" ? `<button class="primary-btn" data-task-status="personal_messages:${item.id}:completed">完成</button>` : statusBadge(item.status || "read")}
+          </article>`;
+        }).join("") : `<div class="empty">目前沒有訊息</div>`}
+      </div>
+    `;
+  }
+
+  function driverFeedback() {
+    const items = mine("feedbacks").sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    return `
+      ${pageHeader("意見反饋")}
+      <div class="section-head feedback-head"><p>遇到問題或有改善建議，可以直接送給管理中心。</p><button class="primary-btn" data-modal="feedback">新增反饋</button></div>
+      <div class="feedback-list">
+        ${items.length ? items.map((item) => `<article class="feedback-row">
+          <div><span class="message-kind personal">${escapeHtml(item.category || "其他")}</span><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.content)}</p></div>
+          <div class="feedback-reply">${item.admin_reply ? `<small>管理中心回覆</small><p>${escapeHtml(item.admin_reply)}</p>` : `<small>等待管理中心回覆</small>`}</div>
+          ${statusBadge(item.status === "待回覆" ? "pending" : "completed")}
+        </article>`).join("") : `<div class="empty">尚未提出意見反饋</div>`}
+      </div>
+    `;
   }
 
   function driverTaskList(table, title) {
@@ -1098,33 +1158,45 @@
     `;
   }
 
+  function adminCan(permission) {
+    if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
+    return Boolean(state.adminProfile?.permissions?.[permission]);
+  }
+
   function renderAdmin() {
     const nav = [
-      ["drivers", "駕駛管理", "👤"],
-      ["vehicles", "車輛管理", "🚐"],
-      ["insuranceCenter", "保險中心", "🛡️"],
-      ["insurancePartners", "廠商管理", "🏢"],
+      ["adminUsers", "權限管理", "🔐", "super"],
+      ["drivers", "駕駛管理", "👤", "drivers"],
+      ["vehicles", "車輛管理", "🚐", "vehicles"],
+      ["vehicleLoans", "車輛租借", "🔑", "loans"],
+      ["serviceRecords", "車輛履歷", "🧾", "service_records"],
+      ["insuranceCenter", "保險中心", "🛡️", "insurance"],
+      ["insurancePartners", "廠商管理", "🏢", "insurance"],
       ["storage", "儲存空間", "💾"],
       ["calendar", "共同行事曆", "📅"],
-      ["maintenanceRecords", "保養管理", "🧰"],
-      ["maintenanceNotifications", "保養通知", "🔔"],
-      ["announcements", "公告管理", "📢"],
-      ["personalMessages", "個人訊息", "✉️"],
-      ["payments", "繳費通知", "💳"],
-      ["marquee", "跑馬燈通知", "🚨"],
-      ["emergencyEvents", "緊急事件", "🆘"]
-    ];
+      ["maintenanceNotifications", "保養通知", "🔔", "service_records"],
+      ["announcements", "公告管理", "📢", "messages"],
+      ["personalMessages", "個人訊息", "✉️", "messages"],
+      ["payments", "費用管理", "💳", "finance"],
+      ["feedbacks", "意見反饋", "💬", "messages"],
+      ["marquee", "跑馬燈通知", "🚨", "messages"],
+      ["emergencyEvents", "緊急事件", "🆘", "messages"]
+    ].filter(([, , , permission]) => !permission || adminCan(permission));
+    if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
+      adminUsers,
       drivers: adminDrivers,
       vehicles: adminVehicles,
+      vehicleLoans: adminVehicleLoans,
+      serviceRecords: adminServiceRecords,
       insuranceCenter: adminInsuranceCenter,
       insurancePartners: adminInsurancePartners,
       storage: adminStorage,
-      maintenanceRecords: adminMaintenanceRecords,
       maintenanceNotifications: () => adminTaskManager("maintenance_notifications", "保養通知"),
       announcements: adminAnnouncements,
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
-      payments: () => adminTaskManager("payment_notices", "繳費通知"),
+      payments: () => adminTaskManager("payment_notices", "費用管理"),
+      feedbacks: adminFeedbacks,
       calendar: () => renderCalendar(true),
       marquee: adminMarquee,
       emergencyEvents: adminEmergencyEvents
@@ -1163,6 +1235,85 @@
         ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? state.data.drivers.length : (counts[status] || 0)}</b></button>`).join("")}
       </div>
       ${driverManagementRows()}
+    `;
+  }
+
+  function adminUsers() {
+    if (!adminCan("super")) return `<div class="empty">僅最高管理員可管理內部帳號。</div>`;
+    return `
+      <div class="section-head"><div><h2>權限管理</h2><small>一般內部帳號無法查看或編輯本頁</small></div><button class="primary-btn" data-modal="adminUser">新增內部帳號</button></div>
+      <div class="access-user-list">
+        ${(state.data.admin_users || []).length ? state.data.admin_users.map((item) => `<article class="access-user-row">
+          <div><strong>${escapeHtml(item.name)}</strong><small>${item.active === false ? "禁止登入" : "允許登入"}</small></div>
+          <div class="permission-chips">${Object.entries(item.permissions || {}).filter(([, enabled]) => enabled).map(([key]) => `<span>${permissionName(key)}</span>`).join("") || "<span>無功能權限</span>"}</div>
+          <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
+          ${rowActions("adminUser", "admin_users", item.id)}
+        </article>`).join("") : `<div class="empty">尚未建立一般內部帳號</div>`}
+      </div>
+    `;
+  }
+
+  function permissionName(key) {
+    return ({ drivers: "駕駛", vehicles: "車輛", loans: "租借", service_records: "履歷", messages: "訊息", finance: "費用", insurance: "保險" })[key] || key;
+  }
+
+  function adminVehicleLoans() {
+    const items = [...(state.data.vehicle_loans || [])]
+      .filter((item) => !state.loanStatusFilter || item.status === state.loanStatusFilter)
+      .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
+    return `
+      <div class="section-head"><div><h2>車輛租借</h2><small>登入人員：${escapeHtml(state.adminProfile?.name || "管理員")}</small></div><button class="primary-btn" data-modal="vehicleLoan">新增借車登記</button></div>
+      <div class="compact-filter-bar">${["", "預約", "使用中", "已歸還", "取消"].map((value) => `<button class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${value || "全部"}</button>`).join("")}</div>
+      <div class="loan-list">
+        ${items.length ? items.map((item) => `<article class="loan-row">
+          <div class="plate-chip">${escapeHtml(item.plate_no)}</div>
+          <div><small>登記人員</small><strong>${escapeHtml(item.requested_by_name)}</strong></div>
+          <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
+          <div><small>還車時間</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+          <div><small>用途</small><strong>${escapeHtml(item.purpose)}</strong></div>
+          ${statusBadge(item.status === "已歸還" ? "completed" : item.status === "取消" ? "returned" : "pending")}
+          ${rowActions("vehicleLoan", "vehicle_loans", item.id)}
+        </article>`).join("") : `<div class="empty">目前沒有借車紀錄</div>`}
+      </div>
+    `;
+  }
+
+  function adminServiceRecords() {
+    const search = state.serviceSearch.trim().toUpperCase();
+    const items = [...(state.data.vehicle_service_records || [])]
+      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.parts_replaced].join(" ").toUpperCase().includes(search))
+        && (!state.serviceTypeFilter || item.record_type === state.serviceTypeFilter))
+      .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
+    return `
+      <div class="section-head"><div><h2>車輛履歷</h2><small>維修、保養、檢驗與零組件更換的完整歷史</small></div><button class="primary-btn" data-modal="serviceRecord">新增履歷</button></div>
+      <form id="serviceSearchForm" class="service-filter-bar">
+        <input name="search" value="${escapeHtml(state.serviceSearch)}" placeholder="搜尋車牌、廠商、處置或零組件">
+        <select name="type"><option value="">全部類型</option>${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<option ${state.serviceTypeFilter === value ? "selected" : ""}>${value}</option>`).join("")}</select>
+        <button class="primary-btn">搜尋</button>
+      </form>
+      <div class="service-record-list">
+        ${items.length ? items.map((item) => `<article class="service-record-row">
+          <div class="service-record-head"><span class="plate-chip">${escapeHtml(item.plate_no)}</span><span class="record-type">${escapeHtml(item.record_type)}</span><strong>${fmtDate(item.service_date)}</strong>${item.odometer ? `<small>${Number(item.odometer).toLocaleString()} km</small>` : ""}</div>
+          <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>更換零組件</small><p>${escapeHtml(item.parts_replaced || "-")}</p></div></div>
+          <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>總成本：$${Number(item.total_cost || 0).toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
+          <div class="service-record-actions">${attachmentLink(item)}${rowActions("serviceRecord", "vehicle_service_records", item.id)}</div>
+        </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
+      </div>
+    `;
+  }
+
+  function adminFeedbacks() {
+    const items = [...(state.data.feedbacks || [])].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    return `
+      <div class="section-head"><div><h2>意見反饋</h2><small>查看、回覆並結案司機提出的問題</small></div></div>
+      <div class="feedback-list">
+        ${items.length ? items.map((item) => `<article class="feedback-row">
+          <div><span class="message-kind personal">${escapeHtml(item.category)}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.driver_name)} · ${fmtDate(item.created_at)}</small><p>${escapeHtml(item.content)}</p></div>
+          <div class="feedback-reply">${item.admin_reply ? `<small>目前回覆</small><p>${escapeHtml(item.admin_reply)}</p>` : `<small>尚未回覆</small>`}</div>
+          ${statusBadge(item.status === "待回覆" ? "pending" : "completed")}
+          ${rowActions("feedbackReply", "feedbacks", item.id)}
+        </article>`).join("") : `<div class="empty">目前沒有意見反饋</div>`}
+      </div>
     `;
   }
 
@@ -1293,8 +1444,13 @@
 
   function openModal(type, id, preset = {}) {
     const map = {
+      adminUser: ["內部帳號", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
       vehicle: ["車輛", "vehicles", vehicleForm],
+      vehicleLoan: ["借車登記", "vehicle_loans", vehicleLoanForm],
+      serviceRecord: ["車輛履歷", "vehicle_service_records", serviceRecordForm],
+      feedback: ["意見反饋", "feedbacks", feedbackForm],
+      feedbackReply: ["反饋回覆", "feedbacks", feedbackReplyForm],
       maintenanceRecord: ["保養紀錄", "maintenance_records", maintenanceRecordForm],
       announcement: ["公告", "announcements", announcementForm],
       maintenanceNotification: ["保養通知", "maintenance_notifications", maintenanceNotificationForm],
@@ -1382,6 +1538,40 @@
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
+    if (tableName === "admin_users") {
+      record.active = record.active === "true";
+      record.permissions = {
+        drivers: record.permission_drivers === "true",
+        vehicles: record.permission_vehicles === "true",
+        loans: record.permission_loans === "true",
+        service_records: record.permission_service_records === "true",
+        messages: record.permission_messages === "true",
+        finance: record.permission_finance === "true",
+        insurance: record.permission_insurance === "true"
+      };
+      Object.keys(record).filter((key) => key.startsWith("permission_")).forEach((key) => delete record[key]);
+    }
+    if (tableName === "vehicle_loans") {
+      record.vehicle_id = record.vehicle_id || null;
+      record.return_at = record.return_at || null;
+    }
+    if (tableName === "vehicle_service_records") {
+      record.vehicle_id = record.vehicle_id || null;
+      blankToNull(record, ["next_service_date"]);
+      ["odometer", "next_service_odometer", "labor_cost", "parts_cost", "other_cost", "total_cost", "downtime_hours"].forEach((key) => {
+        record[key] = Number(record[key] || 0) || null;
+      });
+      record.total_cost = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
+    }
+    if (tableName === "feedbacks") {
+      if (state.user) {
+        record.driver_id = state.user.id;
+        record.driver_name = state.user.name;
+        record.status = "待回覆";
+      } else if (record.admin_reply) {
+        record.replied_at = now();
+      }
+    }
     if (tableName === "insurance_requests") {
       record.vehicle_id = record.vehicle_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
@@ -1615,6 +1805,67 @@
     `;
   }
 
+  function adminUserForm(item) {
+    const permissions = item.permissions || { drivers: true, vehicles: true, loans: true, service_records: true, messages: true, finance: true, insurance: false };
+    return input("name", "姓名", item.name, "text", true)
+      + input("login_code", item.id ? "更新登入代碼（不修改可留白）" : "登入代碼", "", "password", !item.id)
+      + checkbox("active", "允許登入", item.active !== false)
+      + `<div class="form-section-title field full">功能權限</div>`
+      + checkbox("permission_drivers", "駕駛管理", permissions.drivers)
+      + checkbox("permission_vehicles", "車輛管理", permissions.vehicles)
+      + checkbox("permission_loans", "車輛租借", permissions.loans)
+      + checkbox("permission_service_records", "車輛履歷與保養通知", permissions.service_records)
+      + checkbox("permission_messages", "公告、訊息與意見反饋", permissions.messages)
+      + checkbox("permission_finance", "費用管理", permissions.finance)
+      + checkbox("permission_insurance", "保險中心", permissions.insurance);
+  }
+
+  function vehiclePlatePicker(item, label = "選擇車輛") {
+    return `<div class="field full vehicle-plate-picker"><label>${label}</label><input type="search" data-vehicle-picker-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-vehicle-plate-select required><option value="">請選擇車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select><input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"></div>`;
+  }
+
+  function vehicleLoanForm(item) {
+    return vehiclePlatePicker(item)
+      + input("borrow_at", "借車時間", item.borrow_at ? String(item.borrow_at).slice(0, 16) : String(now()).slice(0, 16), "datetime-local", true)
+      + input("return_at", "預計／實際還車時間", item.return_at ? String(item.return_at).slice(0, 16) : "", "datetime-local")
+      + select("purpose", "用途", item.purpose || "公務使用", [["個人借用", "個人借用"], ["公務使用", "公務使用"], ["車輛維修", "車輛維修"], ["外部單位", "外部單位"]])
+      + select("status", "狀態", item.status || "使用中", [["預約", "預約"], ["使用中", "使用中"], ["已歸還", "已歸還"], ["取消", "取消"]])
+      + text("notes", "備註", item.notes);
+  }
+
+  function serviceRecordForm(item) {
+    return vehiclePlatePicker(item)
+      + select("record_type", "履歷類型", item.record_type || "定期保養", [["定期保養", "定期保養"], ["維修", "維修"], ["檢驗", "檢驗"], ["輪胎", "輪胎"], ["事故修復", "事故修復"], ["召回", "召回"], ["其他", "其他"]])
+      + input("service_date", "作業日期", formDate(item.service_date) || today(), "date", true)
+      + input("odometer", "當下里程（km）", item.odometer, "number")
+      + input("vendor", "維修／保養廠商", item.vendor)
+      + text("complaint", "送修原因／駕駛反映", item.complaint)
+      + text("diagnosis", "檢查與故障診斷", item.diagnosis)
+      + text("work_performed", "實際維修／保養內容", item.work_performed)
+      + text("parts_replaced", "更換零組件（品名、品牌、料號、數量）", item.parts_replaced)
+      + input("labor_cost", "工資", item.labor_cost, "number")
+      + input("parts_cost", "零件費", item.parts_cost, "number")
+      + input("other_cost", "其他費用", item.other_cost, "number")
+      + input("downtime_hours", "停駛時數", item.downtime_hours, "number")
+      + input("next_service_date", "下次建議日期", formDate(item.next_service_date), "date")
+      + input("next_service_odometer", "下次建議里程", item.next_service_odometer, "number")
+      + text("warranty_info", "保固資訊", item.warranty_info)
+      + attachmentField(item, "工單／發票附件")
+      + text("notes", "備註", item.notes);
+  }
+
+  function feedbackForm(item) {
+    return select("category", "問題分類", item.category || "其他", [["系統操作", "系統操作"], ["車輛問題", "車輛問題"], ["派遣問題", "派遣問題"], ["費用問題", "費用問題"], ["其他", "其他"]])
+      + input("title", "標題", item.title, "text", true)
+      + text("content", "問題或建議內容", item.content);
+  }
+
+  function feedbackReplyForm(item) {
+    return `<div class="field full feedback-source"><strong>${escapeHtml(item.driver_name)}：${escapeHtml(item.title)}</strong><p>${escapeHtml(item.content)}</p></div>`
+      + text("admin_reply", "管理中心回覆", item.admin_reply)
+      + select("status", "處理狀態", item.status || "已回覆", [["待回覆", "待回覆"], ["已回覆", "已回覆"], ["已結案", "已結案"]]);
+  }
+
   function maintenanceRecordForm(r) {
     return vehicleOptions(r.vehicle_id) + input("service_date", "保養日期", formDate(r.service_date) || today(), "date", true) +
       input("mileage", "里程", r.mileage, "number") + input("vendor", "維修廠", r.vendor) +
@@ -1640,7 +1891,7 @@
   }
 
   function paymentNoticeForm(p) {
-    return driverOptions(p.driver_id) + input("fee_type", "費用類型", p.fee_type || "罰單", "text", true) +
+    return driverOptions(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
       input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
       text("content", "繳費內容", p.content) + attachmentField(p);
@@ -1756,9 +2007,10 @@
         );
         state.apiSession = result.token;
         state.admin = state.mode === "admin";
+        state.adminProfile = result.admin_profile || null;
         state.user = result.user || null;
         state.partner = result.partner || null;
-        saveSession(state.mode, state.partner || state.user, result.token);
+        saveSession(state.mode, state.partner || state.user, result.token, state.adminProfile);
         await loadAll();
         state.view = "home";
         state.loginLoading = false;
@@ -1769,6 +2021,7 @@
       if (!driver) throw new Error("找不到此手機號碼");
       state.user = driver;
       state.admin = false;
+      state.adminProfile = null;
       saveSession("driver", driver, "");
       state.loginLoading = false;
       render();
@@ -2026,6 +2279,7 @@
       state.user = null;
       state.partner = null;
       state.admin = false;
+      state.adminProfile = null;
       state.apiSession = "";
       state.loginLoading = false;
       state.data = emptyData();
@@ -2075,6 +2329,10 @@
     }
     if (target.dataset.driverFilter) {
       state.driverStatusFilter = target.dataset.driverFilter;
+      render();
+    }
+    if (target.dataset.loanFilter !== undefined) {
+      state.loanStatusFilter = target.dataset.loanFilter;
       render();
     }
     if (target.dataset.insuranceFilter !== undefined) {
@@ -2150,9 +2408,26 @@
       state.vehicleFuelFilter = String(data.get("fuel") || "");
       render();
     }
+    if (e.target.id === "serviceSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.serviceSearch = String(data.get("search") || "");
+      state.serviceTypeFilter = String(data.get("type") || "");
+      render();
+    }
   });
 
   document.addEventListener("input", (e) => {
+    const vehiclePickerSearch = e.target.closest("[data-vehicle-picker-search]");
+    if (vehiclePickerSearch) {
+      const selectBox = vehiclePickerSearch.closest(".vehicle-plate-picker")?.querySelector("[data-vehicle-plate-select]");
+      const query = String(vehiclePickerSearch.value || "").trim().toUpperCase();
+      Array.from(selectBox?.options || []).forEach((option, index) => {
+        if (!index) return;
+        option.hidden = Boolean(query && !String(option.textContent || "").toUpperCase().includes(query));
+      });
+      return;
+    }
     const search = e.target.closest("[data-insurance-vehicle-search]");
     if (!search) return;
     const selectBox = search.closest(".insurance-vehicle-picker")?.querySelector("[data-insurance-vehicle]");
@@ -2164,6 +2439,14 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const vehiclePlateSelect = e.target.closest("[data-vehicle-plate-select]");
+    if (vehiclePlateSelect) {
+      const form = vehiclePlateSelect.closest("form");
+      const option = vehiclePlateSelect.selectedOptions[0];
+      const plateInput = form?.querySelector('[name="plate_no"]');
+      if (plateInput) plateInput.value = option?.dataset.plate || "";
+      return;
+    }
     const insuranceVehicle = e.target.closest("[data-insurance-vehicle]");
     if (insuranceVehicle) {
       const option = insuranceVehicle.selectedOptions[0];

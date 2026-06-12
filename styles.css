@@ -139,6 +139,7 @@ a { text-decoration: none; }
   margin: 0;
   padding: 0;
 }
+
 .admin-shell {
   background: var(--bg);
 }
@@ -158,13 +159,55 @@ a { text-decoration: none; }
   font-size: 14px;
   font-weight: 800;
   white-space: nowrap;
-  animation: marquee-scroll 24s linear infinite;
+  animation: marquee-scroll 10s linear infinite;
 }
 .marquee-track span { padding-left: 56px; }
 @keyframes marquee-scroll {
   from { transform: translateX(0); }
-  to { transform: translateX(-50%); }
+  to { transform: translateX(-25%); }
 }
+
+.message-center-list, .feedback-list, .loan-list, .service-record-list, .access-user-list { display: grid; gap: 10px; }
+.message-center-row, .feedback-row, .loan-row, .access-user-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.message-center-row.is-muted { opacity: .62; background: #f8fafc; }
+.message-center-row > div, .feedback-row > div { min-width: 0; }
+.message-center-row p, .feedback-row p { margin: 3px 0 0; color: #475467; font-size: 13px; white-space: pre-line; }
+.message-center-row time, .feedback-row small { color: var(--muted); font-size: 11px; }
+.message-kind { width: fit-content; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 900; white-space: nowrap; }
+.message-kind.announcement { background: #fee2e2; color: #b91c1c; }
+.message-kind.personal { background: #dbeafe; color: #1d4ed8; }
+.feedback-head p { margin: 0; color: var(--muted); font-size: 13px; }
+.feedback-row { grid-template-columns: minmax(220px, 1.3fr) minmax(180px, 1fr) auto auto; align-items: start; }
+.feedback-reply { padding: 9px 11px; border-radius: 6px; background: #f8fafc; }
+.feedback-source { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafc; }
+.compact-filter-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.service-filter-bar { display: grid; grid-template-columns: minmax(240px, 2fr) minmax(150px, 1fr) auto; gap: 8px; margin-bottom: 14px; }
+.plate-chip { width: fit-content; padding: 5px 9px; border: 1.5px solid #344054; border-radius: 5px; background: #fff; color: #182033; font-weight: 900; letter-spacing: 1px; white-space: nowrap; }
+.loan-row { grid-template-columns: auto repeat(4, minmax(100px, 1fr)) auto auto; }
+.loan-row > div { display: grid; gap: 2px; }
+.loan-row small, .access-user-row small { color: var(--muted); font-size: 10px; font-weight: 800; }
+.service-record-row { padding: 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: #fff; }
+.service-record-head, .service-record-meta, .service-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 16px; }
+.record-type { padding: 4px 8px; border-radius: 4px; background: #e8f4f6; color: var(--accent); font-size: 11px; font-weight: 900; }
+.service-record-head small, .service-record-meta { color: var(--muted); font-size: 11px; }
+.service-record-main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; padding: 10px 0; border-block: 1px dashed var(--line); }
+.service-record-main small { color: var(--muted); font-size: 10px; font-weight: 800; }
+.service-record-main p { margin: 4px 0 0; font-size: 13px; white-space: pre-line; }
+.service-record-actions { justify-content: flex-end; margin-top: 10px; }
+.vehicle-plate-picker { display: grid; grid-template-columns: .8fr 1.2fr; gap: 8px; }
+.vehicle-plate-picker label { grid-column: 1 / -1; }
+.permission-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.permission-chips span { padding: 3px 7px; border-radius: 999px; background: #eef2f6; color: #344054; font-size: 10px; font-weight: 800; }
+.access-user-row { grid-template-columns: minmax(140px, .7fr) minmax(200px, 1fr) auto auto; }
 
 .login-wrap {
   min-height: 100vh;
@@ -1662,4 +1705,10 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-search-bar { grid-template-columns: 1fr; }
   .vehicle-search-bar input { grid-column: auto; }
   .attachment-upload-row, .admin-qa-item { grid-template-columns: 1fr; }
+  .message-center-row, .feedback-row, .loan-row, .access-user-row { grid-template-columns: 1fr; gap: 8px; }
+  .message-center-row > button, .feedback-row .actions, .loan-row .actions, .access-user-row .actions { justify-self: stretch; }
+  .compact-filter-bar { flex-wrap: wrap; }
+  .service-filter-bar { grid-template-columns: 1fr; }
+  .service-record-main, .vehicle-plate-picker { grid-template-columns: 1fr; }
+  .vehicle-plate-picker label { grid-column: auto; }
 }
