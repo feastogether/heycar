@@ -1299,6 +1299,15 @@ button.calendar-pill:hover { filter: brightness(.96); }
   border-radius: 7px;
   background: #fff;
 }
+.insurance-request-row.insurance-stage-broker_quoting { border-left-color: #d97706; }
+.insurance-request-row.insurance-stage-awaiting_admin_quote_confirmation,
+.insurance-request-row.insurance-stage-stamping,
+.insurance-request-row.insurance-stage-payment_pending { border-left-color: #dc2626; background: #fffafa; }
+.insurance-request-row.insurance-stage-awaiting_dealer_confirmation,
+.insurance-request-row.insurance-stage-quote_confirmed_issue_application,
+.insurance-request-row.insurance-stage-awaiting_policy,
+.insurance-request-row.insurance-stage-receipt_pending { border-left-color: #2563eb; }
+.insurance-request-row.insurance-stage-completed { border-left-color: #15803d; background: #f8fff9; }
 .insurance-row-main {
   display: grid;
   grid-template-columns: auto minmax(180px, 1fr) auto;
@@ -1374,6 +1383,21 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .dealer-insurance-row .insurance-row-details { flex: 1 0 auto; margin: 0; white-space: nowrap; }
 .dealer-insurance-row .insurance-note { display: none; }
 .dealer-insurance-row .insurance-card-actions { flex: 0 0 auto; margin: 0 0 0 auto; }
+.storage-usage { margin-bottom: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.storage-usage > div:first-child { display: flex; align-items: baseline; gap: 9px; }
+.storage-usage strong { font-size: 24px; }
+.storage-usage span, .storage-usage p { color: var(--muted); font-size: 12px; }
+.storage-usage b { margin-left: auto; font-size: 18px; }
+.storage-meter { height: 9px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: #eef2f6; }
+.storage-meter span { display: block; height: 100%; background: #15803d; }
+.storage-usage.warning .storage-meter span { background: #d97706; }
+.storage-usage.danger .storage-meter span { background: #dc2626; }
+.storage-usage.danger { border-color: #fecaca; background: #fffafa; }
+.storage-file-list { display: grid; gap: 5px; }
+.storage-file-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+.storage-file-row > span { display: grid; gap: 2px; min-width: 0; }
+.storage-file-row strong, .storage-file-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.storage-file-row small, .storage-file-row time { color: var(--muted); font-size: 11px; }
 
 .photo-upload-field .driver-avatar {
   width: 132px;
@@ -1550,6 +1574,8 @@ tr:last-child td { border-bottom: 0; }
   .insurance-files { margin-left: 0; }
   .insurance-vehicle-picker { grid-template-columns: 1fr; }
   .insurance-vehicle-picker label { grid-column: auto; }
+  .storage-file-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .storage-file-row time { display: none; }
   .topbar { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
   .brand img { height: 32px; }
   .brand-title { font-size: 14px; }

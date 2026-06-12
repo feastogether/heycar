@@ -24,19 +24,9 @@
 - 正式環境應使用 Supabase Auth 與 Row Level Security。
 - 司機可維持手機號碼登入，建議搭配簡訊 OTP 驗證本人身分。
 - 後台管理權限不應依賴前端 PIN。
-# Google Drive 保險附件
+## Supabase 附件儲存
 
-保險案件可安全上傳至 Google Drive。建立 Google Cloud Service Account、啟用 Drive API，並將指定 Drive 資料夾分享給 Service Account 信箱後執行：
-
-```powershell
-npx supabase secrets set GOOGLE_SERVICE_ACCOUNT_JSON='<完整 Service Account JSON>'
-npx supabase secrets set GOOGLE_DRIVE_FOLDER_ID='1rE6WjR4oINvUsAAb-HkH9Ryj--ddQFqT'
-```
-
-最後將 `config.example.js` 的 `DRIVE_UPLOAD_URL` 設為：
-
-`https://chnvwziuqcqnllcjqobj.supabase.co/functions/v1/drive-upload`
-
-Service Account JSON 只能放在 Supabase Secret，不可提交至 GitHub。
-
-上傳保險文件時，系統會先在主資料夾內搜尋與車牌完全同名的資料夾；找到後會直接上傳至該車牌資料夾，找不到時則上傳至主資料夾。
+- 所有附件統一儲存在 Supabase Storage 的 `attachments` bucket。
+- 上傳、容量統計與批次刪除只透過受 Session 保護的 `storage-api` Edge Function。
+- 後台「儲存空間」可查看使用率並批次清除不需要的檔案。
+- 單一附件限制為 10 MB。

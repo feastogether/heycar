@@ -4,6 +4,7 @@
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const dataApiUrl = cfg.DATA_API_URL || `${cfg.SUPABASE_URL}/functions/v1/data-api`;
+  const storageApiUrl = cfg.STORAGE_API_URL || `${cfg.SUPABASE_URL}/functions/v1/storage-api`;
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -21,6 +22,10 @@
     vehicleRegionFilter: "",
     vehicleFuelFilter: "",
     insuranceStatusFilter: "",
+    storageFiles: [],
+    storageUsedBytes: 0,
+    storageQuotaBytes: 1024 * 1024 * 1024,
+    storageLoading: false,
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
@@ -187,6 +192,21 @@
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || "資料服務連線失敗");
+    return result;
+  }
+
+  async function storageRequest(action, payload = {}) {
+    const response = await fetch(storageApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(cfg.SUPABASE_ANON_KEY ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` } : {}),
+        ...(state.apiSession ? { "x-afide-session": state.apiSession } : {})
+      },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || "儲存空間服務連線失敗");
     return result;
   }
 
@@ -425,28 +445,19 @@
     return canvas.toDataURL("image/jpeg", 0.78);
   }
 
-  async function uploadAttachment(file, plateNo = "") {
+  function rocYear() {
+    return new Date().getFullYear() - 1911;
+  }
+
+  function renamedAttachment(file, plateNo, documentLabel = "") {
+    const extension = file.name.includes(".") ? `.${file.name.split(".").pop()}` : "";
+    const cleanPlate = String(plateNo || "未指定車牌").trim().toUpperCase();
+    const cleanLabel = String(documentLabel || file.name.replace(/\.[^.]+$/, "") || "附件").trim();
+    return `${cleanPlate} ${cleanLabel}${rocYear()}${extension}`;
+  }
+
+  async function uploadAttachment(file, plateNo = "", documentLabel = "") {
     if (file.size > 10 * 1024 * 1024) throw new Error("附件不可超過 10 MB");
-    if (cfg.DRIVE_UPLOAD_URL && state.apiSession) {
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      const response = await fetch(cfg.DRIVE_UPLOAD_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(cfg.SUPABASE_ANON_KEY ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` } : {}),
-          "x-afide-session": state.apiSession
-        },
-        body: JSON.stringify({ name: file.name, type: file.type, plate_no: plateNo, base64: String(dataUrl).split(",")[1] })
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "Google Drive 上傳失敗");
-      return result.url;
-    }
     if (!hasSupabase) {
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -455,11 +466,14 @@
         reader.readAsDataURL(file);
       });
     }
-    const safeName = file.name.replace(/[^\w.\-]+/g, "_");
-    const path = `${new Date().toISOString().slice(0, 10)}/${uid()}-${safeName}`;
-    const { error } = await db.storage.from("attachments").upload(path, file, { contentType: file.type, upsert: false });
-    if (error) throw error;
-    return db.storage.from("attachments").getPublicUrl(path).data.publicUrl;
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const name = renamedAttachment(file, plateNo, documentLabel);
+    return await storageRequest("upload", { name, type: file.type, plate_no: plateNo, base64 });
   }
 
   function render() {
@@ -971,7 +985,7 @@
   function insuranceRequestRow(item, editable) {
     const partner = (state.data.insurance_partners || []).find((row) => row.id === item.dealer_partner_id);
     return `
-      <article class="insurance-request-row ${state.partner?.partner_type === "dealer" ? "dealer-insurance-row" : ""}">
+      <article class="insurance-request-row insurance-stage-${escapeHtml(item.status)} ${state.partner?.partner_type === "dealer" ? "dealer-insurance-row" : ""}">
         <div class="insurance-row-main">
           <strong class="insurance-plate">${escapeHtml(item.plate_no)}</strong>
           <div class="insurance-row-identity">
@@ -1037,12 +1051,60 @@
     `;
   }
 
+  function formatBytes(value) {
+    const bytes = Number(value || 0);
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+  }
+
+  async function loadStorageUsage() {
+    state.storageLoading = true;
+    render();
+    try {
+      const result = await storageRequest("list");
+      state.storageFiles = result.files || [];
+      state.storageUsedBytes = Number(result.used_bytes || 0);
+      state.storageQuotaBytes = Number(result.quota_bytes || 1024 * 1024 * 1024);
+    } catch (error) {
+      alert(error.message || error);
+    } finally {
+      state.storageLoading = false;
+      render();
+    }
+  }
+
+  function adminStorage() {
+    const percent = Math.min(100, Math.round(state.storageUsedBytes / Math.max(1, state.storageQuotaBytes) * 100));
+    const warning = percent >= 90 ? "danger" : percent >= 75 ? "warning" : "normal";
+    return `
+      <div class="section-head"><div><h2>儲存空間</h2><small>管理 Supabase 附件與容量</small></div><div class="actions"><button class="danger-btn" data-action="delete-storage-files">刪除選取</button><button class="primary-btn" data-action="refresh-storage">${state.storageLoading ? "讀取中..." : "重新整理"}</button></div></div>
+      <section class="storage-usage ${warning}">
+        <div><strong>${formatBytes(state.storageUsedBytes)}</strong><span>已使用，共 ${formatBytes(state.storageQuotaBytes)}</span><b>${percent}%</b></div>
+        <div class="storage-meter"><span style="width:${percent}%"></span></div>
+        ${percent >= 75 ? `<p>${percent >= 90 ? "儲存空間即將用完，請立即清理不需要的附件。" : "儲存空間已超過 75%，建議開始整理附件。"}</p>` : ""}
+      </section>
+      <div class="storage-file-list">
+        ${state.storageFiles.length ? state.storageFiles.map((file) => `
+          <label class="storage-file-row">
+            <input type="checkbox" data-storage-file value="${escapeHtml(file.path)}">
+            <span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span>
+            <b>${formatBytes(file.size)}</b>
+            <time>${fmtDate(file.created_at)}</time>
+          </label>
+        `).join("") : `<div class="empty">${state.storageLoading ? "正在讀取儲存空間..." : "目前沒有附件資料，請點重新整理。"}</div>`}
+      </div>
+    `;
+  }
+
   function renderAdmin() {
     const nav = [
       ["drivers", "駕駛管理", "👤"],
       ["vehicles", "車輛管理", "🚐"],
       ["insuranceCenter", "保險中心", "🛡️"],
       ["insurancePartners", "廠商管理", "🏢"],
+      ["storage", "儲存空間", "💾"],
       ["calendar", "共同行事曆", "📅"],
       ["maintenanceRecords", "保養管理", "🧰"],
       ["maintenanceNotifications", "保養通知", "🔔"],
@@ -1057,6 +1119,7 @@
       vehicles: adminVehicles,
       insuranceCenter: adminInsuranceCenter,
       insurancePartners: adminInsurancePartners,
+      storage: adminStorage,
       maintenanceRecords: adminMaintenanceRecords,
       maintenanceNotifications: () => adminTaskManager("maintenance_notifications", "保養通知"),
       announcements: adminAnnouncements,
@@ -1382,25 +1445,26 @@
     URL.revokeObjectURL(link.href);
   }
 
-  function attachmentField(item) {
+  function attachmentField(item, label = "附件") {
     return `<div class="field full attachment-field">
       <label>夾帶檔案</label>
       <input type="hidden" name="attachment_url" value="${escapeHtml(item.attachment_url || "")}" data-attachment-url>
       <input type="hidden" name="attachment_name" value="${escapeHtml(item.attachment_name || "")}" data-attachment-name>
       <div class="attachment-upload-row">
-        <input type="file" data-attachment-upload>
+        <input type="file" data-attachment-upload data-document-label="${escapeHtml(label)}">
         <span data-attachment-status>${item.attachment_url ? `已附加：${escapeHtml(item.attachment_name || "查看檔案")}` : "尚未選擇檔案"}</span>
       </div>
     </div>`;
   }
 
   function insuranceDocumentField(item, prefix, label, required = false) {
+    const fileLabel = ({ quote: "保險報價單", application: "保險要保書", stamped_application: "保險用印檔", policy: "保險保單", receipt: "保險收據" })[prefix] || `保險${label}`;
     return `<div class="field full attachment-field">
       <label>${label}${required ? "（必須上傳）" : ""}</label>
       <input type="hidden" name="${prefix}_url" value="${escapeHtml(item?.[`${prefix}_url`] || "")}" data-attachment-url>
       <input type="hidden" name="${prefix}_name" value="${escapeHtml(item?.[`${prefix}_name`] || "")}" data-attachment-name>
       <div class="attachment-upload-row">
-        <input type="file" data-attachment-upload ${required && !item?.[`${prefix}_url`] ? "required" : ""}>
+        <input type="file" data-attachment-upload data-document-label="${escapeHtml(fileLabel)}" ${required && !item?.[`${prefix}_url`] ? "required" : ""}>
         <span data-attachment-status>${item?.[`${prefix}_url`] ? `已附加：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "尚未選擇檔案"}</span>
       </div>
     </div>`;
@@ -1984,6 +2048,7 @@
       state.adminCollapsed = true;
       localStorage.setItem("afide-admin-collapsed", "true");
       render();
+      if (state.adminView === "storage" && !state.storageFiles.length) await loadStorageUsage();
     }
     if (target.dataset.action === "clear-vehicle-search") {
       state.vehicleSearch = "";
@@ -1995,6 +2060,18 @@
     if (target.dataset.action === "refresh-insurance") {
       await loadAll();
       render();
+    }
+    if (target.dataset.action === "refresh-storage") {
+      await loadStorageUsage();
+    }
+    if (target.dataset.action === "delete-storage-files") {
+      const paths = Array.from(document.querySelectorAll("[data-storage-file]:checked")).map((input) => input.value);
+      if (!paths.length) {
+        alert("請先選擇要刪除的檔案");
+      } else if (confirm(`確定要刪除選取的 ${paths.length} 個檔案嗎？刪除後無法復原。`)) {
+        await storageRequest("delete", { paths });
+        await loadStorageUsage();
+      }
     }
     if (target.dataset.driverFilter) {
       state.driverStatusFilter = target.dataset.driverFilter;
@@ -2118,10 +2195,12 @@
         attachmentInput.disabled = true;
         if (status) status.textContent = "檔案上傳中...";
         const plateNo = field?.closest("form")?.querySelector('[name="plate_no"]')?.value || "";
-        const url = await uploadAttachment(file, plateNo);
+        const uploaded = await uploadAttachment(file, plateNo, attachmentInput.dataset.documentLabel || "");
+        const url = typeof uploaded === "string" ? uploaded : uploaded.url;
+        const name = typeof uploaded === "string" ? file.name : uploaded.name;
         field.querySelector("[data-attachment-url]").value = url;
-        field.querySelector("[data-attachment-name]").value = file.name;
-        if (status) status.textContent = `已附加：${file.name}`;
+        field.querySelector("[data-attachment-name]").value = name;
+        if (status) status.textContent = `已附加：${name}`;
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
         alert(error.message || error);
