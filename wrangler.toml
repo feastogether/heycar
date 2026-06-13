@@ -1,8 +1,14 @@
 name = "heycar"
+main = "cloudflare/frontend-worker.js"
 compatibility_date = "2026-06-13"
 workers_dev = true
 preview_urls = false
 
 [assets]
+binding = "ASSETS"
 directory = "./cloudflare-public"
 not_found_handling = "single-page-application"
+
+[[services]]
+binding = "STORAGE"
+service = "heycar-r2-storage"

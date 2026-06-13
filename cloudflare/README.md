@@ -19,8 +19,9 @@ powershell -ExecutionPolicy Bypass -File scripts/build-cloudflare-frontend.ps1
 npx --yes wrangler deploy
 ```
 
-正式前端網址為 `https://heycar.airvan.workers.dev`。附件 API 則使用獨立的
-`https://heycar-r2-storage.airvan.workers.dev`，兩者請勿混用。
+正式前端網址為 `https://heycar.airvan.workers.dev`。瀏覽器透過同網域
+`/api/storage` 存取附件，再由 Cloudflare Service Binding 轉交私有 R2 Worker，
+避免跨網域請求被瀏覽器或網路設備阻擋。
 
 根目錄的 `wrangler.toml` 固定為前端設定，避免 Cloudflare Git 自動部署時把
 `heycar` 覆蓋成附件 API。R2 API 只能使用 `wrangler.storage.toml` 部署。
