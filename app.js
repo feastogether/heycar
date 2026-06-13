@@ -1193,10 +1193,11 @@
   };
 
   const adminNavDepartments = [
-    ["系統管理", ["adminUsers", "insurancePartners", "storage"]],
-    ["禮賓司機", ["drivers", "recruitmentDocuments", "payments", "feedbacks"]],
-    ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "marquee"]],
-    ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]]
+    ["車商管理", ["insurancePartners"]],
+    ["禮賓司機", ["drivers", "recruitmentDocuments", "feedbacks"]],
+    ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
+    ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
+    ["系統管理", ["adminUsers", "storage"]]
   ];
 
   function groupedAdminNav(nav) {
@@ -1275,7 +1276,7 @@
 
   function adminRecruitmentDocuments() {
     return `
-      <div class="section-head"><div><h2>招募文件</h2><small>依亞緻與亞菲得司機評核表整理，填寫後可直接列印或另存 PDF。</small></div><button class="primary-btn" data-action="print-recruitment">列印／輸出 PDF</button></div>
+      <div class="section-head"><div><h2>招募文件</h2><small>依亞緻與亞菲得司機評核表整理，填寫後可直接列印或另存 PDF。</small></div><button class="primary-btn" data-action="generate-recruitment-pdf">列印／輸出 PDF</button></div>
       <form class="panel recruitment-sheet" id="recruitmentSheet">
         <div class="recruitment-title"><select name="fleet_name"><option>亞菲得車隊</option><option>亞緻車隊</option></select><h3>新司機面訪評核表</h3></div>
         <div class="form-grid">
