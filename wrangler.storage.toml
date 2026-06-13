@@ -1,0 +1,13 @@
+name = "heycar-r2-storage"
+main = "cloudflare/r2-storage-worker.js"
+compatibility_date = "2026-06-13"
+workers_dev = true
+preview_urls = false
+
+[vars]
+SUPABASE_URL = "https://chnvwziuqcqnllcjqobj.supabase.co"
+STORAGE_QUOTA_BYTES = "10737418240"
+
+[[r2_buckets]]
+binding = "ATTACHMENTS"
+bucket_name = "heycar-attachments"

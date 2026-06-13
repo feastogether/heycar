@@ -1,8 +1,0 @@
-name = "heycar"
-compatibility_date = "2026-06-13"
-workers_dev = true
-preview_urls = false
-
-[assets]
-directory = "./cloudflare-public"
-not_found_handling = "single-page-application"
