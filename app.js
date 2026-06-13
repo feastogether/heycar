@@ -1205,11 +1205,10 @@
     return adminNavDepartments.map(([department, keys]) => {
       const items = keys.map((key) => byKey[key]).filter(Boolean);
       if (!items.length) return "";
-      const active = items.some(([key]) => key === state.adminView);
-      return `<details class="nav-group" ${active ? "open" : ""}>
-        <summary><span>${department}</span><b>⌄</b></summary>
+      return `<section class="nav-group">
+        <div class="nav-group-title"><span>${department}</span></div>
         <div class="nav-group-items">${items.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${adminNavLabels[key] || text}"><span class="nav-icon">${icon}</span><span class="nav-label">${adminNavLabels[key] || text}</span></button>`).join("")}</div>
-      </details>`;
+      </section>`;
     }).join("");
   }
 

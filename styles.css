@@ -898,24 +898,29 @@ button.calendar-pill:hover { filter: brightness(.96); }
   padding-right: 2px;
 }
 .nav-group {
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 6px;
+  display: grid;
+  gap: 4px;
+  padding: 4px 0 10px;
+  border-bottom: 1px solid #e8eeec;
 }
-.nav-group:last-child { border-bottom: 0; }
-.nav-group summary {
+.nav-group + .nav-group { padding-top: 10px; }
+.nav-group:last-child { border-bottom: 0; padding-bottom: 2px; }
+.nav-group-title {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px 7px;
-  color: var(--muted);
-  font-size: 12px;
+  gap: 8px;
+  padding: 5px 12px 6px;
+  color: #83918d;
+  font-size: 11px;
   font-weight: 900;
-  cursor: pointer;
-  list-style: none;
+  letter-spacing: 0;
 }
-.nav-group summary::-webkit-details-marker { display: none; }
-.nav-group summary b { transition: transform .18s ease; }
-.nav-group[open] summary b { transform: rotate(180deg); }
+.nav-group-title::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #e8eeec;
+}
 .nav-group-items { display: grid; gap: 4px; }
 .recruitment-sheet { max-width: 1080px; margin-inline: auto; }
 .recruitment-title { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
