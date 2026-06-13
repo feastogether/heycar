@@ -3,3 +3,4 @@ node_modules/
 scripts/import-data.json
 
 .vercel
+cloudflare-public/

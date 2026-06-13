@@ -12,6 +12,16 @@ npx --yes wrangler secret put FILE_SIGNING_SECRET
 npx --yes wrangler deploy
 ```
 
+## 前端部署
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build-cloudflare-frontend.ps1
+npx --yes wrangler deploy --config wrangler.frontend.toml
+```
+
+正式前端網址為 `https://heycar.airvan.workers.dev`。附件 API 則使用獨立的
+`https://heycar-r2-storage.airvan.workers.dev`，兩者請勿混用。
+
 - `SUPABASE_SERVICE_ROLE_KEY`：由 Supabase Dashboard → Project Settings → API 取得，只能存入 Worker Secret。
 - `FILE_SIGNING_SECRET`：自行產生至少 32 字元的隨機字串，只能存入 Worker Secret。
 - 不要開啟 R2 Bucket 公開存取。
