@@ -1152,6 +1152,7 @@
             <span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span>
             <b>${formatBytes(file.size)}</b>
             <time>${fmtDate(file.created_at)}</time>
+            ${file.url ? `<a class="ghost-btn" href="${escapeHtml(file.url)}" target="_blank" rel="noreferrer">查看</a>` : ""}
           </label>
         `).join("") : `<div class="empty">${state.storageLoading ? "正在讀取儲存空間..." : "目前沒有附件資料，請點重新整理。"}</div>`}
       </div>

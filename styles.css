@@ -1437,7 +1437,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .storage-usage.danger .storage-meter span { background: #dc2626; }
 .storage-usage.danger { border-color: #fecaca; background: #fffafa; }
 .storage-file-list { display: grid; gap: 5px; }
-.storage-file-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
+.storage-file-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; }
 .storage-file-row > span { display: grid; gap: 2px; min-width: 0; }
 .storage-file-row strong, .storage-file-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .storage-file-row small, .storage-file-row time { color: var(--muted); font-size: 11px; }
@@ -1617,7 +1617,7 @@ tr:last-child td { border-bottom: 0; }
   .insurance-files { margin-left: 0; }
   .insurance-vehicle-picker { grid-template-columns: 1fr; }
   .insurance-vehicle-picker label { grid-column: auto; }
-  .storage-file-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .storage-file-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .storage-file-row time { display: none; }
   .topbar { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
   .brand img { height: 32px; }

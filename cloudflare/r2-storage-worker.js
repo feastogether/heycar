@@ -49,18 +49,22 @@ function safePart(value, fallback, maxLength) {
     .slice(0, maxLength);
 }
 
-async function listAll(bucket) {
+async function listAll(bucket, origin, signingSecret) {
   const files = [];
   let cursor;
   do {
-    const page = await bucket.list({ limit: 1000, cursor });
-    files.push(...page.objects.map((item) => ({
-      path: item.key,
-      name: item.customMetadata?.originalName || item.key.split("/").pop(),
-      size: item.size,
-      created_at: item.uploaded,
-      content_type: item.httpMetadata?.contentType || "application/octet-stream"
-    })));
+    const page = await bucket.list({ limit: 1000, cursor, include: ["httpMetadata", "customMetadata"] });
+    for (const item of page.objects) {
+      const signature = await signPath(signingSecret, item.key);
+      files.push({
+        path: item.key,
+        name: item.customMetadata?.originalName || item.key.split("/").pop()?.replace(/^[0-9a-f-]{36}-/, ""),
+        size: item.size,
+        created_at: item.uploaded,
+        content_type: item.httpMetadata?.contentType || "application/octet-stream",
+        url: `${origin}/files/${encodeURIComponent(item.key)}?sig=${signature}`
+      });
+    }
     cursor = page.truncated ? page.cursor : undefined;
   } while (cursor);
   return files.sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -111,7 +115,7 @@ export default {
       if (session.session_type !== "admin") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
 
       if (body.action === "list") {
-        const files = await listAll(env.ATTACHMENTS);
+        const files = await listAll(env.ATTACHMENTS, url.origin, env.FILE_SIGNING_SECRET);
         return json({
           files,
           used_bytes: files.reduce((total, item) => total + item.size, 0),
