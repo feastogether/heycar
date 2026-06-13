@@ -80,7 +80,12 @@ async function handleDownload(request, env, path) {
   object.writeHttpMetadata(headers);
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "private, max-age=300");
+  headers.set("Accept-Ranges", "bytes");
   headers.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(object.customMetadata?.originalName || "attachment")}`);
+  if (request.method === "HEAD") {
+    headers.set("Content-Length", String(object.size));
+    return new Response(null, { headers });
+  }
   return new Response(object.body, { headers });
 }
 
@@ -89,7 +94,7 @@ export default {
     if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
     try {
       const url = new URL(request.url);
-      if (request.method === "GET" && url.pathname.startsWith("/files/")) {
+      if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/files/")) {
         return await handleDownload(request, env, decodeURIComponent(url.pathname.slice(7)));
       }
       if (request.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405);

@@ -1172,6 +1172,46 @@
     return Boolean(state.adminProfile?.permissions?.[permission]);
   }
 
+  const adminNavLabels = {
+    adminUsers: "權限管理",
+    drivers: "駕駛管理",
+    recruitmentDocuments: "招募文件",
+    vehicles: "車輛管理",
+    vehicleLoans: "車輛租借",
+    serviceRecords: "車輛履歷",
+    insuranceCenter: "保險中心",
+    insurancePartners: "廠商管理",
+    storage: "儲存空間",
+    calendar: "車輛日曆",
+    maintenanceNotifications: "保養通知",
+    announcements: "公告管理",
+    personalMessages: "個人訊息",
+    payments: "費用管理",
+    feedbacks: "意見反饋",
+    marquee: "跑馬燈通知",
+    emergencyEvents: "緊急事件"
+  };
+
+  const adminNavDepartments = [
+    ["系統管理", ["adminUsers", "insurancePartners", "storage"]],
+    ["禮賓司機", ["drivers", "recruitmentDocuments", "payments", "feedbacks"]],
+    ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "marquee"]],
+    ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]]
+  ];
+
+  function groupedAdminNav(nav) {
+    const byKey = Object.fromEntries(nav.map((item) => [item[0], item]));
+    return adminNavDepartments.map(([department, keys]) => {
+      const items = keys.map((key) => byKey[key]).filter(Boolean);
+      if (!items.length) return "";
+      const active = items.some(([key]) => key === state.adminView);
+      return `<details class="nav-group" ${active ? "open" : ""}>
+        <summary><span>${department}</span><b>⌄</b></summary>
+        <div class="nav-group-items">${items.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${adminNavLabels[key] || text}"><span class="nav-icon">${icon}</span><span class="nav-label">${adminNavLabels[key] || text}</span></button>`).join("")}</div>
+      </details>`;
+    }).join("");
+  }
+
   function renderAdmin() {
     const nav = [
       ["adminUsers", "權限管理", "🔐", "super"],
@@ -1191,10 +1231,12 @@
       ["marquee", "跑馬燈通知", "🚨", "messages"],
       ["emergencyEvents", "緊急事件", "🆘", "messages"]
     ].filter(([, , , permission]) => !permission || adminCan(permission));
+    if (adminCan("drivers")) nav.splice(2, 0, ["recruitmentDocuments", "招募文件", "📋", "drivers"]);
     if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
       adminUsers,
       drivers: adminDrivers,
+      recruitmentDocuments: adminRecruitmentDocuments,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
       serviceRecords: adminServiceRecords,
@@ -1220,7 +1262,7 @@
             <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="關閉選單">×</button>
           </div>
           <nav class="side-nav">
-            ${nav.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${text}"><span class="nav-icon">${icon}</span><span class="nav-label">${text}</span></button>`).join("")}
+            ${groupedAdminNav(nav)}
           </nav>
           <div class="admin-sidebar-footer">
             <button class="nav-btn logout-nav-btn" data-action="logout" title="登出"><span class="nav-icon">↩</span><span class="nav-label">登出</span></button>
@@ -1229,6 +1271,30 @@
         <section class="admin-workspace">${body}</section>
       </div>
     `);
+  }
+
+  function adminRecruitmentDocuments() {
+    return `
+      <div class="section-head"><div><h2>招募文件</h2><small>依亞緻與亞菲得司機評核表整理，填寫後可直接列印或另存 PDF。</small></div><button class="primary-btn" data-action="print-recruitment">列印／輸出 PDF</button></div>
+      <form class="panel recruitment-sheet" id="recruitmentSheet">
+        <div class="recruitment-title"><select name="fleet_name"><option>亞菲得車隊</option><option>亞緻車隊</option></select><h3>新司機面訪評核表</h3></div>
+        <div class="form-grid">
+          ${input("referrer", "推薦人")}${input("interview_date", "面訪日期", today(), "date")}
+          ${input("name", "姓名")}${input("national_id", "身分證字號")}
+          ${input("birthday", "出生日期", "", "date")}${input("phone", "連絡電話")}
+          ${input("address", "居住地址")}${input("email", "電子信箱", "", "email")}
+          ${input("service_area", "服務區域")}${input("plate_no", "自有車輛車號")}
+          ${input("license_type", "駕照種類")}${input("languages", "語言／第二外語")}
+          ${input("emergency_contact", "緊急聯絡人")}${input("emergency_relation", "關係")}
+          ${input("expected_trips", "期望趟數")}${input("expected_revenue", "期望營業額")}
+          ${input("shift", "班別")}${input("vehicle_model", "車款")}
+          ${text("experience", "近期經歷／學歷／家庭與經濟狀況")}
+          ${text("interview_notes", "訪談內容與其他備註")}
+          ${text("document_checklist", "檢附資料")}
+          ${text("admin_process", "行政流程與主管評核結果")}
+        </div>
+      </form>
+    `;
   }
 
   function adminDrivers() {
@@ -2326,6 +2392,9 @@
     }
     if (target.dataset.action === "refresh-storage") {
       await loadStorageUsage();
+    }
+    if (target.dataset.action === "print-recruitment") {
+      window.print();
     }
     if (target.dataset.action === "delete-storage-files") {
       const paths = Array.from(document.querySelectorAll("[data-storage-file]:checked")).map((input) => input.value);
