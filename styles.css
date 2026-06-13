@@ -1489,6 +1489,11 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .storage-file-row > span { display: grid; gap: 2px; min-width: 0; }
 .storage-file-row strong, .storage-file-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .storage-file-row small, .storage-file-row time { color: var(--muted); font-size: 11px; }
+.storage-file-check { display: grid; place-items: center; cursor: pointer; }
+.storage-file-check input { width: auto; }
+.file-preview-modal { width: min(1100px, 96vw); height: min(88vh, 900px); display: flex; flex-direction: column; overflow: hidden; }
+.file-preview-media { width: 100%; min-height: 0; flex: 1; object-fit: contain; background: #f3f5f7; border-radius: 6px; }
+.file-preview-frame { width: 100%; min-height: 0; flex: 1; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
 
 .photo-upload-field .driver-avatar {
   width: 132px;

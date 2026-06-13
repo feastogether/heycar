@@ -1155,18 +1155,31 @@
       </section>
       <div class="storage-file-list">
         ${state.storageFiles.length ? state.storageFiles.map((file) => `
-          <label class="storage-file-row">
-            <input type="checkbox" data-storage-file value="${escapeHtml(file.path)}">
+          <div class="storage-file-row">
+            <label class="storage-file-check" title="選取檔案"><input type="checkbox" data-storage-file value="${escapeHtml(file.path)}"></label>
             <span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span>
             <b>${formatBytes(file.size)}</b>
             <time>${fmtDate(file.created_at)}</time>
-            ${file.url ? `<a class="ghost-btn" href="${escapeHtml(file.url)}" target="_blank" rel="noreferrer">查看</a>` : ""}
-          </label>
+            ${file.url ? `<div class="actions"><button class="ghost-btn" data-preview-file="${escapeHtml(file.url)}" data-preview-name="${escapeHtml(file.name)}" data-preview-type="${escapeHtml(file.content_type || "")}">查看</button><a class="ghost-btn" href="${escapeHtml(file.url)}" download="${escapeHtml(file.name)}">下載</a></div>` : ""}
+          </div>
         `).join("") : `<div class="empty">${state.storageLoading ? "正在讀取儲存空間..." : "目前沒有附件資料，請點重新整理。"}</div>`}
       </div>
     `;
   }
 
+
+  function openFilePreview(url, name, type) {
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop file-preview-backdrop";
+    const encodedUrl = escapeHtml(url);
+    const media = String(type || "").startsWith("image/")
+      ? `<img class="file-preview-media" src="${encodedUrl}" alt="${escapeHtml(name)}">`
+      : String(type || "").includes("pdf")
+      ? `<iframe class="file-preview-frame" src="${encodedUrl}" title="${escapeHtml(name)}"></iframe>`
+      : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
+    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head"><h3>${escapeHtml(name || "附件預覽")}</h3><div class="actions"><a class="primary-btn" href="${encodedUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
+    document.body.appendChild(modal);
+  }
   function adminCan(permission) {
     if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
     return Boolean(state.adminProfile?.permissions?.[permission]);
@@ -2353,6 +2366,10 @@
       state.mode = target.dataset.mode;
       state.error = "";
       renderLogin();
+    }
+    if (target.dataset.previewFile) {
+      openFilePreview(target.dataset.previewFile, target.dataset.previewName, target.dataset.previewType);
+      return;
     }
     if (target.dataset.action === "logout") {
       state.user = null;
