@@ -1,4 +1,4 @@
-name = "heycar-r2-storage"
+name = "heycar"
 main = "cloudflare/r2-storage-worker.js"
 compatibility_date = "2026-06-13"
 
