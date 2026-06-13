@@ -1274,27 +1274,31 @@
   }
 
   function adminRecruitmentDocuments() {
+    const yesNo = (name, label) => `<fieldset class="choice-field"><legend>${label}</legend><label><input type="radio" name="${name}" value="是"> 是</label><label><input type="radio" name="${name}" value="否"> 否</label></fieldset>`;
+    const checks = (name, label, values) => `<fieldset class="choice-field full"><legend>${label}</legend>${values.map((value) => `<label><input type="checkbox" name="${name}" value="${value}"> ${value}</label>`).join("")}</fieldset>`;
     return `
-      <div class="section-head"><div><h2>招募文件</h2><small>依亞緻與亞菲得司機評核表整理，填寫後可直接列印或另存 PDF。</small></div><button class="primary-btn" data-action="generate-recruitment-pdf">列印／輸出 PDF</button></div>
+      <div class="section-head"><div><h2>招募文件</h2><small>完整填寫後，資料將套印至原始評核表並附加完整明細頁。</small></div><button class="primary-btn" data-action="generate-recruitment-pdf">產出原版評核表 PDF</button></div>
       <form class="panel recruitment-sheet" id="recruitmentSheet">
         <div class="recruitment-title"><select name="fleet_name"><option>亞菲得車隊</option><option>亞緻車隊</option></select><h3>新司機面訪評核表</h3></div>
         <div class="form-grid">
           ${input("referrer", "推薦人")}${input("interview_date", "面訪日期", today(), "date")}
-          ${input("name", "姓名")}${input("national_id", "身分證字號")}
-          ${input("birthday", "出生日期", "", "date")}${input("phone", "連絡電話")}
-          ${input("address", "居住地址")}${input("email", "電子信箱", "", "email")}
-          ${input("service_area", "服務區域")}${input("plate_no", "自有車輛車號")}
-          ${input("license_type", "駕照種類")}${input("languages", "語言／第二外語")}
-          ${input("emergency_contact", "緊急聯絡人")}${input("emergency_relation", "關係")}
-          ${input("expected_trips", "期望趟數")}${input("expected_revenue", "期望營業額")}
-          ${input("shift", "班別")}${input("vehicle_model", "車款")}
-          ${text("experience", "近期經歷／學歷／家庭與經濟狀況")}
-          ${text("interview_notes", "訪談內容與其他備註")}
-          ${text("document_checklist", "檢附資料")}
-          ${text("admin_process", "行政流程與主管評核結果")}
+          ${input("name", "姓名")}${input("national_id", "身分證字號")}${input("gender", "性別")}${input("marital_status", "婚姻狀況")}
+          ${input("birthday", "出生日期", "", "date")}${input("phone", "連絡電話")}${input("address", "居住地址")}${input("email", "電子信箱", "", "email")}
+          ${input("service_area", "服務區域")}${input("plate_no", "車號")}${input("license_type", "駕照種類")}${input("languages", "語言／第二外語")}
+          ${yesNo("own_vehicle", "自有車輛")}${yesNo("smoking", "是否抽菸")}${yesNo("drinking", "是否酗酒")}${yesNo("betel_nut", "是否吃檳榔")}${yesNo("major_violation", "曾有重大違規")}${yesNo("tour_guide_license", "導遊證")}
+          ${input("family_status", "家庭狀況／稱謂與年齡")}${input("income_source", "主要收入來源")}${input("monthly_income", "收入金額／月")}${input("monthly_expenses", "每月生活開銷")}
+          ${input("trips_per_week", "趟數／週")}${input("loan_amount", "貸款金額")}${input("specialty", "專長")}${input("parking_space", "家中停車位")}
+          ${input("emergency_contact", "緊急聯絡人姓名")}${input("emergency_relation", "緊急聯絡人關係")}${input("emergency_phone", "緊急聯絡人電話")}${input("vehicle_brand", "車輛品牌")}
+          ${input("vehicle_model", "車款")}${input("vehicle_year", "車輛年份")}${input("vehicle_color", "顏色")}${input("fuel_type", "油／油電／電")}
+          ${yesNo("booster_seat", "增高墊")}${yesNo("child_seat", "雙向安全座椅")}${yesNo("gps_dog", "安裝衛星犬")}${input("expected_delivery_date", "預計交車日", "", "date")}
+          ${input("affiliate_dealer", "靠行車商")}${input("affiliate_fee", "靠行費／年")}${input("expected_trips", "期望趟數")}${input("expected_revenue", "期望營業額")}${input("shift", "班別")}
+          ${checks("other_operators", "承接其他業者卡趟客戶", ["肯驛", "和運", "格上", "全鋒", "e-go", "無"])}
+          ${checks("attached_documents", "檢附資料", ["司機職業駕照", "無肇事紀錄", "身分證正反面", "保險卡-14型500萬", "良民證", "存摺影本", "車輛行照"])}
+          ${checks("admin_checklist", "行政流程", ["入隊費", "靠行費", "承攬合約", "教育訓練", "行政確認", "行控確認", "停車吧開通"])}
+          ${input("education", "學歷／學校／科系／就讀期間")}${input("work_history", "近期經歷／公司／職務／服務期間／離職原因")}
+          ${text("interview_notes", "訪談內容")}${text("other_notes", "其他")}${text("vehicle_confirmation", "車輛管理與確認")}${text("evaluation_result", "評核結果／主管簽核／是否簽約")}
         </div>
-      </form>
-    `;
+      </form>`;
   }
 
   function adminDrivers() {

@@ -926,6 +926,20 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .recruitment-title { display: flex; align-items: center; gap: 16px; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid var(--ink); }
 .recruitment-title select { width: 180px; }
 .recruitment-title h3 { margin: 0; font-size: 22px; }
+.choice-field {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.choice-field.full { grid-column: 1 / -1; }
+.choice-field legend { padding: 0 4px; color: var(--muted); font-size: 13px; font-weight: 700; }
+.choice-field label { display: inline-flex; align-items: center; gap: 5px; color: var(--ink); }
+.choice-field input { width: auto; }
 @media print {
   body * { visibility: hidden; }
   #recruitmentSheet, #recruitmentSheet * { visibility: visible; }
