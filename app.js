@@ -4,7 +4,9 @@
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const dataApiUrl = cfg.DATA_API_URL || `${cfg.SUPABASE_URL}/functions/v1/data-api`;
-  const storageApiUrl = cfg.STORAGE_API_URL || `${cfg.SUPABASE_URL}/functions/v1/storage-api`;
+  const storageApiUrl = location.hostname === "heycar.airvan.workers.dev"
+    ? "/api/storage"
+    : cfg.STORAGE_API_URL || `${cfg.SUPABASE_URL}/functions/v1/storage-api`;
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -220,7 +222,13 @@
       },
       body: JSON.stringify({ action, ...payload })
     });
-    const result = await response.json();
+    const responseText = await response.text();
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      result = { error: `Storage service returned an invalid response (${response.status}). Please reload and try again.` };
+    }
     if (!response.ok) throw new Error(result.error || "儲存空間服務連線失敗");
     return result;
   }
