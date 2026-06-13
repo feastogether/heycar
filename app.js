@@ -1139,7 +1139,7 @@
     const percent = Math.min(100, Math.round(state.storageUsedBytes / Math.max(1, state.storageQuotaBytes) * 100));
     const warning = percent >= 90 ? "danger" : percent >= 75 ? "warning" : "normal";
     return `
-      <div class="section-head"><div><h2>儲存空間</h2><small>管理 Supabase 附件與容量</small></div><div class="actions"><button class="danger-btn" data-action="delete-storage-files">刪除選取</button><button class="primary-btn" data-action="refresh-storage">${state.storageLoading ? "讀取中..." : "重新整理"}</button></div></div>
+      <div class="section-head"><div><h2>儲存空間</h2><small>管理 Cloudflare R2 附件與容量</small></div><div class="actions"><button class="danger-btn" data-action="delete-storage-files">刪除選取</button><button class="primary-btn" data-action="refresh-storage">${state.storageLoading ? "讀取中..." : "重新整理"}</button></div></div>
       <section class="storage-usage ${warning}">
         <div><strong>${formatBytes(state.storageUsedBytes)}</strong><span>已使用，共 ${formatBytes(state.storageQuotaBytes)}</span><b>${percent}%</b></div>
         <div class="storage-meter"><span style="width:${percent}%"></span></div>

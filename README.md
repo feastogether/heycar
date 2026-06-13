@@ -27,7 +27,7 @@
 ## Supabase 附件儲存
 
 - 所有附件統一儲存在 Supabase Storage 的 `attachments` bucket。
-- 上傳、容量統計與批次刪除只透過受 Session 保護的 `storage-api` Edge Function。
+- 上傳、容量統計與批次刪除可透過受 Session 保護的 Cloudflare R2 Worker；部署方式見 `cloudflare/README.md`。
 - 後台「儲存空間」可查看使用率並批次清除不需要的檔案。
 - 單一附件限制為 10 MB。
 

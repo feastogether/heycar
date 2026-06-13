@@ -1,0 +1,26 @@
+# Cloudflare R2 附件部署
+
+此 Worker 使用現有 Supabase `app_sessions` 驗證使用者，附件則儲存在私有 R2 Bucket。
+
+## 第一次部署
+
+```powershell
+npx --yes wrangler login
+npx --yes wrangler r2 bucket create heycar-attachments
+npx --yes wrangler secret put SUPABASE_SERVICE_ROLE_KEY
+npx --yes wrangler secret put FILE_SIGNING_SECRET
+npx --yes wrangler deploy
+```
+
+- `SUPABASE_SERVICE_ROLE_KEY`：由 Supabase Dashboard → Project Settings → API 取得，只能存入 Worker Secret。
+- `FILE_SIGNING_SECRET`：自行產生至少 32 字元的隨機字串，只能存入 Worker Secret。
+- 不要開啟 R2 Bucket 公開存取。
+
+目前 Worker 網址為 `https://heycar-r2-storage.airvan.workers.dev`，並已填入 `config.example.js`。
+
+## 架構
+
+- 上傳、列出與刪除操作會驗證既有 Supabase Session。
+- R2 Bucket 維持私有。
+- 下載使用 Worker 產生的 HMAC 簽章連結。
+- 新附件會進入 R2；既有 Supabase Storage 附件仍能從舊網址下載。
