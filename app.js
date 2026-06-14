@@ -525,7 +525,7 @@
               <img src="${logoUrl}" alt="heycar logo">
               <div class="brand-copy">
                 <div class="brand-title">管理後台</div>
-                <div class="brand-subtitle">亞菲得車隊管理</div>
+                <div class="brand-subtitle">${escapeHtml(state.adminProfile?.name || "管理員")}，您好</div>
               </div>
             </div>
             <div class="userbox">
@@ -1012,13 +1012,19 @@
 
   function insuranceFileLink(item, prefix, label) {
     const url = item?.[`${prefix}_url`];
-    return url ? `<a class="insurance-file-link" href="${escapeHtml(url)}" target="_blank" rel="noreferrer">${label}</a>` : "";
+    return url ? `<button class="insurance-file-link" data-preview-file="${escapeHtml(url)}" data-preview-name="${escapeHtml(item?.[`${prefix}_name`] || label)}" data-preview-type="">${label}</button>` : "";
+  }
+
+  function jsonFileLinks(value, label) {
+    return (Array.isArray(value) ? value : []).map((file, index) => `<button class="insurance-file-link" data-preview-file="${escapeHtml(file.url || "")}" data-preview-name="${escapeHtml(file.name || `${label}${index + 1}`)}" data-preview-type="${escapeHtml(file.type || "")}">${escapeHtml(file.name || `${label}${index + 1}`)}</button>`).join("");
   }
 
   function insuranceVisibleFiles(item) {
     const isDealer = state.partner?.partner_type === "dealer";
     const files = [
       insuranceFileLink(item, "quote", "報價書"),
+      jsonFileLinks(item.license_files, "駕照"),
+      jsonFileLinks(item.amendment_files, "批改檔"),
       ...(!isDealer || item.status === "completed" ? [
         insuranceFileLink(item, "application", "要保書"),
         insuranceFileLink(item, "stamped_application", "用印檔"),
@@ -1039,6 +1045,8 @@
       if (item.status === "payment_pending") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:receipt_pending">付款完成</button>`);
     }
     if (state.partner?.partner_type === "broker") {
+      if (item.request_type === "amendment" && item.status === "broker_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceAmendment" data-id="${item.id}">上傳批改檔</button>`);
+      if (item.request_type === "amendment" && item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:completed">完成批改</button>`);
       if (item.status === "broker_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceQuote" data-id="${item.id}">進行報價</button>`);
       if (item.status === "quote_confirmed_issue_application") actions.push(`<button class="primary-btn" data-modal="insuranceApplication" data-id="${item.id}">上傳要保書</button>`);
       if (item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-modal="insurancePolicy" data-id="${item.id}">上傳保單</button>`);
@@ -1057,7 +1065,7 @@
         <div class="insurance-row-main">
           <strong class="insurance-plate">${escapeHtml(item.plate_no)}</strong>
           <div class="insurance-row-identity">
-            <b>${escapeHtml(item.insurance_type || "保險需求")} · ${escapeHtml(item.coverage_spec || "未填規格")}</b>
+            <b>${escapeHtml(item.request_type === "amendment" ? "批改需求" : item.insurance_type || "保險需求")} · ${escapeHtml(item.request_type === "amendment" ? `${item.driver_change_action || ""} ${item.driver_change_names || ""}` : item.coverage_spec || "未填規格")}</b>
             <small>${escapeHtml(partner?.name || "未指定車商")} · ${escapeHtml(item.assigned_insurance_company || "未指定保險公司")}</small>
           </div>
           ${insuranceStatusBadge(item.status)}
@@ -1102,7 +1110,7 @@
   function adminInsuranceCenter() {
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
     return `
-      <div class="section-head"><div><h2>保險中心</h2><small>集中掌握每台車的投保進度</small></div><div class="actions"><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="primary-btn" data-modal="insuranceRequest">發起報價需求</button></div></div>
+      <div class="section-head"><div><h2>保險中心</h2><small>集中掌握每台車的投保與批改進度</small></div><div class="actions"><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改需求</button><button class="primary-btn" data-modal="insuranceRequest">發起報價需求</button></div></div>
       ${insuranceControlCenter(requests, true)}
     `;
   }
@@ -1171,9 +1179,10 @@
     const modal = document.createElement("div");
     modal.className = "modal-backdrop file-preview-backdrop";
     const encodedUrl = escapeHtml(url);
-    const media = String(type || "").startsWith("image/")
+    const inferredType = String(type || "") || (/\.(png|jpe?g|webp|gif)$/i.test(name || "") ? "image/unknown" : /\.pdf$/i.test(name || "") ? "application/pdf" : "");
+    const media = inferredType.startsWith("image/")
       ? `<img class="file-preview-media" src="${encodedUrl}" alt="${escapeHtml(name)}">`
-      : String(type || "").includes("pdf")
+      : inferredType.includes("pdf")
       ? `<iframe class="file-preview-frame" src="${encodedUrl}" title="${escapeHtml(name)}"></iframe>`
       : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
     modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head"><h3>${escapeHtml(name || "附件預覽")}</h3><div class="actions"><a class="primary-btn" href="${encodedUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
@@ -1559,6 +1568,8 @@
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
       insuranceRequest: ["保險需求", "insurance_requests", insuranceRequestForm],
+      insuranceAmendmentRequest: ["批改需求", "insurance_requests", insuranceAmendmentRequestForm],
+      insuranceAmendment: ["批改檔案", "insurance_requests", insuranceAmendmentForm],
       insuranceQuote: ["保險報價", "insurance_requests", insuranceQuoteForm],
       insuranceApplication: ["要保書", "insurance_requests", insuranceApplicationForm],
       insuranceStamp: ["用印檔", "insurance_requests", insuranceStampForm],
@@ -1658,9 +1669,10 @@
     if (tableName === "vehicle_service_records") {
       record.vehicle_id = record.vehicle_id || null;
       blankToNull(record, ["next_service_date"]);
-      ["odometer", "next_service_odometer", "labor_cost", "parts_cost", "other_cost", "total_cost", "downtime_hours"].forEach((key) => {
+      ["odometer", "next_service_odometer", "downtime_hours"].forEach((key) => {
         record[key] = Number(record[key] || 0) || null;
       });
+      ["labor_cost", "parts_cost", "other_cost", "total_cost"].forEach((key) => record[key] = Number(record[key] || 0));
       record.total_cost = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
     }
     if (tableName === "feedbacks") {
@@ -1676,6 +1688,11 @@
       record.vehicle_id = record.vehicle_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
       record.quote_amount = Number(record.quote_amount || 0) || null;
+      ["license_files", "amendment_files"].forEach((key) => {
+        if (typeof record[key] === "string") {
+          try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
+        }
+      });
     }
     if (tableName === "maintenance_notifications") {
       record.driver_id = record.driver_id || null;
@@ -1762,7 +1779,17 @@
 
   function attachmentLink(item) {
     if (!item?.attachment_url) return "";
-    return `<div class="attachment-link"><a href="${escapeHtml(item.attachment_url)}" target="_blank" rel="noreferrer">📎 ${escapeHtml(item.attachment_name || "查看附件")}</a></div>`;
+    return `<div class="attachment-link"><button data-preview-file="${escapeHtml(item.attachment_url)}" data-preview-name="${escapeHtml(item.attachment_name || "附件")}" data-preview-type="">📎 ${escapeHtml(item.attachment_name || "查看附件")}</button></div>`;
+  }
+
+  function multiAttachmentField(item, name, label) {
+    const files = Array.isArray(item?.[name]) ? item[name] : [];
+    return `<div class="field full attachment-field">
+      <label>${label}</label>
+      <input type="hidden" name="${name}" value="${escapeHtml(JSON.stringify(files))}" data-multi-attachment-json>
+      <div class="attachment-upload-row"><input type="file" multiple data-multi-attachment-upload data-document-label="${escapeHtml(label)}"><span data-attachment-status>${files.length ? `已附加 ${files.length} 個檔案` : "尚未選擇檔案"}</span></div>
+      <div class="attachment-link">${jsonFileLinks(files, label)}</div>
+    </div>`;
   }
 
   function multiSelect(name, label, selectedValues, options) {
@@ -2048,6 +2075,24 @@
       + select("assigned_insurance_company", "指定保險公司", item.assigned_insurance_company || "", [["", "請選擇"], ["富邦", "富邦"], ["華南", "華南"], ["國泰", "國泰"], ["新安東京", "新安東京"]])
       + text("insurance_notes", "保險備註", item.insurance_notes)
       + select("status", "案件進度", item.status || "broker_quoting", insuranceStatuses);
+  }
+
+  function insuranceAmendmentRequestForm(item) {
+    const vehicles = state.data.vehicles || [];
+    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="status" value="broker_quoting">
+      <div class="field full insurance-vehicle-picker"><label>車輛</label><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}">${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
+      <input type="hidden" name="plate_no"><input type="hidden" name="dealer_partner_id">
+      ${select("driver_change_action", "批改項目", item.driver_change_action || "新增駕駛人", [["新增駕駛人", "新增駕駛人"], ["移除駕駛人", "移除駕駛人"]])}
+      ${input("driver_change_names", "駕駛人姓名", item.driver_change_names, "text", true)}
+      ${multiAttachmentField(item, "license_files", "駕照正反面")}
+      ${text("insurance_notes", "備註", item.insurance_notes)}`;
+  }
+
+  function insuranceAmendmentForm(item) {
+    return insuranceRequestSummary(item)
+      + multiAttachmentField(item, "amendment_files", "批改檔案")
+      + text("broker_notes", "保經備註", item.broker_notes)
+      + `<input type="hidden" name="status" value="stamping">`;
   }
 
   function insuranceQuoteForm(item) {
@@ -2607,6 +2652,31 @@
         alert(error.message || error);
       } finally {
         attachmentInput.disabled = false;
+      }
+      return;
+    }
+    const multiInput = e.target.closest("[data-multi-attachment-upload]");
+    if (multiInput?.files?.length) {
+      const field = multiInput.closest(".attachment-field");
+      const hidden = field?.querySelector("[data-multi-attachment-json]");
+      const status = field?.querySelector("[data-attachment-status]");
+      let files = [];
+      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
+      try {
+        multiInput.disabled = true;
+        if (status) status.textContent = "檔案上傳中...";
+        const plateNo = field?.closest("form")?.querySelector('[name="plate_no"]')?.value || "";
+        for (const file of Array.from(multiInput.files)) {
+          const uploaded = await uploadAttachment(file, plateNo, multiInput.dataset.documentLabel || "");
+          files.push({ url: uploaded.url || uploaded, name: uploaded.name || file.name, type: file.type });
+        }
+        hidden.value = JSON.stringify(files);
+        if (status) status.textContent = `已附加 ${files.length} 個檔案`;
+      } catch (error) {
+        if (status) status.textContent = "上傳失敗";
+        alert(error.message || error);
+      } finally {
+        multiInput.disabled = false;
       }
       return;
     }

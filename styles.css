@@ -1660,6 +1660,18 @@ tr:last-child td { border-bottom: 0; }
   }
 }
 
+@media (max-width: 700px) {
+  .insurance-pipeline { display: flex; overflow-x: auto; gap: 7px; padding-bottom: 8px; }
+  .pipeline-step { flex: 0 0 145px; grid-template-columns: 24px 1fr auto; min-height: 48px; }
+  .insurance-row-main { grid-template-columns: 1fr auto; gap: 8px; }
+  .insurance-row-identity { grid-column: 1 / -1; grid-row: 2; }
+  .insurance-row-main .insurance-status { grid-column: 2; grid-row: 1; max-width: 130px; white-space: normal; text-align: center; }
+  .insurance-row-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .insurance-files { grid-column: 1 / -1; }
+  .insurance-card-actions { flex-wrap: wrap; }
+  .insurance-card-actions button { flex: 1 1 130px; }
+}
+
 @media (max-width: 560px) {
   .mode-tabs { grid-template-columns: 1fr; }
   .insurance-pipeline { display: flex; overflow-x: auto; padding-bottom: 5px; }

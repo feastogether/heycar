@@ -180,7 +180,7 @@ async function loadPartnerData(partnerId: string) {
   if (requests.error) throw requests.error;
   if (vehicles.error) throw vehicles.error;
   result.insurance_requests = partner.partner_type === "dealer"
-    ? (requests.data || []).map(({ broker_notes: _brokerNotes, ...item }) => item)
+    ? (requests.data || []).filter((item) => item.request_type !== "amendment" || item.status === "completed").map(({ broker_notes: _brokerNotes, ...item }) => item)
     : requests.data || [];
   result.vehicles = vehicles.data || [];
   if (partner.partner_type === "broker") {
@@ -296,6 +296,7 @@ Deno.serve(async (req) => {
           "application_url", "application_name",
           "policy_url", "policy_name",
           "receipt_url", "receipt_name",
+          "amendment_files",
           "updated_at"
         ]
         : ["status", "updated_at"];
@@ -304,13 +305,16 @@ Deno.serve(async (req) => {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       }
       if (partner?.partner_type === "broker") {
-        const { data: current } = await db.from("insurance_requests").select("status").eq("id", body.id).single();
+        const { data: current } = await db.from("insurance_requests").select("status,request_type").eq("id", body.id).single();
         const allowedTransitions: Record<string, string> = {
           broker_quoting: "awaiting_admin_quote_confirmation",
           quote_confirmed_issue_application: "stamping",
           awaiting_policy: "payment_pending",
           receipt_pending: "completed"
         };
+        if (current?.status === "awaiting_policy" && body.record.status === "completed") {
+          allowedTransitions.awaiting_policy = "completed";
+        }
         if (body.record.status && allowedTransitions[current?.status] !== body.record.status) {
           return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
         }
@@ -320,6 +324,7 @@ Deno.serve(async (req) => {
           payment_pending: "policy_url",
           completed: "receipt_url"
         };
+        if (current?.request_type === "amendment") requiredFile.stamping = "amendment_files";
         if (body.record.status && requiredFile[body.record.status] && !body.record[requiredFile[body.record.status]]) {
           return json({ error: "INSURANCE_FILE_REQUIRED" }, 400);
         }
