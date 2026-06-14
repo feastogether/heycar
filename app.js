@@ -28,6 +28,7 @@
     serviceSearch: "",
     serviceTypeFilter: "",
     loanStatusFilter: "",
+    messageReadFilter: "unread",
     storageFiles: [],
     storageUsedBytes: 0,
     storageQuotaBytes: 1024 * 1024 * 1024,
@@ -61,7 +62,8 @@
     "admin_users",
     "vehicle_loans",
     "vehicle_service_records",
-    "feedbacks"
+    "feedbacks",
+    "driver_links"
   ];
 
   const insuranceStatuses = [
@@ -99,6 +101,7 @@
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
     ,messagesCenter: "M4 5h16v12H7l-3 3V5Zm4 4h8m-8 4h5"
     ,feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
+    ,links: "M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"
   };
 
   const seed = {
@@ -126,7 +129,8 @@
     admin_users: [],
     vehicle_loans: [],
     vehicle_service_records: [],
-    feedbacks: []
+    feedbacks: [],
+    driver_links: []
   };
 
   function uid() {
@@ -627,6 +631,7 @@
     const pendingMaint = mine("maintenance_notifications").filter((x) => x.status === "pending").length;
     const pendingPay = mine("payment_notices").filter((x) => x.status === "pending").length;
     const pendingMsg = mine("personal_messages").filter((x) => x.status === "pending").length;
+    const showLinkCenter = (state.data.driver_links || []).length > 0;
 
     if (state.view === "home") {
       layout(`
@@ -636,6 +641,7 @@
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${feature("payments", "費用管理", "費用與款項通知", pendingPay)}
           ${feature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
+          ${showLinkCenter ? feature("links", "連結中心", "新進司機群組與常用連結", 0) : ""}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
           ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
           ${feature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
@@ -651,6 +657,7 @@
       payments: () => driverTaskList("payment_notices", "費用管理"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       feedback: driverFeedback,
+      links: driverLinkCenter,
       emergency: driverEmergency,
       broadcast: driverBroadcast,
       flights: driverFlights,
@@ -733,9 +740,17 @@
   function driverMessagesCenter() {
     const announcements = visibleAnnouncements().map((item) => ({ ...item, message_kind: "公告" }));
     const personal = mine("personal_messages").map((item) => ({ ...item, message_kind: "私人訊息" }));
-    const items = [...announcements, ...personal].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    const allItems = [...announcements, ...personal].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    const items = allItems.filter((item) => {
+      const isRead = item.message_kind === "公告" ? isAnnouncementRead(item.id) : item.status !== "pending";
+      return state.messageReadFilter === "read" ? isRead : !isRead;
+    });
     return `
       ${pageHeader("訊息中心")}
+      <div class="message-tabs">
+        <button class="filter-btn ${state.messageReadFilter === "unread" ? "active" : ""}" data-message-filter="unread">未閱讀</button>
+        <button class="filter-btn ${state.messageReadFilter === "read" ? "active" : ""}" data-message-filter="read">已閱讀</button>
+      </div>
       <div class="message-center-list">
         ${items.length ? items.map((item) => {
           const isAnnouncement = item.message_kind === "公告";
@@ -747,9 +762,19 @@
             ${isAnnouncement && !isRead ? `<button class="primary-btn" data-read-ann="${item.id}">標記已讀</button>` : ""}
             ${!isAnnouncement && item.status === "pending" ? `<button class="primary-btn" data-task-status="personal_messages:${item.id}:completed">完成</button>` : statusBadge(item.status || "read")}
           </article>`;
-        }).join("") : `<div class="empty">目前沒有訊息</div>`}
+        }).join("") : `<div class="empty">${state.messageReadFilter === "read" ? "目前沒有已閱讀訊息" : "目前沒有未閱讀訊息"}</div>`}
       </div>
     `;
+  }
+
+  function driverLinkCenter() {
+    const links = state.data.driver_links || [];
+    return `${pageHeader("連結中心")}<div class="link-center-grid">${links.length ? links.map((item) => `
+      <a class="link-center-item" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
+        <span class="link-center-icon">${iconSvg(featureIcons.links)}</span>
+        <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.description || "點選開啟連結")}</small></span>
+        <b>開啟</b>
+      </a>`).join("") : `<div class="empty">目前沒有可用連結</div>`}</div>`;
   }
 
   function driverFeedback() {
@@ -1210,7 +1235,8 @@
     payments: "費用管理",
     feedbacks: "意見反饋",
     marquee: "跑馬燈通知",
-    emergencyEvents: "緊急事件"
+    emergencyEvents: "緊急事件",
+    driverLinks: "連結管理"
   };
 
   const adminNavDepartments = [
@@ -1218,7 +1244,7 @@
     ["禮賓司機", ["drivers", "recruitmentDocuments", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
-    ["系統管理", ["adminUsers", "storage"]]
+    ["系統管理", ["adminUsers", "driverLinks", "storage"]]
   ];
 
   function groupedAdminNav(nav) {
@@ -1243,6 +1269,7 @@
       ["insuranceCenter", "保險中心", "🛡️", "insurance"],
       ["insurancePartners", "廠商管理", "🏢", "insurance"],
       ["storage", "儲存空間", "💾"],
+      ["driverLinks", "連結管理", "🔗", "messages"],
       ["calendar", "共同行事曆", "📅"],
       ["maintenanceNotifications", "保養通知", "🔔", "service_records"],
       ["announcements", "公告管理", "📢", "messages"],
@@ -1271,7 +1298,8 @@
       feedbacks: adminFeedbacks,
       calendar: () => renderCalendar(true),
       marquee: adminMarquee,
-      emergencyEvents: adminEmergencyEvents
+      emergencyEvents: adminEmergencyEvents,
+      driverLinks: adminDriverLinks
     }[state.adminView]();
 
     layout(`
@@ -1566,6 +1594,7 @@
       calendarEvent: ["行程", "calendar_events", calendarEventForm],
       marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
+      driverLink: ["連結", "driver_links", driverLinkForm],
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
       insuranceRequest: ["保險需求", "insurance_requests", insuranceRequestForm],
       insuranceAmendmentRequest: ["批改需求", "insurance_requests", insuranceAmendmentRequestForm],
@@ -1705,6 +1734,7 @@
     }
     if (tableName === "marquee_messages") record.active = record.active === "true";
     if (tableName === "emergency_events") record.active = record.active === "true";
+    if (tableName === "driver_links") record.active = record.active === "true";
     if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
     if (tableName === "maintenance_records") {
       record.cost = Number(record.cost || 0);
@@ -1780,6 +1810,15 @@
   function attachmentLink(item) {
     if (!item?.attachment_url) return "";
     return `<div class="attachment-link"><button data-preview-file="${escapeHtml(item.attachment_url)}" data-preview-name="${escapeHtml(item.attachment_name || "附件")}" data-preview-type="">📎 ${escapeHtml(item.attachment_name || "查看附件")}</button></div>`;
+  }
+
+  function adminDriverLinks() {
+    return `<div class="section-head"><div><h2>連結管理</h2><small>新進司機入隊後三天內可查看</small></div><button class="primary-btn" data-modal="driverLink">新增連結</button></div>
+      ${table(["名稱", "說明", "連結", "狀態", "操作"], (state.data.driver_links || []).map((item) => [
+        item.name, item.description || "-", `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">開啟連結</a>`,
+        item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
+        rowActions("driverLink", "driver_links", item.id)
+      ]))}`;
   }
 
   function multiAttachmentField(item, name, label) {
@@ -2075,6 +2114,13 @@
       + select("assigned_insurance_company", "指定保險公司", item.assigned_insurance_company || "", [["", "請選擇"], ["富邦", "富邦"], ["華南", "華南"], ["國泰", "國泰"], ["新安東京", "新安東京"]])
       + text("insurance_notes", "保險備註", item.insurance_notes)
       + select("status", "案件進度", item.status || "broker_quoting", insuranceStatuses);
+  }
+
+  function driverLinkForm(item) {
+    return input("name", "連結名稱", item.name, "text", true)
+      + input("url", "連結網址", item.url, "url", true)
+      + text("description", "說明", item.description)
+      + checkbox("active", "啟用連結", item.active !== false);
   }
 
   function insuranceAmendmentRequestForm(item) {
@@ -2525,16 +2571,22 @@
       if (!isAnnouncementRead(target.dataset.readAnn)) {
         await insert("announcement_reads", { announcement_id: target.dataset.readAnn, driver_id: state.user.id });
       }
+      if (state.view === "messagesCenter") state.messageReadFilter = "read";
       render();
     }
     if (target.dataset.taskStatus) {
       const [tableName, id, status] = target.dataset.taskStatus.split(":");
       await update(tableName, id, { status });
+      if (state.view === "messagesCenter" && tableName === "personal_messages" && status === "completed") state.messageReadFilter = "read";
       render();
     }
     if (target.dataset.insuranceStatus) {
       const [id, status] = target.dataset.insuranceStatus.split(":");
       await update("insurance_requests", id, { status });
+      render();
+    }
+    if (target.dataset.messageFilter) {
+      state.messageReadFilter = target.dataset.messageFilter;
       render();
     }
     if (target.dataset.loanAction) {

@@ -1660,7 +1660,18 @@ tr:last-child td { border-bottom: 0; }
   }
 }
 
+.message-tabs { display: flex; gap: 8px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+.link-center-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.link-center-item { display: grid; grid-template-columns: 44px 1fr auto; align-items: center; gap: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
+.link-center-item:hover { border-color: var(--brand); background: #fffafa; }
+.link-center-item > span:nth-child(2) { display: grid; gap: 3px; min-width: 0; }
+.link-center-item small { color: var(--muted); }
+.link-center-item b { color: var(--brand); font-size: 13px; }
+.link-center-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 8px; background: #f1f5f9; color: var(--brand); }
+.link-center-icon svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+
 @media (max-width: 700px) {
+  .link-center-grid { grid-template-columns: 1fr; }
   .insurance-pipeline { display: flex; overflow-x: auto; gap: 7px; padding-bottom: 8px; }
   .pipeline-step { flex: 0 0 145px; grid-template-columns: 24px 1fr auto; min-height: 48px; }
   .insurance-row-main { grid-template-columns: 1fr auto; gap: 8px; }

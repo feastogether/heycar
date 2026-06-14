@@ -11,7 +11,7 @@ const tables = [
   "drivers", "vehicles", "maintenance_records", "announcements", "announcement_reads",
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
-  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks"
+  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -76,6 +76,8 @@ async function loadDriverData(driverId: string) {
   const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
   result.drivers = [driver];
   const fleet = driver.fleet_name || "";
+  const onboardAt = driver.onboard_date ? new Date(`${driver.onboard_date}T00:00:00+08:00`).getTime() : 0;
+  const canSeeLinks = Boolean(onboardAt && Date.now() < onboardAt + 4 * 24 * 60 * 60 * 1000);
   const queries = await Promise.all([
     db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region"),
     db.from("announcements").select("*").in("target_fleet", ["全部車隊", fleet]),
@@ -86,11 +88,12 @@ async function loadDriverData(driverId: string) {
     db.from("calendar_events").select("*").eq("fleet_name", fleet),
     db.from("marquee_messages").select("*").eq("active", true),
     db.from("emergency_events").select("*").eq("active", true),
-    db.from("feedbacks").select("*").eq("driver_id", driverId)
+    db.from("feedbacks").select("*").eq("driver_id", driverId),
+    canSeeLinks ? db.from("driver_links").select("*").eq("active", true) : Promise.resolve({ data: [], error: null })
   ]);
   const names = [
     "vehicles", "announcements", "announcement_reads", "maintenance_notifications",
-    "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks"
+    "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks", "driver_links"
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;
@@ -158,7 +161,8 @@ const tablePermission: Record<string, string> = {
   feedbacks: "messages",
   payment_notices: "finance",
   insurance_partners: "insurance",
-  insurance_requests: "insurance"
+  insurance_requests: "insurance",
+  driver_links: "messages"
 };
 
 async function loadPartnerData(partnerId: string) {
