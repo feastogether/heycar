@@ -760,7 +760,7 @@
             <div><strong>${escapeHtml(item.title || "私人訊息")}</strong><p>${escapeHtml(item.content || "")}</p>${attachmentLink(item)}</div>
             <time>${fmtDate(item.created_at)}</time>
             ${isAnnouncement && !isRead ? `<button class="primary-btn" data-read-ann="${item.id}">標記已讀</button>` : ""}
-            ${!isAnnouncement && item.status === "pending" ? `<button class="primary-btn" data-task-status="personal_messages:${item.id}:completed">完成</button>` : statusBadge(item.status || "read")}
+            ${!isAnnouncement && item.status === "pending" ? `<button class="primary-btn" data-task-status="personal_messages:${item.id}:completed">標記已讀</button>` : statusBadge(item.status === "completed" ? "read" : item.status || "read")}
           </article>`;
         }).join("") : `<div class="empty">${state.messageReadFilter === "read" ? "目前沒有已閱讀訊息" : "目前沒有未閱讀訊息"}</div>`}
       </div>
