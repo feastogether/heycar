@@ -1080,7 +1080,6 @@
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
     layout(`
       <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · ${state.partner.partner_type === "broker" ? "保經作業" : "車商案件"}</small></div><button class="ghost-btn" data-action="refresh-insurance">重新整理</button></div>
-      ${state.partner.partner_type === "dealer" ? dealerVehicleOverview(requests) : ""}
       ${insuranceControlCenter(requests, false)}
     `);
   }
@@ -1353,18 +1352,24 @@
     const items = [...(state.data.vehicle_loans || [])]
       .filter((item) => !state.loanStatusFilter || item.status === state.loanStatusFilter)
       .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
+    const loanStatuses = [["", "全部"], ["pending_approval", "待核准"], ["approved", "已核准／借用中"], ["return_pending", "待確認還車"], ["completed", "已結案"]];
     return `
-      <div class="section-head"><div><h2>車輛租借</h2><small>登入人員：${escapeHtml(state.adminProfile?.name || "管理員")}</small></div><button class="primary-btn" data-modal="vehicleLoan">新增借車登記</button></div>
-      <div class="compact-filter-bar">${["", "預約", "使用中", "已歸還", "取消"].map((value) => `<button class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${value || "全部"}</button>`).join("")}</div>
+      <div class="section-head"><div><h2>車輛租借</h2><small>登入人員：${escapeHtml(state.adminProfile?.name || "管理員")}</small></div><button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div>
+      <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
       <div class="loan-list">
         ${items.length ? items.map((item) => `<article class="loan-row">
           <div class="plate-chip">${escapeHtml(item.plate_no)}</div>
           <div><small>登記人員</small><strong>${escapeHtml(item.requested_by_name)}</strong></div>
           <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
-          <div><small>還車時間</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+          <div><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+          <div><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
           <div><small>用途</small><strong>${escapeHtml(item.purpose)}</strong></div>
-          ${statusBadge(item.status === "已歸還" ? "completed" : item.status === "取消" ? "returned" : "pending")}
-          ${rowActions("vehicleLoan", "vehicle_loans", item.id)}
+          <span class="status ${item.status === "completed" ? "done" : item.status === "return_pending" ? "returned" : "pending"}">${escapeHtml(loanStatuses.find(([value]) => value === item.status)?.[1] || item.status)}</span>
+          <div class="actions">
+            ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">同意借車</button>` : ""}
+            ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">登記還車</button>` : ""}
+            ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">確認並結案</button>` : ""}
+          </div>
         </article>`).join("") : `<div class="empty">目前沒有借車紀錄</div>`}
       </div>
     `;
@@ -1540,6 +1545,7 @@
       driver: ["駕駛", "drivers", driverForm],
       vehicle: ["車輛", "vehicles", vehicleForm],
       vehicleLoan: ["借車登記", "vehicle_loans", vehicleLoanForm],
+      vehicleReturn: ["登記還車", "vehicle_loans", vehicleReturnForm],
       serviceRecord: ["車輛履歷", "vehicle_service_records", serviceRecordForm],
       feedback: ["意見反饋", "feedbacks", feedbackForm],
       feedbackReply: ["反饋回覆", "feedbacks", feedbackReplyForm],
@@ -1646,6 +1652,8 @@
     if (tableName === "vehicle_loans") {
       record.vehicle_id = record.vehicle_id || null;
       record.return_at = record.return_at || null;
+      record.actual_return_at = record.actual_return_at || null;
+      record.status = record.status || "pending_approval";
     }
     if (tableName === "vehicle_service_records") {
       record.vehicle_id = record.vehicle_id || null;
@@ -1919,10 +1927,14 @@
   function vehicleLoanForm(item) {
     return vehiclePlatePicker(item)
       + input("borrow_at", "借車時間", item.borrow_at ? String(item.borrow_at).slice(0, 16) : String(now()).slice(0, 16), "datetime-local", true)
-      + input("return_at", "預計／實際還車時間", item.return_at ? String(item.return_at).slice(0, 16) : "", "datetime-local")
+      + input("return_at", "預計還車時間", item.return_at ? String(item.return_at).slice(0, 16) : "", "datetime-local", true)
       + select("purpose", "用途", item.purpose || "公務使用", [["個人借用", "個人借用"], ["公務使用", "公務使用"], ["車輛維修", "車輛維修"], ["外部單位", "外部單位"]])
-      + select("status", "狀態", item.status || "使用中", [["預約", "預約"], ["使用中", "使用中"], ["已歸還", "已歸還"], ["取消", "取消"]])
       + text("notes", "備註", item.notes);
+  }
+
+  function vehicleReturnForm(item) {
+    return `<div class="field full"><strong>${escapeHtml(item.plate_no || "")}</strong><small>請確認實際還車時間後送出。</small></div>`
+      + input("actual_return_at", "實際還車時間", String(now()).slice(0, 16), "datetime-local", true);
   }
 
   function serviceRecordForm(item) {
@@ -2478,6 +2490,13 @@
     if (target.dataset.insuranceStatus) {
       const [id, status] = target.dataset.insuranceStatus.split(":");
       await update("insurance_requests", id, { status });
+      render();
+    }
+    if (target.dataset.loanAction) {
+      const [id, action] = target.dataset.loanAction.split(":");
+      await update("vehicle_loans", id, action === "approve"
+        ? { status: "approved", approved_at: now() }
+        : { status: "completed", closed_at: now() });
       render();
     }
   });

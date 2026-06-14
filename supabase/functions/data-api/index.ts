@@ -113,11 +113,14 @@ async function loadAdminData(session: Record<string, unknown>) {
     }
     const { data, error } = await db.from(table).select("*");
     if (error) throw error;
+    const visibleData = table === "vehicle_loans" && !session.is_super_admin
+      ? (data || []).filter((item) => item.requested_by_admin_id === session.admin_user_id)
+      : data || [];
     result[table] = table === "insurance_partners"
       ? (data || []).map(({ login_code_hash: _hash, ...item }) => item)
       : table === "admin_users"
       ? (session.is_super_admin ? (data || []).map(({ login_code_hash: _hash, ...item }) => item) : [])
-      : data || [];
+      : visibleData;
   }
   let adminProfile = {
     id: session.admin_user_id || null,
@@ -261,9 +264,24 @@ Deno.serve(async (req) => {
       if (permission && !(await adminCan(session, permission))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       }
-      if (body.table === "vehicle_loans" && body.action === "insert") {
-        body.record.requested_by_admin_id = session.admin_user_id || null;
-        body.record.requested_by_name = session.admin_name || "最高管理員";
+      if (body.table === "vehicle_loans" && !session.is_super_admin) {
+        if (body.action === "insert") {
+          body.record.requested_by_admin_id = session.admin_user_id;
+          body.record.requested_by_name = session.admin_name || "同仁";
+          body.record.status = "pending_approval";
+        } else if (body.action === "update") {
+          const { data: loan } = await db.from("vehicle_loans").select("*").eq("id", body.id).single();
+          if (!loan || loan.requested_by_admin_id !== session.admin_user_id || loan.status !== "approved") {
+            return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
+          }
+          body.record = {
+            status: "return_pending",
+            actual_return_at: body.record.actual_return_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+        } else {
+          return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
+        }
       }
     }
     if (session.session_type === "partner") {
