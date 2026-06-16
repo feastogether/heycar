@@ -24,6 +24,10 @@ const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: cors });
 
 const phoneDigits = (value: unknown) => String(value || "").replace(/\D/g, "");
+const normalizeLoginCode = (value: unknown) => String(value || "")
+  .replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+  .replace(/\s+/g, "")
+  .trim();
 const phoneMatches = (left: unknown, right: unknown) => {
   const a = phoneDigits(left).replace(/^886/, "0");
   const b = phoneDigits(right).replace(/^886/, "0");
@@ -31,7 +35,7 @@ const phoneMatches = (left: unknown, right: unknown) => {
 };
 
 const hashCode = async (value: unknown) => {
-  const bytes = new TextEncoder().encode(String(value || ""));
+  const bytes = new TextEncoder().encode(normalizeLoginCode(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
@@ -176,7 +180,7 @@ const tablePermission: Record<string, string> = {
 async function loadPartnerData(partnerId: string) {
   const { data: partner, error: partnerError } = await db
     .from("insurance_partners")
-    .select("id,name,partner_type,contact_name,phone,email,active,notes")
+    .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name")
     .eq("id", partnerId)
     .eq("active", true)
     .single();
@@ -196,7 +200,7 @@ async function loadPartnerData(partnerId: string) {
     : requests.data || [];
   result.vehicles = vehicles.data || [];
   if (partner.partner_type === "broker") {
-    const { data: partners, error } = await db.from("insurance_partners").select("id,name,partner_type,contact_name,phone,email,active,notes");
+    const { data: partners, error } = await db.from("insurance_partners").select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name");
     if (error) throw error;
     result.insurance_partners = partners || [];
   } else {
@@ -217,10 +221,11 @@ Deno.serve(async (req) => {
       return json({ ...(await createSession("driver", driver.id)), user: driver });
     }
     if (body.action === "login_admin") {
-      if (adminCode && String(body.code || "") === adminCode) {
+      const loginCode = normalizeLoginCode(body.code);
+      if (adminCode && loginCode === normalizeLoginCode(adminCode)) {
         return json({ ...(await createSession("admin", undefined, { name: "最高管理員", isSuper: true })), admin_profile: { name: "最高管理員", is_super_admin: true, permissions: { all: true } } });
       }
-      const codeHash = await hashCode(body.code);
+      const codeHash = await hashCode(loginCode);
       const { data: adminUser, error } = await db.from("admin_users")
         .select("id,name,active,permissions").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
@@ -231,10 +236,10 @@ Deno.serve(async (req) => {
       });
     }
     if (body.action === "login_partner") {
-      const codeHash = await hashCode(body.code);
+      const codeHash = await hashCode(normalizeLoginCode(body.code));
       const { data: partner, error } = await db
         .from("insurance_partners")
-        .select("id,name,partner_type,contact_name,phone,email,active,notes")
+        .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name")
         .eq("login_code_hash", codeHash)
         .eq("active", true)
         .maybeSingle();

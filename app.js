@@ -585,7 +585,7 @@
     return await storageRequest("upload", { name, type: file.type, plate_no: plateNo, base64 });
   }
 
-  async function uploadDriverDocument(file, driverName = "", documentLabel = "") {
+  async function uploadDriverDocument(file, driverName = "", documentLabel = "", folderKey = "") {
     if (file.size > 10 * 1024 * 1024) throw new Error("駕駛文件不可超過 10 MB");
     const base64 = await new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -594,7 +594,22 @@
       reader.readAsDataURL(file);
     });
     const name = renamedAttachment(file, driverName, documentLabel);
-    return await supabaseStorageRequest("upload", { name, type: file.type, plate_no: driverName || "driver", base64 });
+    const digits = String(folderKey || "").replace(/\D/g, "").slice(-10);
+    const folder = digits ? `driver-documents-${digits}` : "driver-documents";
+    return await supabaseStorageRequest("upload", { name, type: file.type, folder, base64 });
+  }
+
+  async function uploadPartnerLogo(file, partnerName = "") {
+    if (file.size > 3 * 1024 * 1024) throw new Error("Logo 檔案不可超過 3 MB");
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const ext = file.name.includes(".") ? file.name.split(".").pop() : "png";
+    const name = `${partnerName || "partner"} logo.${ext}`;
+    return await supabaseStorageRequest("upload", { name, type: file.type, folder: "partner-logos", base64 });
   }
 
   function render() {
@@ -637,6 +652,7 @@
         <header class="topbar">
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
+            ${state.partner?.logo_url ? `<img class="partner-brand-logo" src="${escapeHtml(state.partner.logo_url)}" alt="${escapeHtml(state.partner.name || "partner")} logo" onerror="this.remove()">` : ""}
             ${state.admin ? `
               <div class="brand-copy">
                 <div class="brand-title">管理後台</div>
@@ -2252,9 +2268,23 @@
       + input("contact_name", "聯絡人", item.contact_name)
       + input("phone", "電話", item.phone, "tel")
       + input("email", "電子信箱", item.email, "email")
-      + input("login_code", item.id ? "更新登入代碼（不修改可留白）" : "登入代碼", "", "password", !item.id)
-      + checkbox("active", "啟用合作單位登入", item.active !== false)
+      + partnerLogoField(item)
+      + input("login_code", item.id ? "登入代碼（留空則不變更）" : "登入代碼", "", "password", !item.id)
+      + checkbox("active", "允許此單位登入", item.active !== false)
       + text("notes", "備註", item.notes);
+  }
+
+  function partnerLogoField(item = {}) {
+    return `<div class="field full attachment-field partner-logo-field">
+      <label>廠商 Logo</label>
+      <input type="hidden" name="logo_url" value="${escapeHtml(item.logo_url || "")}" data-attachment-url>
+      <input type="hidden" name="logo_name" value="${escapeHtml(item.logo_name || "")}" data-attachment-name>
+      <div class="attachment-upload-row">
+        ${item.logo_url ? `<img class="partner-logo-preview" src="${escapeHtml(item.logo_url)}" alt="partner logo" onerror="this.remove()">` : ""}
+        <input type="file" accept="image/*" data-attachment-upload data-partner-logo-upload data-document-label="廠商 Logo">
+        <span data-attachment-status>${item.logo_url ? `已上傳：${escapeHtml(item.logo_name || "Logo")}` : "尚未上傳 Logo"}</span>
+      </div>
+    </div>`;
   }
 
   function insuranceRequestForm(item) {
@@ -2868,9 +2898,13 @@
         if (status) status.textContent = "檔案上傳中...";
         const form = field?.closest("form");
         const ownerLabel = form?.querySelector('[name="plate_no"]')?.value || form?.querySelector('[name="name"]')?.value || "";
+        const driverFolderKey = form?.querySelector('[name="phone"]')?.value || form?.querySelector('[name="id"]')?.value || ownerLabel;
         const isDriverDocument = Boolean(attachmentInput.dataset.driverDocument);
-        const uploaded = isDriverDocument
-          ? await uploadDriverDocument(file, ownerLabel, attachmentInput.dataset.documentLabel || "")
+        const isPartnerLogo = attachmentInput.dataset.partnerLogoUpload !== undefined;
+        const uploaded = isPartnerLogo
+          ? await uploadPartnerLogo(file, ownerLabel)
+          : isDriverDocument
+          ? await uploadDriverDocument(file, ownerLabel, attachmentInput.dataset.documentLabel || "", driverFolderKey)
           : await uploadAttachment(file, ownerLabel, attachmentInput.dataset.documentLabel || "");
         const url = typeof uploaded === "string" ? uploaded : uploaded.url;
         const name = typeof uploaded === "string" ? file.name : uploaded.name;

@@ -116,6 +116,14 @@ a { text-decoration: none; }
 }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .brand img { height: 36px; width: auto; display: block; }
+.brand .partner-brand-logo {
+  max-width: 104px;
+  height: 34px;
+  object-fit: contain;
+  padding-left: 12px;
+  margin-left: 4px;
+  border-left: 1px solid var(--line);
+}
 .brand-copy { display: grid; gap: 2px; min-width: 0; }
 .brand-title { font-weight: 900; color: var(--ink); font-size: 15px; white-space: nowrap; }
 .brand-subtitle { color: var(--muted); font-size: 11px; font-weight: 700; }
@@ -1330,6 +1338,18 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .single-driver-picker .driver-picker-option:has(input:checked) { box-shadow: inset 0 0 0 1px #93c5aa; }
 .attachment-upload-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; background: #fbfdff; }
 .attachment-upload-row span { color: var(--muted); font-size: 12px; font-weight: 700; }
+.partner-logo-field .attachment-upload-row {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+.partner-logo-preview {
+  width: 72px;
+  height: 44px;
+  object-fit: contain;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 6px;
+}
 .attachment-link { margin-top: 10px; }
 .attachment-link a { display: inline-flex; padding: 7px 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--blue); background: #f8fafc; font-size: 13px; font-weight: 800; }
 .emergency-intro { margin-bottom: 14px; padding: 13px 16px; border-left: 4px solid var(--brand); background: #fff7f6; color: var(--ink); font-weight: 700; }

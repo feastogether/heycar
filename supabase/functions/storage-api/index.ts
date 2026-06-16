@@ -6,6 +6,7 @@ const cors = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Content-Type": "application/json"
 };
+
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: cors });
 const db = createClient(
   Deno.env.get("SUPABASE_URL") || "",
@@ -13,6 +14,21 @@ const db = createClient(
 );
 const bucket = "attachments";
 const quotaBytes = Number(Deno.env.get("STORAGE_QUOTA_BYTES") || 1024 * 1024 * 1024);
+
+const extensionOf = (name: string) => {
+  const match = name.match(/\.([A-Za-z0-9]{1,8})$/);
+  return match ? `.${match[1]}` : "";
+};
+
+const safeStorageSegment = (value: unknown, fallback: string, max = 120) => {
+  const cleaned = String(value || "")
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, max);
+  return cleaned || fallback;
+};
 
 async function getSession(req: Request) {
   const token = req.headers.get("x-afide-session") || "";
@@ -56,16 +72,20 @@ Deno.serve(async (req) => {
     if (body.action === "upload") {
       const bytes = Uint8Array.from(atob(String(body.base64 || "")), (char) => char.charCodeAt(0));
       if (!bytes.length || bytes.length > 10 * 1024 * 1024) return json({ error: "INVALID_FILE_SIZE" }, 400);
-      const safeName = String(body.name || "attachment").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
-      const plate = String(body.plate_no || "其他").replace(/[^\p{L}\p{N}-]+/gu, "_").slice(0, 40);
-      const path = `${plate}/${crypto.randomUUID()}-${safeName}`;
+
+      const originalName = String(body.name || "attachment").replace(/[\\/:*?"<>|]+/g, "_").slice(0, 180);
+      const ext = extensionOf(originalName);
+      const safeName = safeStorageSegment(originalName, `attachment${ext}`, 150);
+      const folder = safeStorageSegment(body.folder || body.plate_no || "attachments", "attachments", 60);
+      const path = `${folder}/${crypto.randomUUID()}-${safeName}`;
+
       const { error } = await db.storage.from(bucket).upload(path, bytes, {
         contentType: String(body.type || "application/octet-stream"),
         upsert: false
       });
       if (error) throw error;
       const url = db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
-      return json({ path, name: safeName, url });
+      return json({ path, name: originalName, url });
     }
 
     if (session.session_type !== "admin") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
