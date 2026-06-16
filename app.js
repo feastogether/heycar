@@ -7,6 +7,7 @@
   const storageApiUrl = location.hostname === "heycar.airvan.workers.dev"
     ? "/api/storage"
     : cfg.STORAGE_API_URL || `${cfg.SUPABASE_URL}/functions/v1/storage-api`;
+  const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
   const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
   const app = document.getElementById("app");
@@ -234,6 +235,26 @@
       result = { error: `Storage service returned an invalid response (${response.status}). Please reload and try again.` };
     }
     if (!response.ok) throw new Error(result.error || "儲存空間服務連線失敗");
+    return result;
+  }
+
+  async function supabaseStorageRequest(action, payload = {}) {
+    const response = await fetch(supabaseStorageApiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(state.apiSession ? { "x-afide-session": state.apiSession } : {})
+      },
+      body: JSON.stringify({ action, ...payload })
+    });
+    const responseText = await response.text();
+    let result;
+    try {
+      result = JSON.parse(responseText);
+    } catch {
+      result = { error: `Supabase Storage returned an invalid response (${response.status}).` };
+    }
+    if (!response.ok) throw new Error(result.error || "Supabase Storage 上傳失敗");
     return result;
   }
 
@@ -489,6 +510,61 @@
     return `${cleanPlate} ${cleanLabel}${rocYear()}${extension}`;
   }
 
+  function parseLicenseExpiryFromText(text) {
+    const normalized = String(text || "").replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0));
+    const patterns = [
+      /(?:有效|期限|至|到期|有效日期|駕照有效期限)[^\d]{0,12}(\d{2,3})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/i,
+      /(?:有效|期限|至|到期|有效日期|駕照有效期限)[^\d]{0,12}(\d{4})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/i,
+      /(\d{2,3})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/,
+      /(\d{4})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/
+    ];
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (!match) continue;
+      let year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      if (year < 1911) year += 1911;
+      if (year < 1950 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) continue;
+      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    }
+    return "";
+  }
+
+  async function runDriverLicenseOcr(file, field) {
+    if (!window.Tesseract || !file?.type?.startsWith("image/")) return;
+    const form = field?.closest("form");
+    const status = field?.querySelector("[data-attachment-status]");
+    try {
+      if (status) status.textContent = "駕照辨識中，請稍候...";
+      const result = await window.Tesseract.recognize(file, "chi_tra+eng", {
+        logger: (progress) => {
+          if (status && progress?.status === "recognizing text") {
+            status.textContent = `駕照辨識中 ${Math.round((progress.progress || 0) * 100)}%`;
+          }
+        }
+      });
+      const text = result?.data?.text || "";
+      const expiry = parseLicenseExpiryFromText(text);
+      const expiryInput = form?.querySelector('[name="license_expiry"]');
+      const textInput = form?.querySelector('[name="license_ocr_text"]');
+      const checkedInput = form?.querySelector('[name="license_ocr_checked_at"]');
+      const confidenceInput = form?.querySelector('[name="license_ocr_confidence"]');
+      if (textInput) textInput.value = text;
+      if (checkedInput) checkedInput.value = now();
+      if (confidenceInput) confidenceInput.value = String(Math.round(Number(result?.data?.confidence || 0)));
+      if (expiry && expiryInput) {
+        expiryInput.value = expiry;
+        if (status) status.textContent = `已上傳，OCR 辨識到期日：${expiry}`;
+      } else if (status) {
+        status.textContent = "已上傳，OCR 未辨識到到期日，請手動填寫。";
+      }
+    } catch (error) {
+      if (status) status.textContent = "已上傳，OCR 辨識失敗，請手動填寫。";
+      console.warn("Driver license OCR failed", error);
+    }
+  }
+
   async function uploadAttachment(file, plateNo = "", documentLabel = "") {
     if (file.size > 10 * 1024 * 1024) throw new Error("附件不可超過 10 MB");
     if (!hasSupabase) {
@@ -507,6 +583,18 @@
     });
     const name = renamedAttachment(file, plateNo, documentLabel);
     return await storageRequest("upload", { name, type: file.type, plate_no: plateNo, base64 });
+  }
+
+  async function uploadDriverDocument(file, driverName = "", documentLabel = "") {
+    if (file.size > 10 * 1024 * 1024) throw new Error("駕駛文件不可超過 10 MB");
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const name = renamedAttachment(file, driverName, documentLabel);
+    return await supabaseStorageRequest("upload", { name, type: file.type, plate_no: driverName || "driver", base64 });
   }
 
   function render() {
@@ -1851,7 +1939,7 @@
       <input type="hidden" name="${prefix}_url" value="${escapeHtml(item?.[`${prefix}_url`] || "")}" data-attachment-url>
       <input type="hidden" name="${prefix}_name" value="${escapeHtml(item?.[`${prefix}_name`] || "")}" data-attachment-name>
       <div class="attachment-upload-row">
-        <input type="file" data-attachment-upload data-document-label="${escapeHtml(label)}">
+        <input type="file" data-attachment-upload data-driver-document="${prefix}" data-document-label="${escapeHtml(label)}">
         <span data-attachment-status>${item?.[`${prefix}_url`] ? `已上傳：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "尚未上傳"}</span>
       </div>
       ${item?.[`${prefix}_url`] ? `<div class="attachment-link"><button type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看${label}</button></div>` : ""}
@@ -1960,6 +2048,9 @@
       ${driverDocumentField(d, "license_file", "駕照")}
       ${driverDocumentField(d, "police_clearance", "良民證")}
       ${driverDocumentField(d, "accident_free", "無肇事紀錄")}
+      <input type="hidden" name="license_ocr_text" value="${escapeHtml(d.license_ocr_text || "")}">
+      <input type="hidden" name="license_ocr_checked_at" value="${escapeHtml(d.license_ocr_checked_at || "")}">
+      <input type="hidden" name="license_ocr_confidence" value="${escapeHtml(d.license_ocr_confidence || "")}">
       <div class="form-section-title field full">聯絡與個人資料</div>
       ${input("residence_city", "居住區", d.residence_city)}
       ${input("residential_address", "聯繫地址", d.residential_address)}
@@ -2777,12 +2868,16 @@
         if (status) status.textContent = "檔案上傳中...";
         const form = field?.closest("form");
         const ownerLabel = form?.querySelector('[name="plate_no"]')?.value || form?.querySelector('[name="name"]')?.value || "";
-        const uploaded = await uploadAttachment(file, ownerLabel, attachmentInput.dataset.documentLabel || "");
+        const isDriverDocument = Boolean(attachmentInput.dataset.driverDocument);
+        const uploaded = isDriverDocument
+          ? await uploadDriverDocument(file, ownerLabel, attachmentInput.dataset.documentLabel || "")
+          : await uploadAttachment(file, ownerLabel, attachmentInput.dataset.documentLabel || "");
         const url = typeof uploaded === "string" ? uploaded : uploaded.url;
         const name = typeof uploaded === "string" ? file.name : uploaded.name;
         field.querySelector("[data-attachment-url]").value = url;
         field.querySelector("[data-attachment-name]").value = name;
         if (status) status.textContent = `已附加：${name}`;
+        if (attachmentInput.dataset.driverDocument === "license_file") await runDriverLicenseOcr(file, field);
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
         alert(error.message || error);
