@@ -1029,6 +1029,10 @@ button.calendar-pill:hover { filter: brightness(.96); }
   flex-shrink: 0;
   width: 64px;
   height: 64px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
 }
 .driver-photo-stack > * {
   grid-area: 1 / 1;
@@ -1520,6 +1524,23 @@ button.calendar-pill:hover { filter: brightness(.96); }
   margin-top: 7px;
   color: var(--muted);
   font-size: 12px;
+}
+.readonly-badge {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+}
+.fleet-picker-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+}
+.driver-document-field .attachment-upload-row {
+  align-items: center;
 }
 .table-wrap {
   overflow-x: auto;

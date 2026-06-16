@@ -97,7 +97,15 @@ async function loadDriverData(driverId: string) {
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;
-    result[names[index]] = query.data || [];
+    const name = names[index];
+    if (name === "driver_links") {
+      result[name] = (query.data || []).filter((item: Record<string, unknown>) => {
+        const targetFleets = Array.isArray(item.target_fleets) ? item.target_fleets : ["全部車隊"];
+        return targetFleets.includes("全部車隊") || targetFleets.includes(fleet);
+      });
+      return;
+    }
+    result[name] = query.data || [];
   });
   return { data: result, user: driver };
 }

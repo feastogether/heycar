@@ -106,7 +106,7 @@
 
   const seed = {
     drivers: [
-      { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", fleet_name: "亞菲得車隊", employment_type: "全職", driver_status: "未上線", license_expiry: "2027-12-31", notes: "示範司機" }
+      { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", fleet_name: "亞菲得車隊", employment_type: "全職", driver_status: "待上線", license_expiry: "2027-12-31", notes: "示範司機" }
     ],
     vehicles: [
       { id: uid(), plate_no: "ABC-1234", brand: "Toyota", model: "Altis", body_color: "白色", fuel_type: "95", year: "2022", fleet_name: "亞菲得車隊", status: "正常", current_driver_id: "", insurance_company: "示範保險", insurance_expiry: "2027-12-31", last_inspection_date: "", next_inspection_date: "", last_self_inspection_date: "", notes: "示範車輛" }
@@ -334,10 +334,10 @@
     const url = String(driver.photo_url || "").trim();
     const localUrl = `./assets/drivers/${encodeURIComponent(String(driver.name || "").trim())}.jpg`;
     const initial = String(driver.name || "?").trim().slice(0, 1) || "?";
-    return `<span class="driver-photo-stack">
+    return `<button type="button" class="driver-photo-stack" data-photo-preview data-photo-name="${escapeHtml(driver.name || "司機照片")}">
       <img class="driver-avatar" src="${localUrl}" alt="${escapeHtml(driver.name || "driver")}" data-remote-photo="${escapeHtml(url)}" onerror="if(this.dataset.remotePhoto && this.src !== this.dataset.remotePhoto){this.src=this.dataset.remotePhoto;return}this.style.display='none';this.nextElementSibling.style.display='grid'">
       <span class="driver-avatar avatar-fallback" style="display:none">${escapeHtml(initial)}</span>
-    </span>`;
+    </button>`;
   }
 
   function driverVehicle(driverId) {
@@ -353,7 +353,7 @@
           <div class="driver-card-identity">
             <div class="driver-card-title">
               <strong>${escapeHtml(driver.name || "未命名")}</strong>
-              <span class="status ${driver.driver_status === "已退出" ? "returned" : "done"}">${escapeHtml(driver.driver_status || "未上線")}</span>
+              <span class="status ${["已離職", "已退出", "停派中"].includes(driver.driver_status) ? "returned" : "done"}">${escapeHtml(driver.driver_status || "待上線")}</span>
             </div>
             <span>${escapeHtml(driver.phone || "-")}</span>
           </div>
@@ -374,7 +374,7 @@
 
   function driverManagementRows() {
     if (!state.data.drivers.length) return `<div class="empty">目前沒有駕駛資料</div>`;
-    const statusOrder = { "跑趟中": 0, "已上線": 1, "未上線": 2, "已退出": 3 };
+    const statusOrder = { "跑趟中": 0, "待上線": 1, "停派中": 2, "留停中": 3, "已離職": 4, "其他": 5, "未上線": 6, "已上線": 7, "已退出": 8 };
     const drivers = [...state.data.drivers]
       .filter((driver) => state.driverStatusFilter === "全部" || driver.driver_status === state.driverStatusFilter)
       .sort((a, b) => (statusOrder[a.driver_status] ?? 9) - (statusOrder[b.driver_status] ?? 9) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
@@ -386,7 +386,7 @@
           <div>
             <div class="driver-card-title">
               <strong>${escapeHtml(driver.name || "未命名")}</strong>
-              <span class="status ${driver.driver_status === "已退出" ? "returned" : "done"}">${escapeHtml(driver.driver_status || "未上線")}</span>
+              <span class="status ${["已離職", "已退出", "停派中"].includes(driver.driver_status) ? "returned" : "done"}">${escapeHtml(driver.driver_status || "待上線")}</span>
             </div>
             <span>${escapeHtml(driver.phone || "-")}</span>
           </div>
@@ -689,7 +689,7 @@
   }
 
   function driverFleet() {
-    return state.user.fleet_name || "亞菲得車隊";
+    return state.user.fleet_name || fleetNames(false)[0] || "亞菲得車隊";
   }
 
   function visibleAnnouncements() {
@@ -768,7 +768,10 @@
   }
 
   function driverLinkCenter() {
-    const links = state.data.driver_links || [];
+    const links = (state.data.driver_links || []).filter((item) => {
+      const targetFleets = Array.isArray(item.target_fleets) && item.target_fleets.length ? item.target_fleets : ["全部車隊"];
+      return targetFleets.includes("全部車隊") || targetFleets.includes(state.user?.fleet_name || "");
+    });
     return `${pageHeader("連結中心")}<div class="link-center-grid">${links.length ? links.map((item) => `
       <a class="link-center-item" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
         <span class="link-center-icon">${iconSvg(featureIcons.links)}</span>
@@ -1328,7 +1331,7 @@
     return `
       <div class="section-head"><div><h2>招募文件</h2><small>完整填寫後，資料將套印至原始評核表並附加完整明細頁。</small></div><button class="primary-btn" data-action="generate-recruitment-pdf">產出原版評核表 PDF</button></div>
       <form class="panel recruitment-sheet" id="recruitmentSheet">
-        <div class="recruitment-title"><select name="fleet_name"><option>亞菲得車隊</option><option>亞緻車隊</option></select><h3>新司機面訪評核表</h3></div>
+        <div class="recruitment-title"><select name="fleet_name">${fleetNames(false).map((fleet) => `<option value="${escapeHtml(fleet)}">${escapeHtml(fleet)}</option>`).join("")}</select><h3>新司機面訪評核表</h3></div>
         <div class="form-grid">
           ${input("referrer", "推薦人")}${input("interview_date", "面訪日期", today(), "date")}
           ${input("name", "姓名")}${input("national_id", "身分證字號")}${input("gender", "性別")}${input("marital_status", "婚姻狀況")}
@@ -1351,9 +1354,9 @@
   }
 
   function adminDrivers() {
-    const filters = ["全部", "跑趟中", "已上線", "未上線", "已退出"];
+    const filters = ["全部", "跑趟中", "停派中", "待上線", "已離職", "留停中", "其他"];
     const counts = state.data.drivers.reduce((result, driver) => {
-      result[driver.driver_status || "未上線"] = (result[driver.driver_status || "未上線"] || 0) + 1;
+      result[driver.driver_status || "待上線"] = (result[driver.driver_status || "待上線"] || 0) + 1;
       return result;
     }, {});
     return `
@@ -1645,6 +1648,9 @@
           ? driverIds.map((driverId) => driverName(driverId)).join("/")
           : (item?.assigned_driver_names || item?.current_usage || "");
       }
+      if (tableName === "driver_links") {
+        record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
+      }
       try {
         const saved = id
           ? await update(tableName, id, normalizeRecord(tableName, record))
@@ -1667,7 +1673,7 @@
       record.private_trip_count = Number(record.private_trip_count || 0);
       record.child_seat_count = Number(record.child_seat_count || 0);
       record.booster_seat_count = Number(record.booster_seat_count || 0);
-      record.driver_status = record.driver_status || "未上線";
+      record.driver_status = record.driver_status || "待上線";
       record.login_enabled = record.login_enabled === "true";
     }
     if (tableName === "vehicles") {
@@ -1716,12 +1722,17 @@
     if (tableName === "insurance_requests") {
       record.vehicle_id = record.vehicle_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
+      record.insurance_type = record.insurance_type || "批改";
       record.quote_amount = Number(record.quote_amount || 0) || null;
       ["license_files", "amendment_files"].forEach((key) => {
         if (typeof record[key] === "string") {
           try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
         }
       });
+    }
+    if (tableName === "driver_links") {
+      record.active = record.active === "true";
+      record.target_fleets = Array.isArray(record.target_fleets) && record.target_fleets.length ? record.target_fleets : ["全部車隊"];
     }
     if (tableName === "maintenance_notifications") {
       record.driver_id = record.driver_id || null;
@@ -1814,8 +1825,10 @@
 
   function adminDriverLinks() {
     return `<div class="section-head"><div><h2>連結管理</h2><small>新進司機入隊後三天內可查看</small></div><button class="primary-btn" data-modal="driverLink">新增連結</button></div>
-      ${table(["名稱", "說明", "連結", "狀態", "操作"], (state.data.driver_links || []).map((item) => [
-        item.name, item.description || "-", `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">開啟連結</a>`,
+      ${table(["名稱", "說明", "可見車隊", "連結", "狀態", "操作"], (state.data.driver_links || []).map((item) => [
+        item.name, item.description || "-",
+        Array.isArray(item.target_fleets) && item.target_fleets.length ? item.target_fleets.join("、") : "全部車隊",
+        `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">開啟連結</a>`,
         item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
         rowActions("driverLink", "driver_links", item.id)
       ]))}`;
@@ -1828,6 +1841,19 @@
       <input type="hidden" name="${name}" value="${escapeHtml(JSON.stringify(files))}" data-multi-attachment-json>
       <div class="attachment-upload-row"><input type="file" multiple data-multi-attachment-upload data-document-label="${escapeHtml(label)}"><span data-attachment-status>${files.length ? `已附加 ${files.length} 個檔案` : "尚未選擇檔案"}</span></div>
       <div class="attachment-link">${jsonFileLinks(files, label)}</div>
+    </div>`;
+  }
+
+  function driverDocumentField(item, prefix, label) {
+    return `<div class="field full attachment-field driver-document-field">
+      <label>${label}</label>
+      <input type="hidden" name="${prefix}_url" value="${escapeHtml(item?.[`${prefix}_url`] || "")}" data-attachment-url>
+      <input type="hidden" name="${prefix}_name" value="${escapeHtml(item?.[`${prefix}_name`] || "")}" data-attachment-name>
+      <div class="attachment-upload-row">
+        <input type="file" data-attachment-upload data-document-label="${escapeHtml(label)}">
+        <span data-attachment-status>${item?.[`${prefix}_url`] ? `已上傳：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "尚未上傳"}</span>
+      </div>
+      ${item?.[`${prefix}_url`] ? `<div class="attachment-link"><button type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看${label}</button></div>` : ""}
     </div>`;
   }
 
@@ -1867,9 +1893,28 @@
     return select("vehicle_id", "指定車輛", value || "", [["", "請選擇"], ...state.data.vehicles.map((v) => [v.id, vehicleName(v.id)])]);
   }
 
+  function fleetNames(includeAll = false) {
+    const dealerNames = (state.data.insurance_partners || [])
+      .filter((item) => item.partner_type === "dealer" && item.active !== false)
+      .map((item) => String(item.name || "").trim())
+      .filter(Boolean);
+    const names = [...new Set(dealerNames.length ? dealerNames : fleets)];
+    return includeAll ? ["全部車隊", ...names] : names;
+  }
+
   function fleetOptions(name, label, value, includeAll = false) {
-    const options = includeAll ? ["全部車隊", ...fleets] : fleets;
+    const options = fleetNames(includeAll);
     return select(name, label, value || options[0], options.map((fleet) => [fleet, fleet]));
+  }
+
+  function fleetMultiOptions(name, label, selectedValues) {
+    const selected = new Set(Array.isArray(selectedValues) && selectedValues.length ? selectedValues : ["全部車隊"]);
+    return `<div class="field full fleet-picker">
+      <label>${label}</label>
+      <div class="fleet-picker-list">
+        ${fleetNames(true).map((fleet) => `<label class="check-field"><input type="checkbox" name="${name}" value="${escapeHtml(fleet)}" ${selected.has(fleet) ? "checked" : ""}>${escapeHtml(fleet)}</label>`).join("")}
+      </div>
+    </div>`;
   }
 
   function driverForm(d) {
@@ -1890,14 +1935,16 @@
           </div>
         </div>
       </div>
-      ${input("region", "區域", d.region)}
-      ${input("group_name", "編組", d.group_name)}
-      ${select("driver_status", "狀態", d.driver_status || "未上線", [["未上線", "未上線"], ["已上線", "已上線"], ["跑趟中", "跑趟中"], ["已退出", "已退出"]])}
       ${checkbox("login_enabled", "允許此駕駛登入", d.login_enabled !== false)}
       ${input("onboard_date", "入隊時間", formDate(d.onboard_date), "date")}
       ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
       <div class="field"><label>服務時長（自動計算）</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
       ${input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date")}
+      <div class="field"><label>駕照狀態（自動判定）</label><div class="readonly-badge">${expiryDateBadge(d.license_expiry, 30)}</div></div>
+      <div class="form-section-title field full">駕駛檔案存放區</div>
+      ${driverDocumentField(d, "license_file", "駕照")}
+      ${driverDocumentField(d, "police_clearance", "良民證")}
+      ${driverDocumentField(d, "accident_free", "無肇事紀錄")}
       <div class="form-section-title field full">聯絡與個人資料</div>
       ${input("residence_city", "居住區", d.residence_city)}
       ${input("residential_address", "聯繫地址", d.residential_address)}
@@ -1908,8 +1955,11 @@
       ${input("guide_license", "導遊證", d.guide_license)}
       <div class="form-section-title field full">服務與趟次</div>
       ${fleetOptions("fleet_name", "所屬車隊", d.fleet_name)}
+      ${input("region", "區域", d.region)}
+      ${input("group_name", "編組", d.group_name)}
+      ${select("driver_status", "狀態", d.driver_status || "待上線", [["跑趟中", "跑趟中"], ["停派中", "停派中"], ["待上線", "待上線"], ["已離職", "已離職"], ["留停中", "留停中"], ["其他", "其他"]])}
       ${input("service_area", "服務區域", d.service_area)}
-      ${select("service_shift", "服務時段", d.service_shift || "", [["", "未設定"], ["早", "早"], ["中", "中"], ["晚", "晚"], ["早/中", "早/中"], ["中/晚", "中/晚"], ["早/中/晚", "早/中/晚"]])}
+      ${input("service_shift", "服務時段", d.service_shift)}
       ${input("dispatch_time", "排趟時間", d.dispatch_time)}
       ${input("private_trip_count", "私趟數量", d.private_trip_count, "number")}
       ${text("private_trip_notes", "私趟備註", d.private_trip_notes)}
@@ -2061,8 +2111,8 @@
   }
 
   function paymentNoticeForm(p) {
-    return driverOptions(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
-      input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限", formDate(p.due_date), "date") +
+    return searchableDriverOptions(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
+      input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限與發放日期", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
       text("content", "繳費內容", p.content) + attachmentField(p);
   }
@@ -2119,13 +2169,14 @@
   function driverLinkForm(item) {
     return input("name", "連結名稱", item.name, "text", true)
       + input("url", "連結網址", item.url, "url", true)
+      + fleetMultiOptions("target_fleets", "可看見此連結的車隊", item.target_fleets)
       + text("description", "說明", item.description)
       + checkbox("active", "啟用連結", item.active !== false);
   }
 
   function insuranceAmendmentRequestForm(item) {
     const vehicles = state.data.vehicles || [];
-    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="status" value="broker_quoting">
+    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="insurance_type" value="批改"><input type="hidden" name="status" value="broker_quoting">
       <div class="field full insurance-vehicle-picker"><label>車輛</label><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}">${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
       <input type="hidden" name="plate_no"><input type="hidden" name="dealer_partner_id">
       ${select("driver_change_action", "批改項目", item.driver_change_action || "新增駕駛人", [["新增駕駛人", "新增駕駛人"], ["移除駕駛人", "移除駕駛人"]])}
@@ -2474,6 +2525,13 @@
       openFilePreview(target.dataset.previewFile, target.dataset.previewName, target.dataset.previewType);
       return;
     }
+    if (target.dataset.photoPreview !== undefined) {
+      const img = target.querySelector("img");
+      if (img?.src && img.style.display !== "none") {
+        openFilePreview(img.src, `${target.dataset.photoName || "司機"}大頭貼`, "image/unknown");
+      }
+      return;
+    }
     if (target.dataset.action === "logout") {
       state.user = null;
       state.partner = null;
@@ -2692,8 +2750,9 @@
       try {
         attachmentInput.disabled = true;
         if (status) status.textContent = "檔案上傳中...";
-        const plateNo = field?.closest("form")?.querySelector('[name="plate_no"]')?.value || "";
-        const uploaded = await uploadAttachment(file, plateNo, attachmentInput.dataset.documentLabel || "");
+        const form = field?.closest("form");
+        const ownerLabel = form?.querySelector('[name="plate_no"]')?.value || form?.querySelector('[name="name"]')?.value || "";
+        const uploaded = await uploadAttachment(file, ownerLabel, attachmentInput.dataset.documentLabel || "");
         const url = typeof uploaded === "string" ? uploaded : uploaded.url;
         const name = typeof uploaded === "string" ? file.name : uploaded.name;
         field.querySelector("[data-attachment-url]").value = url;
@@ -2717,7 +2776,8 @@
       try {
         multiInput.disabled = true;
         if (status) status.textContent = "檔案上傳中...";
-        const plateNo = field?.closest("form")?.querySelector('[name="plate_no"]')?.value || "";
+        const form = field?.closest("form");
+        const plateNo = form?.querySelector('[name="plate_no"]')?.value || form?.querySelector('[name="name"]')?.value || "";
         for (const file of Array.from(multiInput.files)) {
           const uploaded = await uploadAttachment(file, plateNo, multiInput.dataset.documentLabel || "");
           files.push({ url: uploaded.url || uploaded, name: uploaded.name || file.name, type: file.type });
@@ -2746,6 +2806,8 @@
       if (!preview) return;
       if (preview.tagName === "IMG") {
         preview.src = compressed;
+        preview.style.display = "";
+        if (preview.nextElementSibling) preview.nextElementSibling.style.display = "none";
       } else {
         const img = document.createElement("img");
         img.className = preview.className;
