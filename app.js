@@ -1208,12 +1208,13 @@
     modal.className = "modal-backdrop file-preview-backdrop";
     const encodedUrl = escapeHtml(url);
     const inferredType = String(type || "") || (/\.(png|jpe?g|webp|gif)$/i.test(name || "") ? "image/unknown" : /\.pdf$/i.test(name || "") ? "application/pdf" : "");
+    const previewTitle = inferredType.startsWith("image/") ? "照片預覽" : inferredType.includes("pdf") ? "PDF 預覽" : "檔案預覽";
     const media = inferredType.startsWith("image/")
       ? `<img class="file-preview-media" src="${encodedUrl}" alt="${escapeHtml(name)}">`
       : inferredType.includes("pdf")
       ? `<iframe class="file-preview-frame" src="${encodedUrl}" title="${escapeHtml(name)}"></iframe>`
       : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
-    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head"><h3>${escapeHtml(name || "附件預覽")}</h3><div class="actions"><a class="primary-btn" href="${encodedUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
+    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><a class="primary-btn" href="${encodedUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
     document.body.appendChild(modal);
   }
   function adminCan(permission) {
@@ -1917,6 +1918,20 @@
     </div>`;
   }
 
+  function driverSearchSelect(value, label = "指定駕駛") {
+    return `<div class="field full driver-select-picker">
+      <label>${label}</label>
+      <input type="search" data-driver-select-search placeholder="輸入姓名或手機快速篩選">
+      <select name="driver_id" data-driver-select>
+        <option value="">請選擇駕駛</option>
+        ${state.data.drivers.map((driver) => {
+          const text = `${driver.name || "未命名"} ${driver.phone ? `(${driver.phone})` : ""}`;
+          return `<option value="${driver.id}" ${value === driver.id ? "selected" : ""}>${escapeHtml(text)}</option>`;
+        }).join("")}
+      </select>
+    </div>`;
+  }
+
   function driverForm(d) {
     const vehicle = driverVehicle(d.id);
     return `
@@ -1940,7 +1955,7 @@
       ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
       <div class="field"><label>服務時長（自動計算）</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
       ${input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date")}
-      <div class="field"><label>駕照狀態（自動判定）</label><div class="readonly-badge">${expiryDateBadge(d.license_expiry, 30)}</div></div>
+      <div class="field"><label>駕照狀態（自動判定）</label><div class="readonly-badge">${expiryDateBadge(d.license_expiry, 30)}</div><small>依「駕照到期日」欄位判定，到期前 30 天會反紅；上傳檔案不會自動 OCR 讀取日期。</small></div>
       <div class="form-section-title field full">駕駛檔案存放區</div>
       ${driverDocumentField(d, "license_file", "駕照")}
       ${driverDocumentField(d, "police_clearance", "良民證")}
@@ -2111,7 +2126,7 @@
   }
 
   function paymentNoticeForm(p) {
-    return searchableDriverOptions(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
+    return driverSearchSelect(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
       input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限與發放日期", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
       text("content", "繳費內容", p.content) + attachmentField(p);
@@ -2698,6 +2713,16 @@
       Array.from(selectBox?.options || []).forEach((option, index) => {
         if (!index) return;
         option.hidden = Boolean(query && !String(option.textContent || "").toUpperCase().includes(query));
+      });
+      return;
+    }
+    const driverSelectSearch = e.target.closest("[data-driver-select-search]");
+    if (driverSelectSearch) {
+      const selectBox = driverSelectSearch.closest(".driver-select-picker")?.querySelector("[data-driver-select]");
+      const query = String(driverSelectSearch.value || "").trim().toLowerCase();
+      Array.from(selectBox?.options || []).forEach((option, index) => {
+        if (!index) return;
+        option.hidden = Boolean(query && !String(option.textContent || "").toLowerCase().includes(query));
       });
       return;
     }
