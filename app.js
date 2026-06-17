@@ -64,7 +64,8 @@
     "vehicle_loans",
     "vehicle_service_records",
     "feedbacks",
-    "driver_links"
+    "driver_links",
+    "driver_helper_articles"
   ];
 
   const insuranceStatuses = [
@@ -103,6 +104,7 @@
     ,messagesCenter: "M4 5h16v12H7l-3 3V5Zm4 4h8m-8 4h5"
     ,feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
     ,links: "M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"
+    ,driverHelper: "M5 4h14v15H5V4Zm3 4h8M8 12h8M8 16h5"
   };
 
   const seed = {
@@ -131,7 +133,8 @@
     vehicle_loans: [],
     vehicle_service_records: [],
     feedbacks: [],
-    driver_links: []
+    driver_links: [],
+    driver_helper_articles: []
   };
 
   function uid() {
@@ -383,7 +386,7 @@
           <div><dt>服務區域</dt><dd>${escapeHtml(driver.service_area || driver.region || "-")}</dd></div>
           <div><dt>服務時段</dt><dd>${escapeHtml(driver.service_shift || driver.dispatch_time || "-")}</dd></div>
           <div><dt>年資</dt><dd>${escapeHtml(yearsFrom(driver.onboard_date))}</dd></div>
-          <div><dt>駕照到期日</dt><dd>${expiryDateBadge(driver.license_expiry, 30)}</dd></div>
+          <div><dt>審驗日期</dt><dd>${expiryDateBadge(driver.license_review_date || driver.license_expiry, 30)}</dd></div>
         </dl>
         <div class="driver-card-actions">
           <button class="primary-btn" data-modal="driver" data-id="${driver.id}">查看與編輯</button>
@@ -416,7 +419,7 @@
           <div><dt>服務區域</dt><dd>${escapeHtml(driver.service_area || driver.region || "-")}</dd></div>
           <div><dt>服務時段</dt><dd>${escapeHtml(driver.service_shift || driver.dispatch_time || "-")}</dd></div>
           <div><dt>年資</dt><dd>${escapeHtml(yearsFrom(driver.onboard_date))}</dd></div>
-          <div><dt>駕照到期日</dt><dd>${expiryDateBadge(driver.license_expiry, 30)}</dd></div>
+          <div><dt>審驗日期</dt><dd>${expiryDateBadge(driver.license_review_date || driver.license_expiry, 30)}</dd></div>
         </dl>
         <div class="driver-row-actions">
           <label class="permission-switch" title="控制此駕駛是否可以登入">
@@ -454,6 +457,28 @@
       '"': "&quot;",
       "'": "&#039;"
     }[c]));
+  }
+
+  function sanitizeRichHtml(value) {
+    const template = document.createElement("template");
+    template.innerHTML = String(value || "");
+    const allowedTags = new Set(["P", "BR", "B", "STRONG", "I", "EM", "U", "UL", "OL", "LI", "A", "IMG", "H3", "H4", "SPAN", "DIV"]);
+    template.content.querySelectorAll("*").forEach((node) => {
+      if (!allowedTags.has(node.tagName)) {
+        node.replaceWith(document.createTextNode(node.textContent || ""));
+        return;
+      }
+      [...node.attributes].forEach((attr) => {
+        const name = attr.name.toLowerCase();
+        const keep = ["href", "src", "alt", "target", "rel", "style"].includes(name);
+        if (!keep || /^javascript:/i.test(attr.value)) node.removeAttribute(attr.name);
+      });
+      if (node.tagName === "A") {
+        node.setAttribute("target", "_blank");
+        node.setAttribute("rel", "noreferrer");
+      }
+    });
+    return template.innerHTML;
   }
 
   function fmtDate(value) {
@@ -510,25 +535,51 @@
     return `${cleanPlate} ${cleanLabel}${rocYear()}${extension}`;
   }
 
-  function parseLicenseExpiryFromText(text) {
-    const normalized = String(text || "").replace(/[０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0));
-    const patterns = [
-      /(?:有效|期限|至|到期|有效日期|駕照有效期限)[^\d]{0,12}(\d{2,3})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/i,
-      /(?:有效|期限|至|到期|有效日期|駕照有效期限)[^\d]{0,12}(\d{4})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/i,
-      /(\d{2,3})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/,
-      /(\d{4})[年./-]\s*(\d{1,2})[月./-]\s*(\d{1,2})/
-    ];
-    for (const pattern of patterns) {
-      const match = normalized.match(pattern);
-      if (!match) continue;
-      let year = Number(match[1]);
-      const month = Number(match[2]);
-      const day = Number(match[3]);
-      if (year < 1911) year += 1911;
-      if (year < 1950 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) continue;
-      return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  function normalizeOcrText(text) {
+    return String(text || "")
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+      .replace(/[／.]/g, "/")
+      .replace(/[年月]/g, "/")
+      .replace(/[日:：]/g, ":")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function parseOcrDate(value = "") {
+    const match = String(value).match(/(\d{2,4})\s*[\/-]\s*(\d{1,2})\s*[\/-]\s*(\d{1,2})/);
+    if (!match) return "";
+    let year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (year < 1911) year += 1911;
+    if (year < 1950 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return "";
+    return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  }
+
+  function dateNearLabel(text, labels) {
+    for (const label of labels) {
+      const index = text.indexOf(label);
+      if (index < 0) continue;
+      const chunk = text.slice(index, index + 80);
+      const date = parseOcrDate(chunk);
+      if (date) return date;
     }
     return "";
+  }
+
+  function extractDriverLicenseFields(text) {
+    const normalized = normalizeOcrText(text);
+    const compact = normalized.replace(/\s+/g, "");
+    const nationalId = compact.match(/[A-Z][12]\d{8}/)?.[0] || "";
+    const reviewDate = dateNearLabel(normalized, ["\u5be9\u9a57\u65e5\u671f", "\u5be9\u9a57", "\u5be9\u9a57\u65e5"]);
+    const validUntil = dateNearLabel(normalized, ["\u6709\u6548\u65e5\u671f", "\u6709\u6548\u65e5", "\u6709\u6548\u671f\u9650", "\u6709\u6548"]);
+    const addressMatch = normalized.match(/(?:\u4f4f\u5740|\u5730\u5740)\s*:?\s*([^\u751f\u65e5\u5be9\u9a57\u6709\u6548]{6,80})/);
+    return {
+      nationalId,
+      address: addressMatch ? addressMatch[1].trim() : "",
+      reviewDate,
+      validUntil
+    };
   }
 
   async function runDriverLicenseOcr(file, field) {
@@ -536,29 +587,41 @@
     const form = field?.closest("form");
     const status = field?.querySelector("[data-attachment-status]");
     try {
-      if (status) status.textContent = "駕照辨識中，請稍候...";
+      if (status) status.textContent = "OCR 辨識中...";
       const result = await window.Tesseract.recognize(file, "chi_tra+eng", {
         logger: (progress) => {
           if (status && progress?.status === "recognizing text") {
-            status.textContent = `駕照辨識中 ${Math.round((progress.progress || 0) * 100)}%`;
+            status.textContent = `OCR 辨識中 ${Math.round((progress.progress || 0) * 100)}%`;
           }
         }
       });
       const text = result?.data?.text || "";
-      const expiry = parseLicenseExpiryFromText(text);
-      const expiryInput = form?.querySelector('[name="license_expiry"]');
+      const extracted = extractDriverLicenseFields(text);
+      const nationalIdInput = form?.querySelector('[name="national_id"]');
+      const addressInput = form?.querySelector('[name="residential_address"]');
+      const reviewDateInput = form?.querySelector('[name="license_review_date"]');
+      const validUntilInput = form?.querySelector('[name="license_valid_until"]');
+      const legacyExpiryInput = form?.querySelector('[name="license_expiry"]');
       const textInput = form?.querySelector('[name="license_ocr_text"]');
       const checkedInput = form?.querySelector('[name="license_ocr_checked_at"]');
       const confidenceInput = form?.querySelector('[name="license_ocr_confidence"]');
       if (textInput) textInput.value = text;
       if (checkedInput) checkedInput.value = now();
       if (confidenceInput) confidenceInput.value = String(Math.round(Number(result?.data?.confidence || 0)));
-      if (expiry && expiryInput) {
-        expiryInput.value = expiry;
-        if (status) status.textContent = `已上傳，OCR 辨識到期日：${expiry}`;
-      } else if (status) {
-        status.textContent = "已上傳，OCR 未辨識到到期日，請手動填寫。";
-      }
+      if (extracted.nationalId && nationalIdInput && !nationalIdInput.value) nationalIdInput.value = extracted.nationalId;
+      if (extracted.address && addressInput && !addressInput.value) addressInput.value = extracted.address;
+      if (extracted.reviewDate && reviewDateInput) reviewDateInput.value = extracted.reviewDate;
+      if (extracted.validUntil && validUntilInput) validUntilInput.value = extracted.validUntil;
+      if (extracted.reviewDate && legacyExpiryInput && !legacyExpiryInput.value) legacyExpiryInput.value = extracted.reviewDate;
+      const found = [
+        extracted.nationalId ? "身分證" : "",
+        extracted.address ? "住址" : "",
+        extracted.reviewDate ? "審驗日期" : "",
+        extracted.validUntil ? "有效日期" : ""
+      ].filter(Boolean);
+      if (status) status.textContent = found.length
+        ? `已上傳，OCR 已辨識：${found.join("、")}`
+        : "已上傳，OCR 未辨識到可用欄位，請手動填寫。";
     } catch (error) {
       if (status) status.textContent = "已上傳，OCR 辨識失敗，請手動填寫。";
       console.warn("Driver license OCR failed", error);
@@ -745,6 +808,7 @@
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${feature("payments", "費用管理", "費用與款項通知", pendingPay)}
           ${feature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
+          ${feature("driverHelper", "????", "?????????", 0)}
           ${showLinkCenter ? feature("links", "連結中心", "新進司機群組與常用連結", 0) : ""}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
           ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
@@ -761,6 +825,7 @@
       payments: () => driverTaskList("payment_notices", "費用管理"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       feedback: driverFeedback,
+      driverHelper: driverHelper,
       links: driverLinkCenter,
       emergency: driverEmergency,
       broadcast: driverBroadcast,
@@ -867,6 +932,39 @@
             ${!isAnnouncement && item.status === "pending" ? `<button class="primary-btn" data-task-status="personal_messages:${item.id}:completed">標記已讀</button>` : statusBadge(item.status === "completed" ? "read" : item.status || "read")}
           </article>`;
         }).join("") : `<div class="empty">${state.messageReadFilter === "read" ? "目前沒有已閱讀訊息" : "目前沒有未閱讀訊息"}</div>`}
+      </div>
+    `;
+  }
+
+  function driverHelper() {
+    const articles = (state.data.driver_helper_articles || [])
+      .filter((item) => item.active !== false)
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    const groups = {};
+    articles.forEach((item) => {
+      const category = item.category || "一般教學";
+      if (!groups[category]) groups[category] = [];
+      groups[category].push(item);
+    });
+    return `
+      ${pageHeader("司機幫手")}
+      <div class="helper-category-list">
+        ${Object.keys(groups).length ? Object.entries(groups).map(([category, items]) => `
+          <section class="helper-category">
+            <h3>${escapeHtml(category)}</h3>
+            <div class="helper-article-list">
+              ${items.map((item) => `
+                <details class="helper-article">
+                  <summary>
+                    ${item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(item.title)}">` : ""}
+                    <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary || "")}</small></span>
+                  </summary>
+                  <div class="helper-content">${sanitizeRichHtml(item.content_html || "")}</div>
+                </details>
+              `).join("")}
+            </div>
+          </section>
+        `).join("") : `<div class="empty">目前尚未建立教學文章</div>`}
       </div>
     `;
   }
@@ -1344,12 +1442,13 @@
     feedbacks: "意見反饋",
     marquee: "跑馬燈通知",
     emergencyEvents: "緊急事件",
+    driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
     driverLinks: "連結管理"
   };
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "recruitmentDocuments", "feedbacks"]],
+    ["禮賓司機", ["drivers", "recruitmentDocuments", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "driverLinks", "storage"]]
@@ -1383,6 +1482,7 @@
       ["announcements", "公告管理", "📢", "messages"],
       ["personalMessages", "個人訊息", "✉️", "messages"],
       ["payments", "費用管理", "💳", "finance"],
+      ["driverHelperArticles", "\u53f8\u6a5f\u5e6b\u624b", "??", "messages"],
       ["feedbacks", "意見反饋", "💬", "messages"],
       ["marquee", "跑馬燈通知", "🚨", "messages"],
       ["emergencyEvents", "緊急事件", "🆘", "messages"]
@@ -1403,6 +1503,7 @@
       announcements: adminAnnouncements,
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
       payments: () => adminTaskManager("payment_notices", "費用管理"),
+      driverHelperArticles: adminDriverHelperArticles,
       feedbacks: adminFeedbacks,
       calendar: () => renderCalendar(true),
       marquee: adminMarquee,
@@ -1732,6 +1833,7 @@
     document.body.appendChild(modal);
     modal.querySelector("#modalForm").addEventListener("submit", async (e) => {
       e.preventDefault();
+      syncRichEditors(e.currentTarget);
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
       const requiredInsuranceFile = {
@@ -1774,7 +1876,17 @@
       record.status = record.status || "pending";
     }
     if (tableName === "drivers") {
-      blankToNull(record, ["license_expiry", "onboard_date", "resigned_date", "birthday", "planned_vehicle_change_date"]);
+      blankToNull(record, [
+        "license_expiry",
+        "license_review_date",
+        "license_valid_until",
+        "license_ocr_checked_at",
+        "onboard_date",
+        "resigned_date",
+        "birthday",
+        "training_completed_date",
+        "planned_vehicle_change_date"
+      ]);
       record.private_trip_count = Number(record.private_trip_count || 0);
       record.child_seat_count = Number(record.child_seat_count || 0);
       record.booster_seat_count = Number(record.booster_seat_count || 0);
@@ -1787,6 +1899,10 @@
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
+    if (tableName === "driver_helper_articles") {
+      record.active = record.active === "true";
+      record.sort_order = Number(record.sort_order || 0);
+    }
     if (tableName === "admin_users") {
       record.active = record.active === "true";
       record.permissions = {
@@ -1927,7 +2043,18 @@
     if (!item?.attachment_url) return "";
     return `<div class="attachment-link"><button data-preview-file="${escapeHtml(item.attachment_url)}" data-preview-name="${escapeHtml(item.attachment_name || "附件")}" data-preview-type="">📎 ${escapeHtml(item.attachment_name || "查看附件")}</button></div>`;
   }
-
+  function adminDriverHelperArticles() {
+    const rows = (state.data.driver_helper_articles || []).map((item) => [
+      escapeHtml(item.category || "\u4e00\u822c\u6559\u5b78"),
+      escapeHtml(item.title || "-"),
+      escapeHtml(item.summary || "-"),
+      Number(item.sort_order || 0),
+      item.active === false ? `<span class="status returned">\u505c\u7528</span>` : `<span class="status done">\u555f\u7528</span>`,
+      rowActions("driverHelperArticle", "driver_helper_articles", item.id)
+    ]);
+    return `<div class="section-head"><div><h2>\u53f8\u6a5f\u5e6b\u624b</h2><small>\u5efa\u7acb\u6559\u5b78\u5206\u985e\u8207\u6587\u7ae0\uff0c\u53f8\u6a5f\u524d\u53f0\u53ef\u76f4\u63a5\u67e5\u770b\u3002</small></div><button class="primary-btn" data-modal="driverHelperArticle">\u65b0\u589e\u6587\u7ae0</button></div>
+      ${table(["\u5206\u985e", "\u6a19\u984c", "\u6458\u8981", "\u6392\u5e8f", "\u72c0\u614b", "\u64cd\u4f5c"], rows)}`;
+  }
   function adminDriverLinks() {
     return `<div class="section-head"><div><h2>連結管理</h2><small>新進司機入隊後三天內可查看</small></div><button class="primary-btn" data-modal="driverLink">新增連結</button></div>
       ${table(["名稱", "說明", "可見車隊", "連結", "狀態", "操作"], (state.data.driver_links || []).map((item) => [
@@ -2035,7 +2162,52 @@
       </select>
     </div>`;
   }
+  function syncRichEditors(scope = document) {
+    scope.querySelectorAll("[data-rich-editor]").forEach((editor) => {
+      const input = editor.closest(".rich-editor-field")?.querySelector("[data-rich-editor-input]");
+      if (input) input.value = editor.innerHTML;
+    });
+  }
 
+  function helperRichEditor(item) {
+    return `<div class="field full rich-editor-field">
+      <label>\u6587\u7ae0\u5167\u5bb9</label>
+      <input type="hidden" name="content_html" value="${escapeHtml(item.content_html || "")}" data-rich-editor-input>
+      <div class="rich-toolbar">
+        <button type="button" data-rich-command="bold">B</button>
+        <button type="button" data-rich-command="italic">I</button>
+        <button type="button" data-rich-command="underline">U</button>
+        <select data-rich-size aria-label="\u5b57\u9ad4\u5927\u5c0f"><option value="3">\u4e00\u822c</option><option value="4">\u4e2d\u6a19</option><option value="5">\u5927\u6a19</option></select>
+        <input type="color" value="#182033" data-rich-color aria-label="\u6587\u5b57\u984f\u8272">
+        <button type="button" data-rich-link>\u9023\u7d50</button>
+        <button type="button" data-rich-image>\u5716\u7247</button>
+      </div>
+      <div class="rich-editor" contenteditable="true" data-rich-editor>${sanitizeRichHtml(item.content_html || "")}</div>
+    </div>`;
+  }
+
+  function coverImageField(item) {
+    return `<div class="field full attachment-field">
+      <label>\u5c01\u9762\u5716\u7247</label>
+      <input type="hidden" name="cover_url" value="${escapeHtml(item.cover_url || "")}" data-attachment-url>
+      <input type="hidden" name="cover_name" value="${escapeHtml(item.cover_name || "")}" data-attachment-name>
+      <div class="attachment-upload-row">
+        <input type="file" accept="image/*" data-attachment-upload data-document-label="\u53f8\u6a5f\u5e6b\u624b\u5c01\u9762">
+        <span data-attachment-status>${item.cover_url ? `\u5df2\u4e0a\u50b3\uff1a${escapeHtml(item.cover_name || "\u5c01\u9762\u5716\u7247")}` : "\u53ef\u9078\u64c7\u5716\u7247\u4e0a\u50b3"}</span>
+      </div>
+      ${item.cover_url ? `<div class="attachment-link"><button type="button" data-preview-file="${escapeHtml(item.cover_url)}" data-preview-name="${escapeHtml(item.cover_name || "\u5c01\u9762\u5716\u7247")}" data-preview-type="">\u67e5\u770b\u5c01\u9762</button></div>` : ""}
+    </div>`;
+  }
+
+  function driverHelperArticleForm(item) {
+    return input("category", "\u5206\u985e", item.category || "\u4e00\u822c\u6559\u5b78", "text", true)
+      + input("title", "\u6a19\u984c", item.title, "text", true)
+      + input("summary", "\u6458\u8981", item.summary)
+      + input("sort_order", "\u6392\u5e8f", item.sort_order || 0, "number")
+      + checkbox("active", "\u555f\u7528\u6587\u7ae0", item.active !== false)
+      + coverImageField(item)
+      + helperRichEditor(item);
+  }
   function driverForm(d) {
     const vehicle = driverVehicle(d.id);
     return `
@@ -2043,6 +2215,7 @@
       ${input("driver_code", "編號", d.driver_code)}
       ${input("name", "姓名", d.name, "text", true)}
       ${input("phone", "手機號碼（登入用）", d.phone, "tel", true)}
+      ${input("national_id", "\u99d5\u7167\u865f\u78bc\uff0f\u8eab\u5206\u8b49", d.national_id)}
       <div class="field full photo-upload-field">
         <label>司機照片</label>
         <div class="photo-upload-row">
@@ -2058,8 +2231,10 @@
       ${input("onboard_date", "入隊時間", formDate(d.onboard_date), "date")}
       ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
       <div class="field"><label>服務時長（自動計算）</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
-      ${input("license_expiry", "駕照到期日", formDate(d.license_expiry), "date")}
-      <div class="field"><label>駕照狀態（自動判定）</label><div class="readonly-badge">${expiryDateBadge(d.license_expiry, 30)}</div><small>依「駕照到期日」欄位判定，到期前 30 天會反紅；上傳檔案不會自動 OCR 讀取日期。</small></div>
+      ${input("license_review_date", "審驗日期", formDate(d.license_review_date || d.license_expiry), "date")}
+      ${input("license_valid_until", "有效日期", formDate(d.license_valid_until), "date")}
+      <input type="hidden" name="license_expiry" value="${escapeHtml(formDate(d.license_review_date || d.license_expiry))}">
+      <div class="field"><label>審驗狀態（自動判定）</label><div class="readonly-badge">${expiryDateBadge(d.license_review_date || d.license_expiry, 30)}</div><small>上傳駕照圖片後會嘗試 OCR 辨識身分證、住址、審驗日期與有效日期；辨識失敗時可手動填寫。</small></div>
       <div class="form-section-title field full">駕駛檔案存放區</div>
       ${driverDocumentField(d, "license_file", "駕照")}
       ${driverDocumentField(d, "police_clearance", "良民證")}
@@ -2629,6 +2804,23 @@
     const target = e.target.closest("button, a");
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
     if (!target && !cellDate) return;
+    if (target?.dataset.richCommand) {
+      document.execCommand(target.dataset.richCommand, false, null);
+      syncRichEditors(target.closest("form") || document);
+      return;
+    }
+    if (target?.dataset.richLink !== undefined) {
+      const url = prompt("請輸入連結網址");
+      if (url) document.execCommand("createLink", false, url);
+      syncRichEditors(target.closest("form") || document);
+      return;
+    }
+    if (target?.dataset.richImage !== undefined) {
+      const url = prompt("請輸入圖片網址");
+      if (url) document.execCommand("insertImage", false, url);
+      syncRichEditors(target.closest("form") || document);
+      return;
+    }
     if (target?.dataset.modal) {
       openModal(target.dataset.modal, target.dataset.id);
       return;
@@ -2827,6 +3019,10 @@
   });
 
   document.addEventListener("input", (e) => {
+    if (e.target.closest("[data-rich-editor]")) {
+      syncRichEditors(e.target.closest("form") || document);
+      return;
+    }
     const vehiclePickerSearch = e.target.closest("[data-vehicle-picker-search]");
     if (vehiclePickerSearch) {
       const selectBox = vehiclePickerSearch.closest(".vehicle-plate-picker")?.querySelector("[data-vehicle-plate-select]");
@@ -2858,6 +3054,18 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const richSize = e.target.closest("[data-rich-size]");
+    if (richSize) {
+      document.execCommand("fontSize", false, richSize.value || "3");
+      syncRichEditors(richSize.closest("form") || document);
+      return;
+    }
+    const richColor = e.target.closest("[data-rich-color]");
+    if (richColor) {
+      document.execCommand("foreColor", false, richColor.value || "#182033");
+      syncRichEditors(richColor.closest("form") || document);
+      return;
+    }
     const vehiclePlateSelect = e.target.closest("[data-vehicle-plate-select]");
     if (vehiclePlateSelect) {
       const form = vehiclePlateSelect.closest("form");

@@ -11,7 +11,8 @@ const tables = [
   "drivers", "vehicles", "maintenance_records", "announcements", "announcement_reads",
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
-  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links"
+  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
+  "driver_helper_articles"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -93,11 +94,13 @@ async function loadDriverData(driverId: string) {
     db.from("marquee_messages").select("*").eq("active", true),
     db.from("emergency_events").select("*").eq("active", true),
     db.from("feedbacks").select("*").eq("driver_id", driverId),
-    canSeeLinks ? db.from("driver_links").select("*").eq("active", true) : Promise.resolve({ data: [], error: null })
+    canSeeLinks ? db.from("driver_links").select("*").eq("active", true) : Promise.resolve({ data: [], error: null }),
+    db.from("driver_helper_articles").select("*").eq("active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: false })
   ]);
   const names = [
     "vehicles", "announcements", "announcement_reads", "maintenance_notifications",
-    "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks", "driver_links"
+    "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks", "driver_links",
+    "driver_helper_articles"
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;
@@ -174,7 +177,8 @@ const tablePermission: Record<string, string> = {
   payment_notices: "finance",
   insurance_partners: "insurance",
   insurance_requests: "insurance",
-  driver_links: "messages"
+  driver_links: "messages",
+  driver_helper_articles: "messages"
 };
 
 async function loadPartnerData(partnerId: string) {
