@@ -1804,6 +1804,7 @@
       marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
       driverLink: ["連結", "driver_links", driverLinkForm],
+      driverHelperArticle: ["\u53f8\u6a5f\u5e6b\u624b", "driver_helper_articles", driverHelperArticleForm],
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
       insuranceRequest: ["保險需求", "insurance_requests", insuranceRequestForm],
       insuranceAmendmentRequest: ["批改需求", "insurance_requests", insuranceAmendmentRequestForm],
