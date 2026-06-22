@@ -69,15 +69,22 @@
   ];
 
   const insuranceStatuses = [
-    ["broker_quoting", "保經報價中"],
-    ["awaiting_admin_quote_confirmation", "待車輛事業部確認"],
-    ["awaiting_dealer_confirmation", "待車商確認"],
-    ["quote_confirmed_issue_application", "報價確認請出要保書"],
-    ["stamping", "用印中"],
-    ["awaiting_policy", "等待出單"],
-    ["payment_pending", "待付款"],
-    ["receipt_pending", "等待收據"],
-    ["completed", "完成"]
+    ["broker_quoting", "\u4fdd\u7d93\u5831\u50f9\u4e2d"],
+    ["broker_returned", "\u4fdd\u7d93\u9000\u56de\u88dc\u4ef6"],
+    ["vehicle_dept_review", "\u8eca\u8f1b\u90e8\u78ba\u8a8d\u4e2d"],
+    ["dealer_review", "\u5f85\u8eca\u5546\u78ba\u8a8d"],
+    ["quote_confirmed_issue_application", "\u5831\u50f9\u78ba\u8a8d\u8acb\u51fa\u8981\u4fdd\u66f8"],
+    ["stamping", "\u7528\u5370\u4e2d"],
+    ["awaiting_policy", "\u7b49\u5f85\u51fa\u55ae"],
+    ["payment_pending", "\u7b49\u5f85\u4ed8\u6b3e"],
+    ["receipt_pending", "\u7b49\u5f85\u6536\u64da"],
+    ["completed", "\u5b8c\u6210"],
+    ["amendment_requested", "\u6279\u6539\u9700\u6c42"],
+    ["amendment_stamping", "\u6279\u6539\u7528\u5370"],
+    ["amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"],
+    ["amendment_completed", "\u6279\u6539\u7d50\u6848"],
+    ["document_requested", "\u4fdd\u55ae\u6536\u64da\u8acb\u6c42"],
+    ["document_received", "\u6587\u4ef6\u5df2\u56de\u8986"]
   ];
 
   const labels = {
@@ -355,13 +362,8 @@
   }
 
   function driverPhoto(driver) {
-    const url = String(driver.photo_url || "").trim();
-    const localUrl = `./assets/drivers/${encodeURIComponent(String(driver.name || "").trim())}.jpg`;
-    const initial = String(driver.name || "?").trim().slice(0, 1) || "?";
-    return `<button type="button" class="driver-photo-stack" data-photo-preview data-photo-name="${escapeHtml(driver.name || "司機照片")}">
-      <img class="driver-avatar" src="${localUrl}" alt="${escapeHtml(driver.name || "driver")}" data-remote-photo="${escapeHtml(url)}" onerror="if(this.dataset.remotePhoto && this.src !== this.dataset.remotePhoto){this.src=this.dataset.remotePhoto;return}this.style.display='none';this.nextElementSibling.style.display='grid'">
-      <span class="driver-avatar avatar-fallback" style="display:none">${escapeHtml(initial)}</span>
-    </button>`;
+    const initial = String(driver?.name || "?").trim().slice(0, 1) || "?";
+    return `<span class="driver-photo-stack no-photo" title="${escapeHtml(driver?.name || "\u672a\u547d\u540d\u53f8\u6a5f")}"><span class="driver-avatar avatar-fallback" style="display:grid">${escapeHtml(initial)}</span></span>`;
   }
 
   function driverVehicle(driverId) {
@@ -537,22 +539,26 @@
 
   function normalizeOcrText(text) {
     return String(text || "")
-      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
-      .replace(/[／.]/g, "/")
-      .replace(/[年月]/g, "/")
-      .replace(/[日:：]/g, ":")
-      .replace(/\s+/g, " ")
+      .normalize("NFKC")
+      .replace(/[\uff5c|]/g, " ")
+      .replace(/[\uff0c,]/g, " ")
+      .replace(/[\uff1a]/g, ":")
+      .replace(/[\u5e74\u6708]/g, "/")
+      .replace(/[\u65e5]/g, "")
+      .replace(/\r/g, "\n")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{2,}/g, "\n")
       .trim();
   }
 
   function parseOcrDate(value = "") {
-    const match = String(value).match(/(\d{2,4})\s*[\/-]\s*(\d{1,2})\s*[\/-]\s*(\d{1,2})/);
+    const match = String(value).normalize("NFKC").match(/(\d{2,4})\s*[\.\/\-]\s*(\d{1,2})\s*[\.\/\-]\s*(\d{1,2})/);
     if (!match) return "";
     let year = Number(match[1]);
     const month = Number(match[2]);
     const day = Number(match[3]);
     if (year < 1911) year += 1911;
-    if (year < 1950 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return "";
+    if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return "";
     return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   }
 
@@ -560,26 +566,70 @@
     for (const label of labels) {
       const index = text.indexOf(label);
       if (index < 0) continue;
-      const chunk = text.slice(index, index + 80);
+      const chunk = text.slice(index, index + 120);
       const date = parseOcrDate(chunk);
       if (date) return date;
     }
     return "";
   }
 
+  function valueAfterLabel(text, labels, maxLength = 80) {
+    for (const label of labels) {
+      const regex = new RegExp(`${label}\\s*:?\\s*([^\\n]{1,${maxLength}})`);
+      const match = text.match(regex);
+      if (match) return match[1].trim();
+    }
+    return "";
+  }
+
+  function extractAddressFromOcr(text) {
+    const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+    for (let i = 0; i < lines.length; i += 1) {
+      if (!/(\u4f4f\u5740|\u5730\u5740)/.test(lines[i])) continue;
+      const first = lines[i].replace(/.*?(\u4f4f\u5740|\u5730\u5740)\s*:?\s*/, "");
+      const extra = [];
+      for (let j = i + 1; j < Math.min(lines.length, i + 3); j += 1) {
+        if (/(\u51fa\u751f|\u5be9\u9a57|\u6709\u6548|\u99d5\u7167|\u7ba1\u8f44|\u59d3\u540d|\u6027\u5225)/.test(lines[j])) break;
+        extra.push(lines[j]);
+      }
+      return `${first}${extra.join("")}`.replace(/\s+/g, "").slice(0, 80);
+    }
+    const compact = text.replace(/\s+/g, "");
+    return compact.match(/(?:\u4f4f\u5740|\u5730\u5740)([^\u751f\u65e5\u5be9\u9a57\u6709\u6548\u99d5\u7167\u7ba1\u8f44\u59d3\u540d\u6027\u5225]{6,80})/)?.[1] || "";
+  }
+
   function extractDriverLicenseFields(text) {
     const normalized = normalizeOcrText(text);
     const compact = normalized.replace(/\s+/g, "");
     const nationalId = compact.match(/[A-Z][12]\d{8}/)?.[0] || "";
+    const name = valueAfterLabel(normalized, ["\u59d3\u540d", "\u540d"], 16).replace(/\u6027\u5225.*/, "").replace(/[^\u4e00-\u9fffA-Za-z\u00b7\uff0e]/g, "").trim();
+    const birthday = dateNearLabel(normalized, ["\u51fa\u751f\u65e5\u671f", "\u751f\u65e5", "\u51fa\u751f"]);
     const reviewDate = dateNearLabel(normalized, ["\u5be9\u9a57\u65e5\u671f", "\u5be9\u9a57", "\u5be9\u9a57\u65e5"]);
     const validUntil = dateNearLabel(normalized, ["\u6709\u6548\u65e5\u671f", "\u6709\u6548\u65e5", "\u6709\u6548\u671f\u9650", "\u6709\u6548"]);
-    const addressMatch = normalized.match(/(?:\u4f4f\u5740|\u5730\u5740)\s*:?\s*([^\u751f\u65e5\u5be9\u9a57\u6709\u6548]{6,80})/);
-    return {
-      nationalId,
-      address: addressMatch ? addressMatch[1].trim() : "",
-      reviewDate,
-      validUntil
-    };
+    return { nationalId, name, birthday, address: extractAddressFromOcr(normalized), reviewDate, validUntil };
+  }
+
+  async function prepareOcrImage(file) {
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxWidth = 1800;
+      const scale = Math.min(1, maxWidth / bitmap.width);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      for (let i = 0; i < image.data.length; i += 4) {
+        const gray = image.data[i] * 0.299 + image.data[i + 1] * 0.587 + image.data[i + 2] * 0.114;
+        const contrast = Math.max(0, Math.min(255, (gray - 128) * 1.35 + 128));
+        image.data[i] = image.data[i + 1] = image.data[i + 2] = contrast;
+      }
+      ctx.putImageData(image, 0, 0);
+      return canvas.toDataURL("image/jpeg", 0.92);
+    } catch {
+      return file;
+    }
   }
 
   async function runDriverLicenseOcr(file, field) {
@@ -587,44 +637,47 @@
     const form = field?.closest("form");
     const status = field?.querySelector("[data-attachment-status]");
     try {
-      if (status) status.textContent = "OCR 辨識中...";
-      const result = await window.Tesseract.recognize(file, "chi_tra+eng", {
+      if (status) status.textContent = "OCR \u8fa8\u8b58\u4e2d...";
+      const source = await prepareOcrImage(file);
+      const result = await window.Tesseract.recognize(source, "chi_tra+eng", {
         logger: (progress) => {
-          if (status && progress?.status === "recognizing text") {
-            status.textContent = `OCR 辨識中 ${Math.round((progress.progress || 0) * 100)}%`;
-          }
+          if (status && progress?.status === "recognizing text") status.textContent = `OCR \u8fa8\u8b58\u4e2d ${Math.round((progress.progress || 0) * 100)}%`;
         }
       });
       const text = result?.data?.text || "";
       const extracted = extractDriverLicenseFields(text);
-      const nationalIdInput = form?.querySelector('[name="national_id"]');
-      const addressInput = form?.querySelector('[name="residential_address"]');
+      const setIfBlank = (name, value) => {
+        const input = form?.querySelector(`[name="${name}"]`);
+        if (input && value && !input.value) input.value = value;
+      };
+      setIfBlank("national_id", extracted.nationalId);
+      setIfBlank("name", extracted.name);
+      setIfBlank("birthday", extracted.birthday);
+      setIfBlank("residential_address", extracted.address);
       const reviewDateInput = form?.querySelector('[name="license_review_date"]');
       const validUntilInput = form?.querySelector('[name="license_valid_until"]');
       const legacyExpiryInput = form?.querySelector('[name="license_expiry"]');
+      if (reviewDateInput && extracted.reviewDate) reviewDateInput.value = extracted.reviewDate;
+      if (validUntilInput && extracted.validUntil) validUntilInput.value = extracted.validUntil;
+      if (legacyExpiryInput && extracted.reviewDate) legacyExpiryInput.value = extracted.reviewDate;
       const textInput = form?.querySelector('[name="license_ocr_text"]');
       const checkedInput = form?.querySelector('[name="license_ocr_checked_at"]');
       const confidenceInput = form?.querySelector('[name="license_ocr_confidence"]');
       if (textInput) textInput.value = text;
       if (checkedInput) checkedInput.value = now();
       if (confidenceInput) confidenceInput.value = String(Math.round(Number(result?.data?.confidence || 0)));
-      if (extracted.nationalId && nationalIdInput && !nationalIdInput.value) nationalIdInput.value = extracted.nationalId;
-      if (extracted.address && addressInput && !addressInput.value) addressInput.value = extracted.address;
-      if (extracted.reviewDate && reviewDateInput) reviewDateInput.value = extracted.reviewDate;
-      if (extracted.validUntil && validUntilInput) validUntilInput.value = extracted.validUntil;
-      if (extracted.reviewDate && legacyExpiryInput && !legacyExpiryInput.value) legacyExpiryInput.value = extracted.reviewDate;
       const found = [
-        extracted.nationalId ? "身分證" : "",
-        extracted.address ? "住址" : "",
-        extracted.reviewDate ? "審驗日期" : "",
-        extracted.validUntil ? "有效日期" : ""
+        extracted.nationalId ? "\u8eab\u5206\u8b49" : "",
+        extracted.name ? "\u59d3\u540d" : "",
+        extracted.birthday ? "\u751f\u65e5" : "",
+        extracted.address ? "\u4f4f\u5740" : "",
+        extracted.reviewDate ? "\u5be9\u9a57\u65e5\u671f" : "",
+        extracted.validUntil ? "\u6709\u6548\u65e5\u671f" : ""
       ].filter(Boolean);
-      if (status) status.textContent = found.length
-        ? `已上傳，OCR 已辨識：${found.join("、")}`
-        : "已上傳，OCR 未辨識到可用欄位，請手動填寫。";
+      if (status) status.textContent = found.length ? `OCR \u5df2\u5e36\u5165\uff1a${found.join("\u3001")}` : "OCR \u672a\u8b80\u5230\u53ef\u5e36\u5165\u6b04\u4f4d\uff0c\u8acb\u624b\u52d5\u78ba\u8a8d";
     } catch (error) {
-      if (status) status.textContent = "已上傳，OCR 辨識失敗，請手動填寫。";
       console.warn("Driver license OCR failed", error);
+      if (status) status.textContent = "OCR \u8fa8\u8b58\u5931\u6557\uff0c\u6a94\u6848\u5df2\u4e0a\u50b3";
     }
   }
 
@@ -808,7 +861,7 @@
           ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${feature("payments", "費用管理", "費用與款項通知", pendingPay)}
           ${feature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
-          ${feature("driverHelper", "????", "?????????", 0)}
+          ${feature("driverHelper", "\u53f8\u6a5f\u5e6b\u624b", "\u6559\u5b78\u6587\u7ae0\u8207\u5e38\u7528\u6307\u5357", 0)}
           ${showLinkCenter ? feature("links", "連結中心", "新進司機群組與常用連結", 0) : ""}
           ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
           ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
@@ -940,31 +993,26 @@
     const articles = (state.data.driver_helper_articles || [])
       .filter((item) => item.active !== false)
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(b.created_at || "").localeCompare(String(a.created_at || "")));
-    const groups = {};
-    articles.forEach((item) => {
-      const category = item.category || "一般教學";
-      if (!groups[category]) groups[category] = [];
-      groups[category].push(item);
-    });
+    const defaultCategory = "\u4e00\u822c\u6559\u5b78";
+    const categories = [...new Set(articles.map((item) => item.category || defaultCategory))];
+    if (state.driverHelperCategory && !categories.includes(state.driverHelperCategory)) state.driverHelperCategory = "";
+    const visible = state.driverHelperCategory ? articles.filter((item) => (item.category || defaultCategory) === state.driverHelperCategory) : articles;
     return `
-      ${pageHeader("司機幫手")}
-      <div class="helper-category-list">
-        ${Object.keys(groups).length ? Object.entries(groups).map(([category, items]) => `
-          <section class="helper-category">
-            <h3>${escapeHtml(category)}</h3>
-            <div class="helper-article-list">
-              ${items.map((item) => `
-                <details class="helper-article">
-                  <summary>
-                    ${item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(item.title)}">` : ""}
-                    <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary || "")}</small></span>
-                  </summary>
-                  <div class="helper-content">${sanitizeRichHtml(item.content_html || "")}</div>
-                </details>
-              `).join("")}
-            </div>
-          </section>
-        `).join("") : `<div class="empty">目前尚未建立教學文章</div>`}
+      ${pageHeader("\u53f8\u6a5f\u5e6b\u624b")}
+      <div class="helper-tab-bar">
+        <button class="filter-btn ${state.driverHelperCategory === "" ? "active" : ""}" data-helper-category="">\u5168\u90e8</button>
+        ${categories.map((category) => `<button class="filter-btn ${state.driverHelperCategory === category ? "active" : ""}" data-helper-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
+      </div>
+      <div class="helper-article-list helper-article-flat">
+        ${visible.length ? visible.map((item) => `
+          <details class="helper-article">
+            <summary>
+              ${item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(item.title)}">` : `<span class="helper-cover-fallback">${iconSvg(featureIcons.driverHelper)}</span>`}
+              <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary || item.category || "")}</small></span>
+            </summary>
+            <div class="helper-content">${sanitizeRichHtml(item.content_html || "")}</div>
+          </details>
+        `).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u53f8\u6a5f\u5e6b\u624b\u6587\u7ae0</div>`}
       </div>
     `;
   }
@@ -1216,7 +1264,7 @@
   }
 
   function insuranceStatusLabel(status) {
-    return insuranceStatuses.find(([value]) => value === status)?.[1] || status || "待報價";
+    return insuranceStatuses.find(([value]) => value === status)?.[1] || status || "\u672a\u5efa\u7acb";
   }
 
   function insuranceStatusBadge(status) {
@@ -1226,16 +1274,17 @@
 
   function insuranceControlCenter(requests = state.data.insurance_requests || [], editable = false) {
     const counts = Object.fromEntries(insuranceStatuses.map(([status]) => [status, requests.filter((item) => item.status === status).length]));
+    const activeCount = requests.filter((item) => !["completed", "amendment_completed"].includes(item.status)).length;
     const visibleRequests = requests.filter((item) => state.insuranceStatusFilter
       ? item.status === state.insuranceStatusFilter
-      : item.status !== "completed");
+      : !["completed", "amendment_completed"].includes(item.status));
     return `
       <div class="insurance-pipeline">
-        <button class="pipeline-step ${state.insuranceStatusFilter === "" ? "is-active" : ""}" data-insurance-filter=""><span>◎</span><strong>進行中</strong><b>${requests.length - counts.completed}</b></button>
-        ${insuranceStatuses.map(([status, label], index) => `<button class="pipeline-step ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "is-active" : ""}" data-insurance-filter="${status}"><span>${index + 1}</span><strong>${label}</strong><b>${counts[status]}</b></button>`).join("")}
+        <button class="pipeline-step ${state.insuranceStatusFilter === "" ? "is-active" : ""}" data-insurance-filter=""><span>\u5168</span><strong>\u9032\u884c\u4e2d</strong><b>${activeCount}</b></button>
+        ${insuranceStatuses.map(([status, label], index) => `<button class="pipeline-step ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "is-active" : ""}" data-insurance-filter="${status}"><span>${index + 1}</span><strong>${label}</strong><b>${counts[status] || 0}</b></button>`).join("")}
       </div>
       <div class="insurance-request-list">
-        ${visibleRequests.length ? visibleRequests.map((item) => insuranceRequestRow(item, editable)).join("") : `<div class="empty">此狀態目前沒有保險案件</div>`}
+        ${visibleRequests.length ? visibleRequests.map((item) => insuranceRequestRow(item, editable)).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u7b26\u5408\u689d\u4ef6\u7684\u4fdd\u96aa\u6848\u4ef6</div>`}
       </div>
     `;
   }
@@ -1251,64 +1300,68 @@
 
   function insuranceVisibleFiles(item) {
     const isDealer = state.partner?.partner_type === "dealer";
-    const files = [
-      insuranceFileLink(item, "quote", "報價書"),
-      jsonFileLinks(item.license_files, "駕照"),
-      jsonFileLinks(item.amendment_files, "批改檔"),
-      ...(!isDealer || item.status === "completed" ? [
-        insuranceFileLink(item, "application", "要保書"),
-        insuranceFileLink(item, "stamped_application", "用印檔"),
-        insuranceFileLink(item, "policy", "保單"),
-        insuranceFileLink(item, "receipt", "收據")
-      ] : [])
-    ].filter(Boolean);
-    return files.length ? `<div class="insurance-files">${files.join("")}</div>` : "";
+    const dealerCanSeeQuote = ["dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"].includes(item.status);
+    const dealerCanSeeFinal = ["payment_pending", "receipt_pending", "completed", "document_received"].includes(item.status);
+    const files = [];
+    if (!isDealer || dealerCanSeeQuote) files.push(insuranceFileLink(item, "quote", "\u5831\u50f9\u55ae"));
+    if (!isDealer) files.push(jsonFileLinks(item.license_files, "\u99d5\u7167"), jsonFileLinks(item.amendment_files, "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
+    if (!isDealer || dealerCanSeeFinal) files.push(insuranceFileLink(item, "policy", "\u4fdd\u55ae"), insuranceFileLink(item, "receipt", "\u6536\u64da"), insuranceFileLink(item, "document_policy", "\u88dc\u767c\u4fdd\u55ae"), insuranceFileLink(item, "document_receipt", "\u88dc\u767c\u6536\u64da"));
+    const clean = files.filter(Boolean);
+    return clean.length ? `<div class="insurance-files">${clean.join("")}</div>` : "";
   }
 
   function insuranceRequestActions(item, editable) {
     const actions = [];
     if (editable) {
-      actions.push(`<button class="soft-btn" data-modal="insuranceRequest" data-id="${item.id}">查看／編輯</button>`);
-      actions.push(`<button class="danger-btn" data-delete="insurance_requests:${item.id}">刪除</button>`);
-      if (item.status === "awaiting_admin_quote_confirmation") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:awaiting_dealer_confirmation">送出車商</button>`);
-      if (item.status === "stamping") actions.push(`<button class="primary-btn" data-modal="insuranceStamp" data-id="${item.id}">上傳用印檔</button>`);
-      if (item.status === "payment_pending") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:receipt_pending">付款完成</button>`);
+      actions.push(`<button class="soft-btn" data-modal="insuranceRequest" data-id="${item.id}">\u7de8\u8f2f</button>`);
+      actions.push(`<button class="danger-btn" data-delete="insurance_requests:${item.id}">\u522a\u9664</button>`);
+      if (item.status === "vehicle_dept_review") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:dealer_review">\u78ba\u8a8d\u7121\u8aa4\u9001\u8eca\u5546</button>`);
+      if (item.status === "stamping") actions.push(`<button class="primary-btn" data-modal="insuranceStamp" data-id="${item.id}">\u4e0a\u50b3\u7528\u5370\u8981\u4fdd\u66f8</button>`);
+      if (item.status === "payment_pending") actions.push(`<button class="primary-btn" data-modal="insurancePayment" data-id="${item.id}">\u4ed8\u6b3e\u5b8c\u6210</button>`);
+      if (item.status === "amendment_stamping") actions.push(`<button class="primary-btn" data-modal="insuranceAmendmentStamp" data-id="${item.id}">\u4e0a\u50b3\u6279\u6539\u7528\u5370</button>`);
+      if (item.status === "document_received") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:completed">\u5b8c\u6210\u6b78\u6a94</button>`);
     }
     if (state.partner?.partner_type === "broker") {
-      if (item.request_type === "amendment" && item.status === "broker_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceAmendment" data-id="${item.id}">上傳批改檔</button>`);
-      if (item.request_type === "amendment" && item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:completed">完成批改</button>`);
-      if (item.status === "broker_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceQuote" data-id="${item.id}">進行報價</button>`);
-      if (item.status === "quote_confirmed_issue_application") actions.push(`<button class="primary-btn" data-modal="insuranceApplication" data-id="${item.id}">上傳要保書</button>`);
-      if (item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-modal="insurancePolicy" data-id="${item.id}">上傳保單</button>`);
-      if (item.status === "receipt_pending") actions.push(`<button class="primary-btn" data-modal="insuranceReceipt" data-id="${item.id}">上傳收據</button>`);
+      if (item.status === "broker_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceQuote" data-id="${item.id}">\u8655\u7406\u5831\u50f9</button>`);
+      if (item.status === "quote_confirmed_issue_application") actions.push(`<button class="primary-btn" data-modal="insuranceApplication" data-id="${item.id}">\u4e0a\u50b3\u8981\u4fdd\u66f8</button>`);
+      if (item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-modal="insurancePolicy" data-id="${item.id}">\u4e0a\u50b3\u4fdd\u55ae</button>`);
+      if (item.status === "receipt_pending") actions.push(`<button class="primary-btn" data-modal="insuranceReceipt" data-id="${item.id}">\u4e0a\u50b3\u6536\u64da</button>`);
+      if (item.status === "amendment_requested") actions.push(`<button class="primary-btn" data-modal="insuranceAmendment" data-id="${item.id}">\u4e0a\u50b3\u6279\u6539\u7533\u8acb\u66f8</button>`);
+      if (item.status === "amendment_stamped") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:amendment_completed">\u6279\u6539\u7d50\u6848</button>`);
+      if (item.status === "document_requested") actions.push(`<button class="primary-btn" data-modal="insuranceDocumentReply" data-id="${item.id}">\u4e0a\u50b3\u6587\u4ef6</button>`);
     }
-    if (state.partner?.partner_type === "dealer" && item.status === "awaiting_dealer_confirmation") {
-      actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:quote_confirmed_issue_application">確認要保</button>`);
+    if (state.partner?.partner_type === "dealer" && item.status === "dealer_review") {
+      actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:quote_confirmed_issue_application">\u78ba\u8a8d\u5831\u50f9</button>`);
+      actions.push(`<button class="soft-btn" data-insurance-status="${item.id}:vehicle_dept_review">\u66f4\u6539\u9700\u6c42</button>`);
     }
     return actions.join("");
   }
 
   function insuranceRequestRow(item, editable) {
     const partner = (state.data.insurance_partners || []).find((row) => row.id === item.dealer_partner_id);
+    const isDealer = state.partner?.partner_type === "dealer";
+    const typeLabel = item.request_type === "amendment" ? "\u6279\u6539\u7533\u8acb" : item.request_type === "document" ? "\u4fdd\u55ae\u6536\u64da\u8acb\u6c42" : (item.insurance_type || "\u5831\u50f9\u8acb\u6c42");
     return `
-      <article class="insurance-request-row insurance-stage-${escapeHtml(item.status)} ${state.partner?.partner_type === "dealer" ? "dealer-insurance-row" : ""}">
+      <article class="insurance-request-row insurance-stage-${escapeHtml(item.status)} ${isDealer ? "dealer-insurance-row" : ""}">
         <div class="insurance-row-main">
-          <strong class="insurance-plate">${escapeHtml(item.plate_no)}</strong>
+          <strong class="insurance-plate">${escapeHtml(item.plate_no || "\u672a\u9078\u8eca\u724c")}</strong>
           <div class="insurance-row-identity">
-            <b>${escapeHtml(item.request_type === "amendment" ? "批改需求" : item.insurance_type || "保險需求")} · ${escapeHtml(item.request_type === "amendment" ? `${item.driver_change_action || ""} ${item.driver_change_names || ""}` : item.coverage_spec || "未填規格")}</b>
-            <small>${escapeHtml(partner?.name || "未指定車商")} · ${escapeHtml(item.assigned_insurance_company || "未指定保險公司")}</small>
+            <b>${escapeHtml(typeLabel)} ? ${escapeHtml(item.coverage_spec || item.document_request_type || "")}</b>
+            <small>${escapeHtml(partner?.name || "\u672a\u6307\u5b9a\u8eca\u5546")} ? ${escapeHtml(item.assigned_insurance_company || "\u672a\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8")}</small>
           </div>
           ${insuranceStatusBadge(item.status)}
         </div>
         <div class="insurance-row-details">
-          <span><small>旅客險額度</small><b>${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} 萬` : "-"}</b></span>
-          <span><small>自付額</small><b>${item.deductible ? `${escapeHtml(item.deductible)} 萬` : "-"}</b></span>
-          <span><small>抵押權人</small><b>${escapeHtml(item.lienholder || "-")}</b></span>
-          <span><small>報價</small><b>${item.quote_amount ? `$${Number(item.quote_amount).toLocaleString()}` : "-"}</b></span>
+          <span><small>\u65c5\u5ba2\u96aa</small><b>${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} \u842c` : "-"}</b></span>
+          <span><small>\u8eca\u9ad4\u96aa</small><b>${item.vehicle_body_limit ? `${escapeHtml(item.vehicle_body_limit)} \u842c` : "-"}</b></span>
+          <span><small>\u81ea\u4ed8\u984d</small><b>${item.deductible ? `${escapeHtml(item.deductible)} \u842c` : "-"}</b></span>
+          <span><small>\u62b5\u62bc\u6b0a\u4eba</small><b>${escapeHtml(item.lienholder || "-")}</b></span>
+          <span><small>\u5831\u50f9</small><b>${item.quote_amount ? `$${Number(item.quote_amount).toLocaleString()}` : "-"}</b></span>
           ${insuranceVisibleFiles(item)}
         </div>
-        ${item.insurance_notes ? `<p class="insurance-note">保險備註：${escapeHtml(item.insurance_notes)}</p>` : ""}
-        ${!state.partner || state.partner.partner_type === "broker" ? (item.broker_notes ? `<p class="quote-note">保經備註：${escapeHtml(item.broker_notes)}</p>` : "") : ""}
+        ${!isDealer && (item.vehicle_dept_notes || item.insurance_notes) ? `<p class="insurance-note">\u8eca\u8f1b\u90e8\u5099\u8a3b\uff1a${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}
+        ${!isDealer && item.broker_reply ? `<p class="quote-note">\u4fdd\u7d93\u56de\u8986\uff1a${escapeHtml(item.broker_reply)}</p>` : ""}
+        ${!isDealer && item.dealer_reply ? `<p class="quote-note">\u8eca\u5546\u56de\u8986\uff1a${escapeHtml(item.dealer_reply)}</p>` : ""}
         <div class="insurance-card-actions">${insuranceRequestActions(item, editable)}</div>
       </article>
     `;
@@ -1340,7 +1393,7 @@
   function adminInsuranceCenter() {
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
     return `
-      <div class="section-head"><div><h2>保險中心</h2><small>集中掌握每台車的投保與批改進度</small></div><div class="actions"><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改需求</button><button class="primary-btn" data-modal="insuranceRequest">發起報價需求</button></div></div>
+      <div class="section-head"><div><h2>保險中心</h2><small>集中掌握每台車的投保與批改進度</small></div><div class="actions"><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">\u767c\u8d77\u6279\u6539</button><button class="soft-btn" data-modal="insuranceDocumentRequest">\u4fdd\u55ae\u6536\u64da\u8acb\u6c42</button><button class="primary-btn" data-modal="insuranceRequest">\u767c\u8d77\u5831\u50f9</button></div></div>
       ${insuranceControlCenter(requests, true)}
     `;
   }
@@ -1596,27 +1649,28 @@
 
   function adminVehicleLoans() {
     const items = [...(state.data.vehicle_loans || [])]
-      .filter((item) => !state.loanStatusFilter || item.status === state.loanStatusFilter)
+      .filter((item) => state.loanStatusFilter ? item.status === state.loanStatusFilter : item.status !== "completed")
       .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
-    const loanStatuses = [["", "全部"], ["pending_approval", "待核准"], ["approved", "已核准／借用中"], ["return_pending", "待確認還車"], ["completed", "已結案"]];
+    const loanStatuses = [["", "\u9032\u884c\u4e2d"], ["pending_approval", "\u5f85\u5be9\u6838"], ["approved", "\u5df2\u6838\u51c6\u501f\u7528\u4e2d"], ["return_pending", "\u5f85\u78ba\u8a8d\u9084\u8eca"], ["completed", "\u5df2\u7d50\u6848"]];
     return `
-      <div class="section-head"><div><h2>車輛租借</h2><small>登入人員：${escapeHtml(state.adminProfile?.name || "管理員")}</small></div><button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div>
+      <div class="section-head"><div><h2>\u8eca\u8f1b\u79df\u501f</h2><small>\u767b\u5165\u540c\u4ec1\uff1a${escapeHtml(state.adminProfile?.name || "\u7ba1\u7406\u8005")}</small></div><button class="primary-btn" data-modal="vehicleLoan">\u767b\u8a18\u4f7f\u7528</button></div>
       <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
       <div class="loan-list">
-        ${items.length ? items.map((item) => `<article class="loan-row">
+        ${items.length ? items.map((item) => `<article class="loan-row ${item.status === "completed" ? "is-muted" : ""}">
           <div class="plate-chip">${escapeHtml(item.plate_no)}</div>
-          <div><small>登記人員</small><strong>${escapeHtml(item.requested_by_name)}</strong></div>
-          <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
-          <div><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
-          <div><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
-          <div><small>用途</small><strong>${escapeHtml(item.purpose)}</strong></div>
+          <div><small>\u7533\u8acb\u4eba</small><strong>${escapeHtml(item.requested_by_name)}</strong></div>
+          <div><small>\u501f\u8eca\u6642\u9593</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
+          <div><small>\u9810\u8a08\u9084\u8eca</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+          <div><small>\u5be6\u969b\u9084\u8eca</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
+          <div><small>\u7528\u9014</small><strong>${escapeHtml(item.purpose)}</strong></div>
           <span class="status ${item.status === "completed" ? "done" : item.status === "return_pending" ? "returned" : "pending"}">${escapeHtml(loanStatuses.find(([value]) => value === item.status)?.[1] || item.status)}</span>
           <div class="actions">
-            ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">同意借車</button>` : ""}
-            ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">登記還車</button>` : ""}
-            ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">確認並結案</button>` : ""}
+            ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">\u540c\u610f\u501f\u8eca</button>` : ""}
+            ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">\u767b\u8a18\u9084\u8eca</button>` : ""}
+            ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">\u78ba\u8a8d\u7d50\u6848</button>` : ""}
+            ${state.adminProfile?.is_super_admin ? `<button class="danger-btn" data-delete="vehicle_loans:${item.id}">\u522a\u9664</button>` : ""}
           </div>
-        </article>`).join("") : `<div class="empty">目前沒有借車紀錄</div>`}
+        </article>`).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u79df\u501f\u7d00\u9304</div>`}
       </div>
     `;
   }
@@ -1813,7 +1867,11 @@
       insuranceApplication: ["要保書", "insurance_requests", insuranceApplicationForm],
       insuranceStamp: ["用印檔", "insurance_requests", insuranceStampForm],
       insurancePolicy: ["保單", "insurance_requests", insurancePolicyForm],
-      insuranceReceipt: ["收據", "insurance_requests", insuranceReceiptForm]
+      insuranceReceipt: ["收據", "insurance_requests", insuranceReceiptForm],
+      insurancePayment: ["\u4ed8\u6b3e\u5b8c\u6210", "insurance_requests", insurancePaymentForm],
+      insuranceAmendmentStamp: ["\u6279\u6539\u7528\u5370", "insurance_requests", insuranceAmendmentStampForm],
+      insuranceDocumentRequest: ["\u4fdd\u55ae\u6536\u64da\u8acb\u6c42", "insurance_requests", insuranceDocumentRequestForm],
+      insuranceDocumentReply: ["\u4e0a\u50b3\u4fdd\u55ae\u6536\u64da", "insurance_requests", insuranceDocumentReplyForm]
     };
     const [title, tableName, formFn] = map[type];
     const item = id ? state.data[tableName].find((row) => row.id === id) : preset;
@@ -1837,17 +1895,6 @@
       syncRichEditors(e.currentTarget);
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
-      const requiredInsuranceFile = {
-        awaiting_admin_quote_confirmation: ["quote_url", "報價書"],
-        stamping: ["application_url", "要保書"],
-        awaiting_policy: ["stamped_application_url", "用印完成檔"],
-        payment_pending: ["policy_url", "保單"],
-        completed: ["receipt_url", "收據"]
-      }[record.status];
-      if (tableName === "insurance_requests" && requiredInsuranceFile && !record[requiredInsuranceFile[0]]) {
-        alert(`請先上傳${requiredInsuranceFile[1]}再送出`);
-        return;
-      }
       if (tableName === "vehicles") {
         const driverIds = formData.getAll("assigned_driver_ids").filter(Boolean);
         delete record.assigned_driver_ids;
@@ -2217,17 +2264,6 @@
       ${input("name", "姓名", d.name, "text", true)}
       ${input("phone", "手機號碼（登入用）", d.phone, "tel", true)}
       ${input("national_id", "\u99d5\u7167\u865f\u78bc\uff0f\u8eab\u5206\u8b49", d.national_id)}
-      <div class="field full photo-upload-field">
-        <label>司機照片</label>
-        <div class="photo-upload-row">
-          ${driverPhoto(d)}
-          <div>
-            <input type="hidden" name="photo_url" value="${escapeHtml(d.photo_url || "")}" data-photo-url>
-            <input type="file" accept="image/*" data-photo-upload>
-            <small>選擇照片後會自動縮小並壓縮，再存入司機資料。</small>
-          </div>
-        </div>
-      </div>
       ${checkbox("login_enabled", "允許此駕駛登入", d.login_enabled !== false)}
       ${input("onboard_date", "入隊時間", formDate(d.onboard_date), "date")}
       ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
@@ -2465,71 +2501,65 @@
 
   function insuranceRequestForm(item) {
     const vehicles = state.data.vehicles || [];
-    return `<div class="field full insurance-vehicle-picker"><label>車輛</label><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>`
+    return `<input type="hidden" name="request_type" value="quote"><input type="hidden" name="status" value="broker_quoting"><div class="field full insurance-vehicle-picker"><label>\u8eca\u8f1b</label><input type="search" data-insurance-vehicle-search placeholder="\u8f38\u5165\u8eca\u724c\u5feb\u901f\u7be9\u9078"><select name="vehicle_id" data-insurance-vehicle required><option value="">\u8acb\u9078\u64c7\u8eca\u8f1b</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>`
       + `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}">`
-      + select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((partner) => partner.partner_type === "dealer").map((partner) => [partner.id, partner.name])])
-      + select("insurance_type", "保險種類", item.insurance_type || "強制險＋任意險", [["強制險", "強制險"], ["任意險", "任意險"], ["強制險＋任意險", "強制險＋任意險"], ["旅客險", "旅客險"], ["其他", "其他"]])
-      + input("passenger_limit", "旅客險額度（萬）", item.passenger_limit, "number")
-      + select("coverage_spec", "規格", item.coverage_spec || "", [["", "預留空白"], ["乙式", "乙式"], ["丙式", "丙式"]])
-      + input("deductible", "自付額（萬）", item.deductible, "number")
-      + select("lienholder", "抵押權人", item.lienholder || "", [["", "無"], ["富邦", "富邦"], ["中信", "中信"], ["永豐", "永豐"], ["華南", "華南"]])
-      + select("assigned_insurance_company", "指定保險公司", item.assigned_insurance_company || "", [["", "請選擇"], ["富邦", "富邦"], ["華南", "華南"], ["國泰", "國泰"], ["新安東京", "新安東京"]])
-      + text("insurance_notes", "保險備註", item.insurance_notes)
-      + select("status", "案件進度", item.status || "broker_quoting", insuranceStatuses);
-  }
-
-  function driverLinkForm(item) {
-    return input("name", "連結名稱", item.name, "text", true)
-      + input("url", "連結網址", item.url, "url", true)
-      + fleetMultiOptions("target_fleets", "可看見此連結的車隊", item.target_fleets)
-      + text("description", "說明", item.description)
-      + checkbox("active", "啟用連結", item.active !== false);
+      + select("dealer_partner_id", "\u6240\u5c6c\u8eca\u5546", item.dealer_partner_id || "", [["", "\u81ea\u52d5\u5e36\u5165"], ...(state.data.insurance_partners || []).filter((partner) => partner.partner_type === "dealer").map((partner) => [partner.id, partner.name])])
+      + select("insurance_type", "\u4fdd\u96aa\u7a2e\u985e", item.insurance_type || "\u5f37\u5236\u96aa+\u4efb\u610f\u96aa", [["\u5f37\u5236\u96aa", "\u5f37\u5236\u96aa"], ["\u4efb\u610f\u96aa", "\u4efb\u610f\u96aa"], ["\u5f37\u5236\u96aa+\u4efb\u610f\u96aa", "\u5f37\u5236\u96aa+\u4efb\u610f\u96aa"], ["\u65c5\u5ba2\u96aa", "\u65c5\u5ba2\u96aa"], ["\u5176\u4ed6", "\u5176\u4ed6"]])
+      + input("passenger_limit", "\u65c5\u5ba2\u96aa\u984d\u5ea6(\u842c)", item.passenger_limit, "number")
+      + select("coverage_spec", "\u898f\u683c", item.coverage_spec || "", [["", "\u9810\u7559\u7a7a\u767d"], ["\u4e59\u5f0f", "\u4e59\u5f0f"], ["\u4e19\u5f0f", "\u4e19\u5f0f"]])
+      + input("vehicle_body_limit", "\u8eca\u9ad4\u96aa\u984d\u5ea6(\u842c)", item.vehicle_body_limit, "number")
+      + input("deductible", "\u81ea\u4ed8\u984d(\u842c)", item.deductible, "number")
+      + input("requested_driver", "\u99d5\u99db(\u9078\u586b)", item.requested_driver)
+      + select("lienholder", "\u62b5\u62bc\u6b0a\u4eba", item.lienholder || "", [["", "\u7121"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u4e2d\u4fe1", "\u4e2d\u4fe1"], ["\u6c38\u8c50", "\u6c38\u8c50"], ["\u83ef\u5357", "\u83ef\u5357"]])
+      + select("assigned_insurance_company", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", item.assigned_insurance_company || "", [["", "\u8acb\u9078\u64c7"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u83ef\u5357", "\u83ef\u5357"], ["\u570b\u6cf0", "\u570b\u6cf0"], ["\u65b0\u5b89\u6771\u4eac", "\u65b0\u5b89\u6771\u4eac"]])
+      + text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes);
   }
 
   function insuranceAmendmentRequestForm(item) {
     const vehicles = state.data.vehicles || [];
-    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="insurance_type" value="批改"><input type="hidden" name="status" value="broker_quoting">
-      <div class="field full insurance-vehicle-picker"><label>車輛</label><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}">${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
-      <input type="hidden" name="plate_no"><input type="hidden" name="dealer_partner_id">
-      ${select("driver_change_action", "批改項目", item.driver_change_action || "新增駕駛人", [["新增駕駛人", "新增駕駛人"], ["移除駕駛人", "移除駕駛人"]])}
-      ${input("driver_change_names", "駕駛人姓名", item.driver_change_names, "text", true)}
-      ${multiAttachmentField(item, "license_files", "駕照正反面")}
-      ${text("insurance_notes", "備註", item.insurance_notes)}`;
+    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="insurance_type" value="\u6279\u6539"><input type="hidden" name="status" value="amendment_requested">
+      <div class="field full insurance-vehicle-picker"><label>\u8eca\u8f1b</label><input type="search" data-insurance-vehicle-search placeholder="\u8f38\u5165\u8eca\u724c\u5feb\u901f\u7be9\u9078"><select name="vehicle_id" data-insurance-vehicle required><option value="">\u8acb\u9078\u64c7\u8eca\u8f1b</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
+      <input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><input type="hidden" name="dealer_partner_id" value="${escapeHtml(item.dealer_partner_id || "")}">
+      ${select("driver_change_action", "\u6279\u6539\u9805\u76ee", item.driver_change_action || "\u65b0\u589e\u99d5\u99db\u4eba", [["\u65b0\u589e\u99d5\u99db\u4eba", "\u65b0\u589e\u99d5\u99db\u4eba"], ["\u79fb\u9664\u99d5\u99db\u4eba", "\u79fb\u9664\u99d5\u99db\u4eba"]])}
+      ${input("driver_change_names", "\u99d5\u99db\u59d3\u540d", item.driver_change_names, "text", true)}
+      ${multiAttachmentField(item, "license_files", "\u99d5\u7167\u6b63\u53cd\u9762")}
+      ${text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes)}`;
+  }
+
+  function insuranceDocumentRequestForm(item) {
+    const vehicles = state.data.vehicles || [];
+    return `<input type="hidden" name="request_type" value="document"><input type="hidden" name="insurance_type" value="\u6587\u4ef6\u8acb\u6c42"><input type="hidden" name="status" value="document_requested">
+      <div class="field full insurance-vehicle-picker"><label>\u8eca\u8f1b</label><input type="search" data-insurance-vehicle-search placeholder="\u8f38\u5165\u8eca\u724c\u5feb\u901f\u7be9\u9078"><select name="vehicle_id" data-insurance-vehicle required><option value="">\u8acb\u9078\u64c7\u8eca\u8f1b</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
+      <input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><input type="hidden" name="dealer_partner_id" value="${escapeHtml(item.dealer_partner_id || "")}">
+      ${select("document_request_type", "\u8acb\u6c42\u6587\u4ef6", item.document_request_type || "\u4fdd\u55ae", [["\u4fdd\u55ae", "\u4fdd\u55ae"], ["\u6536\u64da", "\u6536\u64da"], ["\u4fdd\u55ae+\u6536\u64da", "\u4fdd\u55ae+\u6536\u64da"]])}
+      ${text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes)}`;
   }
 
   function insuranceAmendmentForm(item) {
-    return insuranceRequestSummary(item)
-      + multiAttachmentField(item, "amendment_files", "批改檔案")
-      + text("broker_notes", "保經備註", item.broker_notes)
-      + `<input type="hidden" name="status" value="stamping">`;
+    return insuranceRequestSummary(item) + multiAttachmentField(item, "amendment_files", "\u6279\u6539\u7533\u8acb\u66f8") + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="amendment_stamping">`;
+  }
+
+  function insuranceAmendmentStampForm(item) {
+    return insuranceRequestSummary(item) + insuranceDocumentField(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210", true) + `<input type="hidden" name="status" value="amendment_stamped">`;
   }
 
   function insuranceQuoteForm(item) {
-    return insuranceRequestSummary(item)
-      + input("quote_amount", "報價金額", item.quote_amount, "number", true)
-      + text("broker_notes", "保經備註", item.broker_notes)
-      + insuranceDocumentField(item, "quote", "報價書", true)
-      + `<input type="hidden" name="status" value="awaiting_admin_quote_confirmation">`;
+    return insuranceRequestSummary(item) + input("quote_amount", "\u5831\u50f9\u91d1\u984d", item.quote_amount, "number") + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + insuranceDocumentField(item, "quote", "\u5831\u50f9\u55ae", false) + select("status", "\u8655\u7406\u7d50\u679c", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "\u9001\u8eca\u8f1b\u90e8\u78ba\u8a8d"], ["broker_returned", "\u9000\u56de\u88dc\u4ef6"]]);
   }
 
   function insuranceRequestSummary(item) {
-    return `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><div class="field full insurance-request-summary"><strong>${escapeHtml(item.plate_no)} · ${escapeHtml(item.insurance_type)}</strong><span>${escapeHtml(item.coverage_spec || "-")}／旅客險 ${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} 萬` : "-"}／自付額 ${item.deductible ? `${escapeHtml(item.deductible)} 萬` : "-"}／抵押權人 ${escapeHtml(item.lienholder || "無")}</span>${item.insurance_notes ? `<p>${escapeHtml(item.insurance_notes)}</p>` : ""}</div>`;
+    return `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><div class="field full insurance-request-summary"><strong>${escapeHtml(item.plate_no || "\u672a\u9078\u8eca\u724c")} ? ${escapeHtml(item.insurance_type || item.document_request_type || "\u4fdd\u96aa\u6848\u4ef6")}</strong><span>${escapeHtml(item.coverage_spec || "-")} ? \u65c5\u5ba2\u96aa ${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} \u842c` : "-"} ? \u8eca\u9ad4\u96aa\u984d\u5ea6(\u842c) ${item.vehicle_body_limit ? `${escapeHtml(item.vehicle_body_limit)} \u842c` : "-"} ? \u81ea\u4ed8\u984d(\u842c) ${item.deductible ? `${escapeHtml(item.deductible)} \u842c` : "-"}</span>${(item.vehicle_dept_notes || item.insurance_notes) ? `<p>${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}</div>`;
   }
 
-  function insuranceApplicationForm(item) {
-    return insuranceRequestSummary(item) + insuranceDocumentField(item, "application", "要保書", true) + text("broker_notes", "保經備註", item.broker_notes) + `<input type="hidden" name="status" value="stamping">`;
-  }
-
-  function insuranceStampForm(item) {
-    return insuranceRequestSummary(item) + insuranceDocumentField(item, "stamped_application", "用印完成檔", true) + `<input type="hidden" name="status" value="awaiting_policy">`;
-  }
-
-  function insurancePolicyForm(item) {
-    return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "保單", true) + text("broker_notes", "保經備註", item.broker_notes) + `<input type="hidden" name="status" value="payment_pending">`;
-  }
-
-  function insuranceReceiptForm(item) {
-    return insuranceRequestSummary(item) + insuranceDocumentField(item, "receipt", "收據", true) + text("broker_notes", "保經備註", item.broker_notes) + `<input type="hidden" name="status" value="completed">`;
+  function insuranceApplicationForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "application", "\u8981\u4fdd\u66f8", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="stamping">`; }
+  function insuranceStampForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)", true) + `<input type="hidden" name="status" value="awaiting_policy">`; }
+  function insurancePolicyForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "\u4fdd\u55ae", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="payment_pending">`; }
+  function insurancePaymentForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "payment_slip", "\u5237\u5361\u55ae", false) + `<input type="hidden" name="status" value="receipt_pending">`; }
+  function insuranceReceiptForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "receipt", "\u6536\u64da", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
+  function insuranceDocumentReplyForm(item) {
+    const needPolicy = String(item.document_request_type || "").includes("\u4fdd\u55ae");
+    const needReceipt = String(item.document_request_type || "").includes("\u6536\u64da");
+    return insuranceRequestSummary(item) + (needPolicy ? insuranceDocumentField(item, "document_policy", "\u88dc\u767c\u4fdd\u55ae", true) : "") + (needReceipt ? insuranceDocumentField(item, "document_receipt", "\u88dc\u767c\u6536\u64da", true) : "") + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="document_received">`;
   }
 
   async function syncCalendarNotification(item) {
@@ -3154,34 +3184,6 @@
         multiInput.disabled = false;
       }
       return;
-    }
-    const input = e.target.closest("[data-photo-upload]");
-    if (!input || !input.files?.[0]) return;
-    const file = input.files[0];
-    if (!file.type.startsWith("image/")) return;
-    try {
-      input.disabled = true;
-      const compressed = await compressPhoto(file);
-      const modal = input.closest(".modal");
-      const hidden = modal?.querySelector("[data-photo-url]");
-      if (hidden) hidden.value = compressed;
-      const preview = modal?.querySelector(".photo-upload-row .driver-avatar");
-      if (!preview) return;
-      if (preview.tagName === "IMG") {
-        preview.src = compressed;
-        preview.style.display = "";
-        if (preview.nextElementSibling) preview.nextElementSibling.style.display = "none";
-      } else {
-        const img = document.createElement("img");
-        img.className = preview.className;
-        img.alt = "driver photo";
-        img.src = compressed;
-        preview.replaceWith(img);
-      }
-    } catch {
-      alert("照片處理失敗，請改用 JPG 或 PNG 圖片。");
-    } finally {
-      input.disabled = false;
     }
   });
 

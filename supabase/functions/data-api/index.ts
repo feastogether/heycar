@@ -312,42 +312,35 @@ Deno.serve(async (req) => {
       const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();
       const allowed = partner?.partner_type === "broker"
         ? [
-          "status", "quote_amount", "broker_notes",
+          "status", "quote_amount", "broker_notes", "broker_reply",
           "quote_url", "quote_name",
           "application_url", "application_name",
+          "amendment_stamped_url", "amendment_stamped_name",
           "policy_url", "policy_name",
           "receipt_url", "receipt_name",
+          "document_policy_url", "document_policy_name",
+          "document_receipt_url", "document_receipt_name",
           "amendment_files",
           "updated_at"
         ]
-        : ["status", "updated_at"];
+        : ["status", "dealer_reply", "updated_at"];
       body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
-      if (partner?.partner_type === "dealer" && body.record.status !== "quote_confirmed_issue_application") {
+      if (partner?.partner_type === "dealer" && !["quote_confirmed_issue_application", "vehicle_dept_review"].includes(body.record.status)) {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       }
       if (partner?.partner_type === "broker") {
         const { data: current } = await db.from("insurance_requests").select("status,request_type").eq("id", body.id).single();
-        const allowedTransitions: Record<string, string> = {
-          broker_quoting: "awaiting_admin_quote_confirmation",
-          quote_confirmed_issue_application: "stamping",
-          awaiting_policy: "payment_pending",
-          receipt_pending: "completed"
+        const allowedTransitions: Record<string, string[]> = {
+          broker_quoting: ["vehicle_dept_review", "broker_returned"],
+          quote_confirmed_issue_application: ["stamping"],
+          awaiting_policy: ["payment_pending"],
+          receipt_pending: ["completed"],
+          amendment_requested: ["amendment_stamping"],
+          amendment_stamped: ["amendment_completed"],
+          document_requested: ["document_received"]
         };
-        if (current?.status === "awaiting_policy" && body.record.status === "completed") {
-          allowedTransitions.awaiting_policy = "completed";
-        }
-        if (body.record.status && allowedTransitions[current?.status] !== body.record.status) {
+        if (body.record.status && !allowedTransitions[current?.status]?.includes(body.record.status)) {
           return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
-        }
-        const requiredFile: Record<string, string> = {
-          awaiting_admin_quote_confirmation: "quote_url",
-          stamping: "application_url",
-          payment_pending: "policy_url",
-          completed: "receipt_url"
-        };
-        if (current?.request_type === "amendment") requiredFile.stamping = "amendment_files";
-        if (body.record.status && requiredFile[body.record.status] && !body.record[requiredFile[body.record.status]]) {
-          return json({ error: "INSURANCE_FILE_REQUIRED" }, 400);
         }
       }
     }
