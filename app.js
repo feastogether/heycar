@@ -1275,13 +1275,28 @@
   function insuranceControlCenter(requests = state.data.insurance_requests || [], editable = false) {
     const counts = Object.fromEntries(insuranceStatuses.map(([status]) => [status, requests.filter((item) => item.status === status).length]));
     const activeCount = requests.filter((item) => !["completed", "amendment_completed"].includes(item.status)).length;
+    const importantStatuses = new Set([
+      "broker_quoting",
+      "broker_returned",
+      "vehicle_dept_review",
+      "dealer_review",
+      "quote_confirmed_issue_application",
+      "stamping",
+      "awaiting_policy",
+      "payment_pending",
+      "receipt_pending",
+      "completed",
+      "amendment_requested",
+      "document_requested"
+    ]);
+    const filterStatuses = insuranceStatuses.filter(([status]) => counts[status] || state.insuranceStatusFilter === status || importantStatuses.has(status));
     const visibleRequests = requests.filter((item) => state.insuranceStatusFilter
       ? item.status === state.insuranceStatusFilter
       : !["completed", "amendment_completed"].includes(item.status));
     return `
-      <div class="insurance-pipeline">
-        <button class="pipeline-step ${state.insuranceStatusFilter === "" ? "is-active" : ""}" data-insurance-filter=""><span>\u5168</span><strong>\u9032\u884c\u4e2d</strong><b>${activeCount}</b></button>
-        ${insuranceStatuses.map(([status, label], index) => `<button class="pipeline-step ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "is-active" : ""}" data-insurance-filter="${status}"><span>${index + 1}</span><strong>${label}</strong><b>${counts[status] || 0}</b></button>`).join("")}
+      <div class="insurance-filter-strip">
+        <button class="filter-btn ${state.insuranceStatusFilter === "" ? "active" : ""}" data-insurance-filter="">\u9032\u884c\u4e2d<b>${activeCount}</b></button>
+        ${filterStatuses.map(([status, label]) => `<button class="filter-btn ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "active" : ""}" data-insurance-filter="${status}">${label}<b>${counts[status] || 0}</b></button>`).join("")}
       </div>
       <div class="insurance-request-list">
         ${visibleRequests.length ? visibleRequests.map((item) => insuranceRequestRow(item, editable)).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u7b26\u5408\u689d\u4ef6\u7684\u4fdd\u96aa\u6848\u4ef6</div>`}
@@ -1873,15 +1888,30 @@
       insuranceDocumentRequest: ["\u4fdd\u55ae\u6536\u64da\u8acb\u6c42", "insurance_requests", insuranceDocumentRequestForm],
       insuranceDocumentReply: ["\u4e0a\u50b3\u4fdd\u55ae\u6536\u64da", "insurance_requests", insuranceDocumentReplyForm]
     };
-    const [title, tableName, formFn] = map[type];
+    const modalConfig = map[type];
+    if (!modalConfig) {
+      console.warn("Unknown modal type:", type);
+      alert("\u627e\u4e0d\u5230\u9019\u500b\u8868\u55ae\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002");
+      return;
+    }
+    const [title, tableName, formFn] = modalConfig;
+    state.data[tableName] = state.data[tableName] || [];
     const item = id ? state.data[tableName].find((row) => row.id === id) : preset;
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
+    let formHtml = "";
+    try {
+      formHtml = formFn(item || {});
+    } catch (error) {
+      console.error("Modal render failed:", type, error);
+      alert("\u8868\u55ae\u8f09\u5165\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002");
+      return;
+    }
     modal.innerHTML = `
       <div class="modal ${type === "driver" ? "driver-editor-modal" : ""}">
         <div class="modal-title"><h3>${id ? "編輯" : "新增"}${title}</h3></div>
         <form id="modalForm" class="modal-form">
-          <div class="modal-form-body form-grid">${formFn(item || {})}</div>
+          <div class="modal-form-body form-grid">${formHtml}</div>
           <div class="modal-actions">
             <button class="ghost-btn" type="button" data-close-modal>關閉</button>
             <button class="primary-btn" type="submit">儲存</button>
@@ -2245,6 +2275,15 @@
       </div>
       ${item.cover_url ? `<div class="attachment-link"><button type="button" data-preview-file="${escapeHtml(item.cover_url)}" data-preview-name="${escapeHtml(item.cover_name || "\u5c01\u9762\u5716\u7247")}" data-preview-type="">\u67e5\u770b\u5c01\u9762</button></div>` : ""}
     </div>`;
+  }
+
+  function driverLinkForm(item) {
+    return input("name", "\u9023\u7d50\u540d\u7a31", item.name, "text", true)
+      + input("url", "\u9023\u7d50\u7db2\u5740", item.url, "url", true)
+      + input("description", "\u8aaa\u660e", item.description)
+      + input("sort_order", "\u6392\u5e8f", item.sort_order || 0, "number")
+      + fleetMultiOptions("target_fleets", "\u53ef\u67e5\u770b\u8eca\u968a", item.target_fleets)
+      + checkbox("active", "\u555f\u7528\u9023\u7d50", item.active !== false);
   }
 
   function driverHelperArticleForm(item) {
@@ -2853,6 +2892,7 @@
       return;
     }
     if (target?.dataset.modal) {
+      e.preventDefault();
       openModal(target.dataset.modal, target.dataset.id);
       return;
     }
@@ -2955,6 +2995,7 @@
       render();
     }
     if (target.dataset.insuranceFilter !== undefined) {
+      e.preventDefault();
       state.insuranceStatusFilter = target.dataset.insuranceFilter;
       render();
     }
@@ -2998,6 +3039,7 @@
       render();
     }
     if (target.dataset.insuranceStatus) {
+      e.preventDefault();
       const [id, status] = target.dataset.insuranceStatus.split(":");
       await update("insurance_requests", id, { status });
       render();

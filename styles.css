@@ -1512,6 +1512,28 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .pipeline-step.has-items { border-color: #efb0ac; background: #fff8f7; color: var(--ink); }
 .pipeline-step.has-items > span { background: var(--brand); color: #fff; }
 .pipeline-step.is-active { border-color: var(--brand); box-shadow: inset 0 0 0 1px var(--brand); color: var(--ink); }
+.insurance-filter-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 2px 0 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+.insurance-filter-strip .filter-btn {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.insurance-filter-strip .filter-btn.has-items:not(.active) {
+  border-color: #efb0ac;
+  background: #fff8f7;
+  color: var(--ink);
+}
 .insurance-request-list { display: grid; gap: 8px; }
 .insurance-request-row {
   padding: 11px 13px;
