@@ -1969,6 +1969,7 @@
     }
     if (tableName === "drivers") {
       blankToNull(record, [
+        "dealer_partner_id",
         "license_expiry",
         "license_review_date",
         "license_valid_until",
@@ -2041,8 +2042,11 @@
     if (tableName === "insurance_requests") {
       record.vehicle_id = record.vehicle_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
+      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "awaiting_dealer_confirmation", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
+      if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
       if (!record.request_type && !record.vehicle_id) delete record.vehicle_id;
       if (!record.request_type && !record.dealer_partner_id) delete record.dealer_partner_id;
+      if (record.request_type === "quote" && record.insurance_type === "批改") record.insurance_type = "";
       if (!record.insurance_type) {
         if (record.request_type === "amendment") record.insurance_type = "批改";
         else if (record.request_type === "document") record.insurance_type = "文件請求";
