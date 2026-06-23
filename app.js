@@ -223,9 +223,16 @@
       body: JSON.stringify({ action, ...payload })
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "資料服務連線失敗");
+    if (!response.ok) {
+      if (result.error === "SESSION_EXPIRED") {
+        state.apiSession = "";
+        clearSession();
+      }
+      throw new Error(result.error === "SESSION_EXPIRED" ? "登入已逾時，請重新登入。" : (result.error || "資料服務暫時無法連線，請稍後再試。"));
+    }
     return result;
   }
+
 
   async function storageRequest(action, payload = {}) {
     const response = await fetch(storageApiUrl, {
@@ -244,7 +251,7 @@
     } catch {
       result = { error: `Storage service returned an invalid response (${response.status}). Please reload and try again.` };
     }
-    if (!response.ok) throw new Error(result.error || "儲存空間服務連線失敗");
+    if (!response.ok) throw new Error(result.error === "SESSION_EXPIRED" ? "登入已逾時，請重新登入。" : (result.error || "儲存空間服務連線失敗"));
     return result;
   }
 
@@ -264,7 +271,7 @@
     } catch {
       result = { error: `Supabase Storage returned an invalid response (${response.status}).` };
     }
-    if (!response.ok) throw new Error(result.error || "Supabase Storage 上傳失敗");
+    if (!response.ok) throw new Error(result.error === "SESSION_EXPIRED" ? "登入已逾時，請重新登入。" : (result.error || "Supabase Storage 上傳失敗"));
     return result;
   }
 
@@ -738,6 +745,23 @@
     else renderDriver();
   }
 
+  function driverNotificationCount() {
+    if (!state.user) return 0;
+    const unreadAnnouncements = visibleAnnouncements().filter((a) => !isAnnouncementRead(a.id)).length;
+    const pendingMessages = mine("personal_messages").filter((item) => item.status === "pending").length;
+    const pendingPayments = mine("payment_notices").filter((item) => item.status === "pending").length;
+    const pendingMaintenance = mine("maintenance_notifications").filter((item) => item.status === "pending").length;
+    return unreadAnnouncements + pendingMessages + pendingPayments + pendingMaintenance;
+  }
+
+  function notificationBell() {
+    if (!state.user) return "";
+    const count = driverNotificationCount();
+    return `<button class="notification-bell ${count ? "has-alert" : ""}" data-view="messagesCenter" title="訊息中心" aria-label="訊息中心">
+      <span>🔔</span>${count ? `<b>${count > 99 ? "99+" : count}</b>` : ""}
+    </button>`;
+  }
+
   function layout(content) {
     if (state.admin) {
       app.innerHTML = `
@@ -748,7 +772,7 @@
               <img src="${logoUrl}" alt="heycar logo">
               <div class="brand-copy">
                 <div class="brand-title">管理後台</div>
-                <div class="brand-subtitle">${escapeHtml(state.adminProfile?.name || "管理員")}，您好</div>
+                <div class="brand-subtitle">${escapeHtml(state.adminProfile?.name || "亞菲得車隊管理")}</div>
               </div>
             </div>
             <div class="userbox">
@@ -769,19 +793,13 @@
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
             ${state.partner?.logo_url ? `<img class="partner-brand-logo" src="${escapeHtml(state.partner.logo_url)}" alt="${escapeHtml(state.partner.name || "partner")} logo" onerror="this.remove()">` : ""}
-            ${state.admin ? `
-              <div class="brand-copy">
-                <div class="brand-title">管理後台</div>
-                <div class="brand-subtitle">亞菲得車隊管理</div>
-              </div>
-            ` : `
-              <div class="brand-copy">
-                <div class="brand-title driver-name">${escapeHtml(state.partner?.name || state.user?.name)}，您好</div>
-                <div class="brand-subtitle">${state.partner ? (state.partner.partner_type === "broker" ? "保經工作台" : "車商保險中心") : "亞菲得車隊"}</div>
-              </div>
-            `}
+            <div class="brand-copy">
+              <div class="brand-title driver-name">${escapeHtml(state.partner?.name || state.user?.name || "亞菲得")}</div>
+              <div class="brand-subtitle">${state.partner ? (state.partner.partner_type === "broker" ? "保經作業入口" : "車商保險入口") : "車隊服務前台"}</div>
+            </div>
           </div>
           <div class="userbox">
+            ${notificationBell()}
             <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
             <button class="ghost-btn" data-action="logout">登出</button>
           </div>
@@ -792,6 +810,7 @@
     `;
     loadAirportWeather();
   }
+
 
   function activeMarqueeMessages() {
     return (state.data.marquee_messages || [])
@@ -989,33 +1008,57 @@
     `;
   }
 
+  function helperReadKey() {
+    return `afide-helper-read-${state.user?.id || "guest"}`;
+  }
+
+  function helperReadSet() {
+    try { return new Set(JSON.parse(localStorage.getItem(helperReadKey()) || "[]")); } catch { return new Set(); }
+  }
+
+  function isHelperArticleRead(id) {
+    return helperReadSet().has(id);
+  }
+
+  function markHelperArticleRead(id) {
+    if (!id) return;
+    const set = helperReadSet();
+    set.add(id);
+    localStorage.setItem(helperReadKey(), JSON.stringify([...set]));
+  }
+
   function driverHelper() {
     const articles = (state.data.driver_helper_articles || [])
       .filter((item) => item.active !== false)
       .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(b.created_at || "").localeCompare(String(a.created_at || "")));
-    const defaultCategory = "\u4e00\u822c\u6559\u5b78";
+    const defaultCategory = "一般教學";
     const categories = [...new Set(articles.map((item) => item.category || defaultCategory))];
     if (state.driverHelperCategory && !categories.includes(state.driverHelperCategory)) state.driverHelperCategory = "";
     const visible = state.driverHelperCategory ? articles.filter((item) => (item.category || defaultCategory) === state.driverHelperCategory) : articles;
     return `
-      ${pageHeader("\u53f8\u6a5f\u5e6b\u624b")}
-      <div class="helper-tab-bar">
-        <button class="filter-btn ${state.driverHelperCategory === "" ? "active" : ""}" data-helper-category="">\u5168\u90e8</button>
+      ${pageHeader("司機幫手")}
+      <div class="helper-category-tabs">
+        <button class="filter-btn ${state.driverHelperCategory === "" ? "active" : ""}" data-helper-category="">全部</button>
         ${categories.map((category) => `<button class="filter-btn ${state.driverHelperCategory === category ? "active" : ""}" data-helper-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
       </div>
-      <div class="helper-article-list helper-article-flat">
-        ${visible.length ? visible.map((item) => `
-          <details class="helper-article">
+      <div class="helper-article-list helper-readable-list">
+        ${visible.length ? visible.map((item) => {
+          const read = isHelperArticleRead(item.id);
+          return `<details class="helper-article-card ${read ? "is-read" : "is-unread"}" data-helper-detail="${item.id}">
             <summary>
-              ${item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(item.title)}">` : `<span class="helper-cover-fallback">${iconSvg(featureIcons.driverHelper)}</span>`}
-              <span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.summary || item.category || "")}</small></span>
+              <span class="helper-article-title"><strong>${escapeHtml(item.title || "未命名文章")}</strong><small>${fmtDate(item.created_at)}</small></span>
+              <span class="helper-article-category">${escapeHtml(item.category || defaultCategory)}</span>
             </summary>
-            <div class="helper-content">${sanitizeRichHtml(item.content_html || "")}</div>
-          </details>
-        `).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u53f8\u6a5f\u5e6b\u624b\u6587\u7ae0</div>`}
+            <div class="helper-content">
+              ${item.cover_url ? `<button class="helper-cover-button" data-preview-file="${escapeHtml(item.cover_url)}" data-preview-name="${escapeHtml(item.cover_name || item.title || "圖片")}" data-preview-type="image/*"><img src="${escapeHtml(item.cover_url)}" alt="${escapeHtml(item.title || "文章圖片")}"></button>` : ""}
+              ${sanitizeRichHtml(item.content_html || "")}
+            </div>
+          </details>`;
+        }).join("") : `<div class="empty">目前沒有司機幫手文章</div>`}
       </div>
     `;
   }
+
 
   function driverLinkCenter() {
     const links = (state.data.driver_links || []).filter((item) => {
@@ -1355,32 +1398,33 @@
   function insuranceRequestRow(item, editable) {
     const partner = (state.data.insurance_partners || []).find((row) => row.id === item.dealer_partner_id);
     const isDealer = state.partner?.partner_type === "dealer";
-    const typeLabel = item.request_type === "amendment" ? "\u6279\u6539\u7533\u8acb" : item.request_type === "document" ? "\u4fdd\u55ae\u6536\u64da\u8acb\u6c42" : (item.insurance_type || "\u5831\u50f9\u8acb\u6c42");
+    const typeLabel = item.request_type === "amendment" ? "批改申請" : item.request_type === "document" ? "保單收據請求" : (item.insurance_type || "報價請求");
+    const specParts = [item.coverage_spec, item.assigned_insurance_company].filter(Boolean);
     return `
       <article class="insurance-request-row insurance-stage-${escapeHtml(item.status)} ${isDealer ? "dealer-insurance-row" : ""}">
         <div class="insurance-row-main">
-          <strong class="insurance-plate">${escapeHtml(item.plate_no || "\u672a\u9078\u8eca\u724c")}</strong>
+          <strong class="insurance-plate">${escapeHtml(item.plate_no || "未選車牌")}</strong>
           <div class="insurance-row-identity">
-            <b>${escapeHtml(typeLabel)} ? ${escapeHtml(item.coverage_spec || item.document_request_type || "")}</b>
-            <small>${escapeHtml(partner?.name || "\u672a\u6307\u5b9a\u8eca\u5546")} ? ${escapeHtml(item.assigned_insurance_company || "\u672a\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8")}</small>
+            <b>${escapeHtml(typeLabel)}${specParts.length ? `｜${escapeHtml(specParts.join("｜"))}` : ""}</b>
+            <small>${escapeHtml(partner?.name || "未指定車商")}${item.lienholder ? `｜抵押權人 ${escapeHtml(item.lienholder)}` : ""}</small>
           </div>
           ${insuranceStatusBadge(item.status)}
         </div>
         <div class="insurance-row-details">
-          <span><small>\u65c5\u5ba2\u96aa</small><b>${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} \u842c` : "-"}</b></span>
-          <span><small>\u8eca\u9ad4\u96aa</small><b>${item.vehicle_body_limit ? `${escapeHtml(item.vehicle_body_limit)} \u842c` : "-"}</b></span>
-          <span><small>\u81ea\u4ed8\u984d</small><b>${item.deductible ? `${escapeHtml(item.deductible)} \u842c` : "-"}</b></span>
-          <span><small>\u62b5\u62bc\u6b0a\u4eba</small><b>${escapeHtml(item.lienholder || "-")}</b></span>
-          <span><small>\u5831\u50f9</small><b>${item.quote_amount ? `$${Number(item.quote_amount).toLocaleString()}` : "-"}</b></span>
+          <span><small>旅客險</small><b>${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} 萬` : "-"}</b></span>
+          <span><small>車體險</small><b>${item.vehicle_body_limit ? `${escapeHtml(item.vehicle_body_limit)} 萬` : "-"}</b></span>
+          <span><small>自付額</small><b>${item.deductible ? `${escapeHtml(item.deductible)} 萬` : "-"}</b></span>
+          <span><small>駕駛</small><b>${escapeHtml(item.requested_driver || item.driver_change_names || "-")}</b></span>
           ${insuranceVisibleFiles(item)}
         </div>
-        ${!isDealer && (item.vehicle_dept_notes || item.insurance_notes) ? `<p class="insurance-note">\u8eca\u8f1b\u90e8\u5099\u8a3b\uff1a${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}
-        ${!isDealer && item.broker_reply ? `<p class="quote-note">\u4fdd\u7d93\u56de\u8986\uff1a${escapeHtml(item.broker_reply)}</p>` : ""}
-        ${!isDealer && item.dealer_reply ? `<p class="quote-note">\u8eca\u5546\u56de\u8986\uff1a${escapeHtml(item.dealer_reply)}</p>` : ""}
+        ${!isDealer && (item.vehicle_dept_notes || item.insurance_notes) ? `<p class="insurance-note">車輛部備註：${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}
+        ${!isDealer && item.broker_reply ? `<p class="quote-note">保經回覆：${escapeHtml(item.broker_reply)}</p>` : ""}
+        ${!isDealer && item.dealer_reply ? `<p class="quote-note">車商回覆：${escapeHtml(item.dealer_reply)}</p>` : ""}
         <div class="insurance-card-actions">${insuranceRequestActions(item, editable)}</div>
       </article>
     `;
   }
+
 
   function renderInsurancePortal() {
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
@@ -1408,10 +1452,11 @@
   function adminInsuranceCenter() {
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
     return `
-      <div class="section-head"><div><h2>保險中心</h2><small>集中掌握每台車的投保與批改進度</small></div><div class="actions"><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">\u767c\u8d77\u6279\u6539</button><button class="soft-btn" data-modal="insuranceDocumentRequest">\u4fdd\u55ae\u6536\u64da\u8acb\u6c42</button><button class="primary-btn" data-modal="insuranceRequest">\u767c\u8d77\u5831\u50f9</button></div></div>
+      <div class="section-head"><div><h2>保險中心</h2><small>管理報價、批改、保單與收據流程</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceDocumentRequest">保單收據請求</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button></div></div>
       ${insuranceControlCenter(requests, true)}
     `;
   }
+
 
   function adminInsurancePartners() {
     return `
@@ -1495,7 +1540,6 @@
   const adminNavLabels = {
     adminUsers: "權限管理",
     drivers: "駕駛管理",
-    recruitmentDocuments: "招募文件",
     vehicles: "車輛管理",
     vehicleLoans: "車輛租借",
     serviceRecords: "車輛履歷",
@@ -1516,7 +1560,7 @@
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "recruitmentDocuments", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["drivers", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "driverLinks", "storage"]]
@@ -1550,17 +1594,15 @@
       ["announcements", "公告管理", "📢", "messages"],
       ["personalMessages", "個人訊息", "✉️", "messages"],
       ["payments", "費用管理", "💳", "finance"],
-      ["driverHelperArticles", "\u53f8\u6a5f\u5e6b\u624b", "??", "messages"],
+      ["driverHelperArticles", "司機幫手", "📘", "messages"],
       ["feedbacks", "意見反饋", "💬", "messages"],
       ["marquee", "跑馬燈通知", "🚨", "messages"],
       ["emergencyEvents", "緊急事件", "🆘", "messages"]
     ].filter(([, , , permission]) => !permission || adminCan(permission));
-    if (adminCan("drivers")) nav.splice(2, 0, ["recruitmentDocuments", "招募文件", "📋", "drivers"]);
     if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
       adminUsers,
       drivers: adminDrivers,
-      recruitmentDocuments: adminRecruitmentDocuments,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
       serviceRecords: adminServiceRecords,
@@ -1597,34 +1639,6 @@
         <section class="admin-workspace">${body}</section>
       </div>
     `);
-  }
-
-  function adminRecruitmentDocuments() {
-    const yesNo = (name, label) => `<fieldset class="choice-field"><legend>${label}</legend><label><input type="radio" name="${name}" value="是"> 是</label><label><input type="radio" name="${name}" value="否"> 否</label></fieldset>`;
-    const checks = (name, label, values) => `<fieldset class="choice-field full"><legend>${label}</legend>${values.map((value) => `<label><input type="checkbox" name="${name}" value="${value}"> ${value}</label>`).join("")}</fieldset>`;
-    return `
-      <div class="section-head"><div><h2>招募文件</h2><small>完整填寫後，資料將套印至原始評核表並附加完整明細頁。</small></div><button class="primary-btn" data-action="generate-recruitment-pdf">產出原版評核表 PDF</button></div>
-      <form class="panel recruitment-sheet" id="recruitmentSheet">
-        <div class="recruitment-title"><select name="fleet_name">${fleetNames(false).map((fleet) => `<option value="${escapeHtml(fleet)}">${escapeHtml(fleet)}</option>`).join("")}</select><h3>新司機面訪評核表</h3></div>
-        <div class="form-grid">
-          ${input("referrer", "推薦人")}${input("interview_date", "面訪日期", today(), "date")}
-          ${input("name", "姓名")}${input("national_id", "身分證字號")}${input("gender", "性別")}${input("marital_status", "婚姻狀況")}
-          ${input("birthday", "出生日期", "", "date")}${input("phone", "連絡電話")}${input("address", "居住地址")}${input("email", "電子信箱", "", "email")}
-          ${input("service_area", "服務區域")}${input("plate_no", "車號")}${input("license_type", "駕照種類")}${input("languages", "語言／第二外語")}
-          ${yesNo("own_vehicle", "自有車輛")}${yesNo("smoking", "是否抽菸")}${yesNo("drinking", "是否酗酒")}${yesNo("betel_nut", "是否吃檳榔")}${yesNo("major_violation", "曾有重大違規")}${yesNo("tour_guide_license", "導遊證")}
-          ${input("family_status", "家庭狀況／稱謂與年齡")}${input("income_source", "主要收入來源")}${input("monthly_income", "收入金額／月")}${input("monthly_expenses", "每月生活開銷")}
-          ${input("trips_per_week", "趟數／週")}${input("loan_amount", "貸款金額")}${input("specialty", "專長")}${input("parking_space", "家中停車位")}
-          ${input("emergency_contact", "緊急聯絡人姓名")}${input("emergency_relation", "緊急聯絡人關係")}${input("emergency_phone", "緊急聯絡人電話")}${input("vehicle_brand", "車輛品牌")}
-          ${input("vehicle_model", "車款")}${input("vehicle_year", "車輛年份")}${input("vehicle_color", "顏色")}${input("fuel_type", "油／油電／電")}
-          ${yesNo("booster_seat", "增高墊")}${yesNo("child_seat", "雙向安全座椅")}${yesNo("gps_dog", "安裝衛星犬")}${input("expected_delivery_date", "預計交車日", "", "date")}
-          ${input("affiliate_dealer", "靠行車商")}${input("affiliate_fee", "靠行費／年")}${input("expected_trips", "期望趟數")}${input("expected_revenue", "期望營業額")}${input("shift", "班別")}
-          ${checks("other_operators", "承接其他業者卡趟客戶", ["肯驛", "和運", "格上", "全鋒", "e-go", "無"])}
-          ${checks("attached_documents", "檢附資料", ["司機職業駕照", "無肇事紀錄", "身分證正反面", "保險卡-14型500萬", "良民證", "存摺影本", "車輛行照"])}
-          ${checks("admin_checklist", "行政流程", ["入隊費", "靠行費", "承攬合約", "教育訓練", "行政確認", "行控確認", "停車吧開通"])}
-          ${input("education", "學歷／學校／科系／就讀期間")}${input("work_history", "近期經歷／公司／職務／服務期間／離職原因")}
-          ${text("interview_notes", "訪談內容")}${text("other_notes", "其他")}${text("vehicle_confirmation", "車輛管理與確認")}${text("evaluation_result", "評核結果／主管簽核／是否簽約")}
-        </div>
-      </form>`;
   }
 
   function adminDrivers() {
@@ -1970,11 +1984,17 @@
       record.booster_seat_count = Number(record.booster_seat_count || 0);
       record.driver_status = record.driver_status || "待上線";
       record.login_enabled = record.login_enabled === "true";
+      ["id_card_files"].forEach((key) => {
+        if (typeof record[key] === "string") {
+          try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
+        }
+      });
     }
     if (tableName === "vehicles") {
       record.current_driver_id = record.current_driver_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
+      record.insurance_company = record.compulsory_insurance_company || record.voluntary_insurance_company || record.insurance_company || "";
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
     if (tableName === "driver_helper_articles") {
@@ -2021,8 +2041,15 @@
     if (tableName === "insurance_requests") {
       record.vehicle_id = record.vehicle_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
-      record.insurance_type = record.insurance_type || "批改";
-      record.quote_amount = Number(record.quote_amount || 0) || null;
+      if (!record.request_type && !record.vehicle_id) delete record.vehicle_id;
+      if (!record.request_type && !record.dealer_partner_id) delete record.dealer_partner_id;
+      if (!record.insurance_type) {
+        if (record.request_type === "amendment") record.insurance_type = "批改";
+        else if (record.request_type === "document") record.insurance_type = "文件請求";
+        else if (record.request_type === "quote") record.insurance_type = "報價請求";
+        else delete record.insurance_type;
+      }
+      if ("quote_amount" in record) record.quote_amount = Number(record.quote_amount || 0) || null;
       ["license_files", "amendment_files"].forEach((key) => {
         if (typeof record[key] === "string") {
           try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
@@ -2079,7 +2106,7 @@
     const configs = {
       drivers: ["駕駛管理", state.data.drivers || [], [["姓名", "name"], ["電話", "phone"], ["狀態", "driver_status"], ["服務區域", "service_area"], ["服務時段", "service_shift"], ["到職日期", "onboard_date"], ["駕照到期日", "license_expiry"], ["備註", "notes"]]],
       vehicles: ["車輛管理", state.data.vehicles || [], [["車牌", "plate_no"], ["品牌", "brand"], ["車款", "model"], ["目前使用人", "assigned_driver_names"], ["油品", "fuel_type"], ["狀態", "status"], ["強制險", "compulsory_insurance_expiry"], ["任意險", "voluntary_insurance_expiry"], ["保險公司", "insurance_company"]]],
-      insurance: ["保險管理", state.data.insurance_requests || [], [["車牌", "plate_no"], ["保險種類", "insurance_type"], ["規格", "coverage_spec"], ["旅客險額度", "passenger_limit"], ["自付額", "deductible"], ["抵押權人", "lienholder"], ["指定保險公司", "assigned_insurance_company"], ["狀態", "status"], ["報價金額", "quote_amount"], ["保險備註", "insurance_notes"], ["保經備註", "broker_notes"]]]
+      insurance: ["保險管理", state.data.insurance_requests || [], [["車牌", "plate_no"], ["保險種類", "insurance_type"], ["規格", "coverage_spec"], ["旅客險額度", "passenger_limit"], ["自付額", "deductible"], ["抵押權人", "lienholder"], ["指定保險公司", "assigned_insurance_company"], ["狀態", "status"], ["保險備註", "insurance_notes"], ["保經備註", "broker_notes"]]]
     };
     const [name, rows, columns] = configs[kind] || [];
     if (!rows) return;
@@ -2155,17 +2182,31 @@
   }
 
   function driverDocumentField(item, prefix, label) {
-    return `<div class="field full attachment-field driver-document-field">
+    return `<div class="driver-file-box attachment-field">
       <label>${label}</label>
       <input type="hidden" name="${prefix}_url" value="${escapeHtml(item?.[`${prefix}_url`] || "")}" data-attachment-url>
       <input type="hidden" name="${prefix}_name" value="${escapeHtml(item?.[`${prefix}_name`] || "")}" data-attachment-name>
-      <div class="attachment-upload-row">
+      <div class="driver-file-drop">
         <input type="file" data-attachment-upload data-driver-document="${prefix}" data-document-label="${escapeHtml(label)}">
-        <span data-attachment-status>${item?.[`${prefix}_url`] ? `已上傳：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "尚未上傳"}</span>
+        <span data-attachment-status>${item?.[`${prefix}_url`] ? `已上傳：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "點選上傳"}</span>
       </div>
-      ${item?.[`${prefix}_url`] ? `<div class="attachment-link"><button type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看${label}</button></div>` : ""}
+      ${item?.[`${prefix}_url`] ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看</button>` : ""}
     </div>`;
   }
+
+  function driverMultiDocumentField(item, name, label) {
+    const files = Array.isArray(item?.[name]) ? item[name] : [];
+    return `<div class="driver-file-box attachment-field driver-file-box-wide">
+      <label>${label}</label>
+      <input type="hidden" name="${name}" value="${escapeHtml(JSON.stringify(files))}" data-multi-attachment-json>
+      <div class="driver-file-drop">
+        <input type="file" multiple data-driver-multi-document data-document-label="${escapeHtml(label)}">
+        <span data-attachment-status>${files.length ? `已上傳 ${files.length} 個檔案` : "可多選上傳"}</span>
+      </div>
+      <div class="attachment-link">${jsonFileLinks(files, label)}</div>
+    </div>`;
+  }
+
 
   function multiSelect(name, label, selectedValues, options) {
     const selected = new Set(selectedValues || []);
@@ -2296,51 +2337,50 @@
       + helperRichEditor(item);
   }
   function driverForm(d) {
-    const vehicle = driverVehicle(d.id);
+    const assignedVehicles = (state.data.vehicles || []).filter((v) => v.current_driver_id === d.id || String(v.assigned_driver_names || "").split("/").includes(d.name));
     return `
+      <div class="driver-login-permission field full">
+        ${checkbox("login_enabled", "允許手機登入", d.login_enabled !== false)}
+      </div>
       <div class="form-section-title field full">識別與狀態</div>
       ${input("driver_code", "編號", d.driver_code)}
       ${input("name", "姓名", d.name, "text", true)}
-      ${input("phone", "手機號碼（登入用）", d.phone, "tel", true)}
-      ${input("national_id", "\u99d5\u7167\u865f\u78bc\uff0f\u8eab\u5206\u8b49", d.national_id)}
-      ${checkbox("login_enabled", "允許此駕駛登入", d.login_enabled !== false)}
+      ${input("phone", "登入手機號碼", d.phone, "tel", true)}
+      ${input("national_id", "駕照號碼／身分證", d.national_id)}
       ${input("onboard_date", "入隊時間", formDate(d.onboard_date), "date")}
       ${input("resigned_date", "退出時間", formDate(d.resigned_date), "date")}
-      <div class="field"><label>服務時長（自動計算）</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
+      <div class="field"><label>服務時長</label><input value="${escapeHtml(yearsFrom(d.onboard_date))}" disabled></div>
       ${input("license_review_date", "審驗日期", formDate(d.license_review_date || d.license_expiry), "date")}
       ${input("license_valid_until", "有效日期", formDate(d.license_valid_until), "date")}
       <input type="hidden" name="license_expiry" value="${escapeHtml(formDate(d.license_review_date || d.license_expiry))}">
-      <div class="field"><label>審驗狀態（自動判定）</label><div class="readonly-badge">${expiryDateBadge(d.license_review_date || d.license_expiry, 30)}</div><small>上傳駕照圖片後會嘗試 OCR 辨識身分證、住址、審驗日期與有效日期；辨識失敗時可手動填寫。</small></div>
-      <div class="form-section-title field full">駕駛檔案存放區</div>
-      ${driverDocumentField(d, "license_file", "駕照")}
-      ${driverDocumentField(d, "police_clearance", "良民證")}
-      ${driverDocumentField(d, "accident_free", "無肇事紀錄")}
+      <div class="field"><label>審驗狀態</label><div class="readonly-badge">${expiryDateBadge(d.license_review_date || d.license_expiry, 30)}</div></div>
+      <div class="form-section-title field full">檔案上傳區</div>
+      <div class="driver-file-grid field full">
+        ${driverMultiDocumentField(d, "id_card_files", "身分證正面／反面")}
+        ${driverDocumentField(d, "license_file", "駕照")}
+        ${driverDocumentField(d, "police_clearance", "良民證")}
+        ${driverDocumentField(d, "accident_free", "無肇事證明")}
+        ${driverDocumentField(d, "custody_contract", "保管合約")}
+        ${driverDocumentField(d, "contracting_contract", "承攬合約")}
+        ${driverDocumentField(d, "lease_purchase_contract", "租購合約")}
+      </div>
       <input type="hidden" name="license_ocr_text" value="${escapeHtml(d.license_ocr_text || "")}">
       <input type="hidden" name="license_ocr_checked_at" value="${escapeHtml(d.license_ocr_checked_at || "")}">
       <input type="hidden" name="license_ocr_confidence" value="${escapeHtml(d.license_ocr_confidence || "")}">
       <div class="form-section-title field full">聯絡與個人資料</div>
-      ${input("residence_city", "居住區", d.residence_city)}
-      ${input("residential_address", "聯繫地址", d.residential_address)}
+      ${input("residential_address", "戶籍地址", d.residential_address)}
+      ${input("mailing_address", "通訊地址", d.mailing_address || d.contact_address || "")}
       ${input("birthday", "生日", formDate(d.birthday), "date")}
       ${input("email", "電子信箱", d.email, "email")}
-      ${input("personality", "個人特質", d.personality)}
-      ${input("second_language", "第二外語", d.second_language)}
-      ${input("guide_license", "導遊證", d.guide_license)}
-      <div class="form-section-title field full">服務與趟次</div>
-      ${fleetOptions("fleet_name", "所屬車隊", d.fleet_name)}
+      ${select("guide_license", "導遊證", d.guide_license || "", [["", "未設定"], ["有", "有"], ["無", "無"]])}
+      <div class="form-section-title field full">聯絡與個人資料</div>
+      ${select("dealer_partner_id", "所屬車商", d.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
       ${input("region", "區域", d.region)}
       ${input("group_name", "編組", d.group_name)}
       ${select("driver_status", "狀態", d.driver_status || "待上線", [["跑趟中", "跑趟中"], ["停派中", "停派中"], ["待上線", "待上線"], ["已離職", "已離職"], ["留停中", "留停中"], ["其他", "其他"]])}
-      ${input("service_area", "服務區域", d.service_area)}
       ${input("service_shift", "服務時段", d.service_shift)}
-      ${input("dispatch_time", "排趟時間", d.dispatch_time)}
       ${input("private_trip_count", "私趟數量", d.private_trip_count, "number")}
       ${text("private_trip_notes", "私趟備註", d.private_trip_notes)}
-      <div class="form-section-title field full">目前指派車輛（由車輛管理自動帶入）</div>
-      <div class="field"><label>車輛品牌</label><input value="${escapeHtml(vehicle.brand || "-")}" disabled></div>
-      <div class="field"><label>車輛款式</label><input value="${escapeHtml(vehicle.model || "-")}" disabled></div>
-      <div class="field"><label>油品</label><input value="${escapeHtml(vehicle.fuel_type || "-")}" disabled></div>
-      <div class="field"><label>車號</label><input value="${escapeHtml(vehicle.plate_no || "-")}" disabled></div>
       <div class="form-section-title field full">推薦、緊急聯絡與用車偏好</div>
       ${input("referrer", "加入推薦人", d.referrer)}
       ${input("emergency_contact_name", "緊急聯絡人", d.emergency_contact_name)}
@@ -2348,11 +2388,16 @@
       ${input("emergency_contact_relationship", "關係", d.emergency_contact_relationship)}
       ${input("planned_vehicle_change_date", "預計換車時間", formDate(d.planned_vehicle_change_date), "date")}
       ${input("ideal_vehicle_model", "理想車款", d.ideal_vehicle_model)}
-      ${input("child_seat_count", "安全座椅數量", d.child_seat_count, "number")}
-      ${input("booster_seat_count", "增高墊數量", d.booster_seat_count, "number")}
+      ${input("child_seat_count", "安全座椅", d.child_seat_count, "number")}
+      ${input("booster_seat_count", "增高墊", d.booster_seat_count, "number")}
       ${text("notes", "備註", d.notes)}
+      <div class="form-section-title field full">目前指派車輛（由車輛管理自動帶入）</div>
+      <div class="field full assigned-vehicle-summary">
+        ${assignedVehicles.length ? assignedVehicles.map((v) => `<span class="plate-chip">${escapeHtml(v.plate_no)}</span><b>${escapeHtml(v.brand || "-")} ${escapeHtml(v.model || "")}</b>`).join("") : `<span class="muted-text">目前沒有指派車輛</span>`}
+      </div>
     `;
   }
+
 
   function adminEmergencyEvents() {
     return `
@@ -2375,24 +2420,26 @@
       .map((driver) => driver.id);
     if (!selectedDriverIds.length && v.current_driver_id) selectedDriverIds.push(v.current_driver_id);
     return `
-      <div class="form-section-title field full">車輛管理資料</div>
+      <div class="form-section-title field full">車輛基本資料</div>
       ${input("plate_no", "車號", v.plate_no, "text", true)}
-      ${input("model", "車輛款式", v.model)}
       ${input("brand", "車輛品牌", v.brand)}
-      ${input("insurance_company", "保險公司", v.insurance_company)}
+      ${input("model", "車輛款式", v.model)}
+      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
+      ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
+      ${input("vehicle_region", "區域", v.vehicle_region)}
       ${select("dealer_partner_id", "所屬車商", v.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}
-      ${input("vehicle_region", "區域", v.vehicle_region)}
-      ${input("assigned_driver_names", "目前使用人／用途", v.assigned_driver_names || v.current_usage)}
-      ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
-      ${multiSelect("assigned_driver_ids", "目前使用人（可複選）", selectedDriverIds, state.data.drivers.map((d) => [d.id, d.name]))}
-      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
-      ${fleetOptions("fleet_name", "車隊", v.fleet_name)}
+      <div class="form-section-title field full">識別與狀態</div>
+      ${multiSelect("assigned_driver_ids", "搜尋並複選駕駛", selectedDriverIds, state.data.drivers.map((d) => [d.id, `${d.name}${d.phone ? `｜${d.phone}` : ""}`]))}
+      <div class="form-section-title field full">保險資料</div>
+      ${input("compulsory_insurance_company", "強制險保險公司", v.compulsory_insurance_company || v.insurance_company || "")}
+      ${input("voluntary_insurance_company", "任意險保險公司", v.voluntary_insurance_company || v.insurance_company || "")}
       ${input("compulsory_insurance_expiry", "強制險到期日", formDate(v.compulsory_insurance_expiry), "date")}
       ${input("voluntary_insurance_expiry", "任意險到期日", formDate(v.voluntary_insurance_expiry), "date")}
       ${text("notes", "備註", v.notes)}
     `;
   }
+
 
   function adminUserForm(item) {
     const permissions = item.permissions || { drivers: true, vehicles: true, loans: true, service_records: true, messages: true, finance: true, insurance: false };
@@ -2478,10 +2525,11 @@
   }
 
   function personalMessageForm(m) {
-    return driverOptions(m.driver_id) + input("title", "標題", m.title, "text", true) +
+    return driverSearchSelect(m.driver_id, "指定駕駛") + input("title", "標題", m.title, "text", true) +
       select("status", "狀態", m.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
       text("content", "訊息內容", m.content);
   }
+
 
   function paymentNoticeForm(p) {
     return driverSearchSelect(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
@@ -2583,12 +2631,22 @@
   }
 
   function insuranceQuoteForm(item) {
-    return insuranceRequestSummary(item) + input("quote_amount", "\u5831\u50f9\u91d1\u984d", item.quote_amount, "number") + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + insuranceDocumentField(item, "quote", "\u5831\u50f9\u55ae", false) + select("status", "\u8655\u7406\u7d50\u679c", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "\u9001\u8eca\u8f1b\u90e8\u78ba\u8a8d"], ["broker_returned", "\u9000\u56de\u88dc\u4ef6"]]);
+    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆", item.broker_reply) + insuranceDocumentField(item, "quote", "報價單", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
   }
 
+
   function insuranceRequestSummary(item) {
-    return `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><div class="field full insurance-request-summary"><strong>${escapeHtml(item.plate_no || "\u672a\u9078\u8eca\u724c")} ? ${escapeHtml(item.insurance_type || item.document_request_type || "\u4fdd\u96aa\u6848\u4ef6")}</strong><span>${escapeHtml(item.coverage_spec || "-")} ? \u65c5\u5ba2\u96aa ${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} \u842c` : "-"} ? \u8eca\u9ad4\u96aa\u984d\u5ea6(\u842c) ${item.vehicle_body_limit ? `${escapeHtml(item.vehicle_body_limit)} \u842c` : "-"} ? \u81ea\u4ed8\u984d(\u842c) ${item.deductible ? `${escapeHtml(item.deductible)} \u842c` : "-"}</span>${(item.vehicle_dept_notes || item.insurance_notes) ? `<p>${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}</div>`;
+    const title = item.request_type === "amendment" ? "批改申請" : item.request_type === "document" ? (item.document_request_type || "保單收據請求") : (item.insurance_type || "保險案件");
+    const details = [
+      item.coverage_spec,
+      item.passenger_limit ? `旅客險 ${item.passenger_limit} 萬` : "",
+      item.vehicle_body_limit ? `車體險 ${item.vehicle_body_limit} 萬` : "",
+      item.deductible ? `自付額 ${item.deductible} 萬` : "",
+      item.assigned_insurance_company ? `保險公司 ${item.assigned_insurance_company}` : ""
+    ].filter(Boolean).join("｜");
+    return `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><div class="field full insurance-request-summary"><strong>${escapeHtml(item.plate_no || "未選車牌")}｜${escapeHtml(title)}</strong>${details ? `<span>${escapeHtml(details)}</span>` : ""}${(item.vehicle_dept_notes || item.insurance_notes) ? `<p>${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}</div>`;
   }
+
 
   function insuranceApplicationForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "application", "\u8981\u4fdd\u66f8", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="stamping">`; }
   function insuranceStampForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)", true) + `<input type="hidden" name="status" value="awaiting_policy">`; }
@@ -2624,13 +2682,16 @@
   async function handleLogin(value) {
     state.error = "";
     state.loginLoading = true;
+    const loginValue = String(value || "").trim();
     renderLogin();
     try {
+      clearSession();
+      state.apiSession = "";
       if (hasSupabase) {
         const action = state.mode === "admin" ? "login_admin" : state.mode === "partner" ? "login_partner" : "login_driver";
         const result = await apiRequest(
           action,
-          state.mode === "driver" ? { phone: value } : { code: value }
+          state.mode === "driver" ? { phone: loginValue } : { code: loginValue }
         );
         state.apiSession = result.token;
         state.admin = state.mode === "admin";
@@ -2644,8 +2705,9 @@
         render();
         return;
       }
-      const driver = state.data.drivers.find((item) => phoneMatches(item.phone, value));
-      if (!driver) throw new Error("找不到此手機號碼");
+      const driver = state.data.drivers.find((item) => phoneMatches(item.phone, loginValue));
+      if (!driver) throw new Error("DRIVER_LOGIN_FAILED");
+      if (driver.login_enabled === false) throw new Error("DRIVER_DISABLED");
       state.user = driver;
       state.admin = false;
       state.adminProfile = null;
@@ -2654,9 +2716,10 @@
       render();
     } catch (error) {
       const messages = {
-        DRIVER_LOGIN_FAILED: "找不到此手機號碼，或此帳號目前已停用。",
-        ADMIN_LOGIN_FAILED: "管理碼不正確。",
-        PARTNER_LOGIN_FAILED: "合作單位登入代碼不正確，或此帳號目前已停用。",
+        DRIVER_LOGIN_FAILED: "找不到此手機號碼，請確認後台駕駛資料。",
+        DRIVER_DISABLED: "此帳號目前未開放登入，請聯繫管理員。",
+        ADMIN_LOGIN_FAILED: "管理員登入代碼不正確。",
+        PARTNER_LOGIN_FAILED: "廠商登入代碼不正確或帳號已停用。",
         SESSION_EXPIRED: "登入已逾時，請重新登入。"
       };
       state.error = messages[error.message] || error.message || String(error);
@@ -2664,6 +2727,7 @@
       renderLogin();
     }
   }
+
 
   async function loadAirportWeather() {
     if (!document.getElementById("airportWeather")) return;
@@ -2873,7 +2937,8 @@
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
-    if (!target && !cellDate) return;
+    const helperDetail = e.target.closest("[data-helper-detail]");
+    if (!target && !cellDate && !helperDetail) return;
     if (target?.dataset.richCommand) {
       document.execCommand(target.dataset.richCommand, false, null);
       syncRichEditors(target.closest("form") || document);
@@ -2890,6 +2955,12 @@
       if (url) document.execCommand("insertImage", false, url);
       syncRichEditors(target.closest("form") || document);
       return;
+    }
+    if (helperDetail && target?.tagName !== "BUTTON") {
+      markHelperArticleRead(helperDetail.dataset.helperDetail);
+      helperDetail.classList.remove("is-unread");
+      helperDetail.classList.add("is-read");
+      if (!target) return;
     }
     if (target?.dataset.modal) {
       e.preventDefault();
@@ -2973,9 +3044,6 @@
     }
     if (target.dataset.action === "refresh-storage") {
       await loadStorageUsage();
-    }
-    if (target.dataset.action === "print-recruitment") {
-      window.print();
     }
     if (target.dataset.action === "delete-storage-files") {
       const paths = Array.from(document.querySelectorAll("[data-storage-file]:checked")).map((input) => input.value);
@@ -3201,6 +3269,33 @@
       }
       return;
     }
+    const driverMultiInput = e.target.closest("[data-driver-multi-document]");
+    if (driverMultiInput?.files?.length) {
+      const field = driverMultiInput.closest(".attachment-field");
+      const hidden = field?.querySelector("[data-multi-attachment-json]");
+      const status = field?.querySelector("[data-attachment-status]");
+      let files = [];
+      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
+      try {
+        driverMultiInput.disabled = true;
+        if (status) status.textContent = "檔案上傳中...";
+        const form = field?.closest("form");
+        const ownerLabel = form?.querySelector('[name="name"]')?.value || "";
+        const driverFolderKey = form?.querySelector('[name="phone"]')?.value || ownerLabel;
+        for (const file of Array.from(driverMultiInput.files)) {
+          const uploaded = await uploadDriverDocument(file, ownerLabel, driverMultiInput.dataset.documentLabel || "", driverFolderKey);
+          files.push({ url: uploaded.url || uploaded, name: uploaded.name || file.name, type: file.type });
+        }
+        hidden.value = JSON.stringify(files);
+        if (status) status.textContent = `已上傳 ${files.length} 個檔案`;
+      } catch (error) {
+        if (status) status.textContent = "上傳失敗";
+        alert(error.message || error);
+      } finally {
+        driverMultiInput.disabled = false;
+      }
+      return;
+    }
     const multiInput = e.target.closest("[data-multi-attachment-upload]");
     if (multiInput?.files?.length) {
       const field = multiInput.closest(".attachment-field");
@@ -3242,7 +3337,7 @@
   loadAll().then(() => {
     render();
   }).catch((err) => {
-    state.error = err.message || String(err);
+    state.error = String(err.message || err).includes("登入已逾時") || String(err.message || err).includes("SESSION_EXPIRED") ? "" : (err.message || String(err));
     state.user = null;
     state.partner = null;
     state.admin = false;
