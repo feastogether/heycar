@@ -1356,6 +1356,15 @@
     return (Array.isArray(value) ? value : []).map((file, index) => `<button class="insurance-file-link" data-preview-file="${escapeHtml(file.url || "")}" data-preview-name="${escapeHtml(file.name || `${label}${index + 1}`)}" data-preview-type="${escapeHtml(file.type || "")}">${escapeHtml(file.name || `${label}${index + 1}`)}</button>`).join("");
   }
 
+  function driverJsonFileLinks(value, label) {
+    return (Array.isArray(value) ? value : []).map((file, index) => `
+      <span class="driver-file-chip">
+        <button class="insurance-file-link" type="button" data-preview-file="${escapeHtml(file.url || "")}" data-preview-name="${escapeHtml(file.name || `${label}${index + 1}`)}" data-preview-type="${escapeHtml(file.type || "")}">${escapeHtml(file.name || `${label}${index + 1}`)}</button>
+        <button class="driver-file-remove" type="button" data-driver-multi-remove="${index}" title="刪除檔案">刪除</button>
+      </span>
+    `).join("");
+  }
+
   function insuranceVisibleFiles(item) {
     const isDealer = state.partner?.partner_type === "dealer";
     const dealerCanSeeQuote = ["dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"].includes(item.status);
@@ -2194,7 +2203,9 @@
         <input type="file" data-attachment-upload data-driver-document="${prefix}" data-document-label="${escapeHtml(label)}">
         <span data-attachment-status>${item?.[`${prefix}_url`] ? `已上傳：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "點選上傳"}</span>
       </div>
-      ${item?.[`${prefix}_url`] ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看</button>` : ""}
+      <div class="driver-file-actions">
+        ${item?.[`${prefix}_url`] ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看</button><button class="danger-btn" type="button" data-driver-file-clear>刪除檔案</button>` : ""}
+      </div>
     </div>`;
   }
 
@@ -2207,7 +2218,7 @@
         <input type="file" multiple data-driver-multi-document data-document-label="${escapeHtml(label)}">
         <span data-attachment-status>${files.length ? `已上傳 ${files.length} 個檔案` : "可多選上傳"}</span>
       </div>
-      <div class="attachment-link">${jsonFileLinks(files, label)}</div>
+      <div class="attachment-link" data-driver-multi-list>${driverJsonFileLinks(files, label)}</div>
     </div>`;
   }
 
@@ -2999,6 +3010,31 @@
       openFilePreview(target.dataset.previewFile, target.dataset.previewName, target.dataset.previewType);
       return;
     }
+    if (target.dataset.driverFileClear !== undefined) {
+      const field = target.closest(".attachment-field");
+      const status = field?.querySelector("[data-attachment-status]");
+      const urlInput = field?.querySelector("[data-attachment-url]");
+      const nameInput = field?.querySelector("[data-attachment-name]");
+      if (urlInput) urlInput.value = "";
+      if (nameInput) nameInput.value = "";
+      if (status) status.textContent = "點選上傳";
+      field?.querySelector(".driver-file-actions")?.replaceChildren();
+      return;
+    }
+    if (target.dataset.driverMultiRemove !== undefined) {
+      const field = target.closest(".attachment-field");
+      const hidden = field?.querySelector("[data-multi-attachment-json]");
+      const status = field?.querySelector("[data-attachment-status]");
+      const list = field?.querySelector("[data-driver-multi-list]");
+      const label = field?.querySelector("label")?.textContent || "檔案";
+      let files = [];
+      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
+      files.splice(Number(target.dataset.driverMultiRemove), 1);
+      if (hidden) hidden.value = JSON.stringify(files);
+      if (status) status.textContent = files.length ? `已上傳 ${files.length} 個檔案` : "可多選上傳";
+      if (list) list.innerHTML = driverJsonFileLinks(files, label);
+      return;
+    }
     if (target.dataset.photoPreview !== undefined) {
       const img = target.querySelector("img");
       if (img?.src && img.style.display !== "none") {
@@ -3264,6 +3300,10 @@
         field.querySelector("[data-attachment-url]").value = url;
         field.querySelector("[data-attachment-name]").value = name;
         if (status) status.textContent = `已附加：${name}`;
+        const actions = field.querySelector(".driver-file-actions");
+        if (actions && isDriverDocument) {
+          actions.innerHTML = `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(url)}" data-preview-name="${escapeHtml(name)}" data-preview-type="">查看</button><button class="danger-btn" type="button" data-driver-file-clear>刪除檔案</button>`;
+        }
         if (attachmentInput.dataset.driverDocument === "license_file") await runDriverLicenseOcr(file, field);
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
@@ -3292,6 +3332,9 @@
         }
         hidden.value = JSON.stringify(files);
         if (status) status.textContent = `已上傳 ${files.length} 個檔案`;
+        const list = field?.querySelector("[data-driver-multi-list]");
+        const label = field?.querySelector("label")?.textContent || driverMultiInput.dataset.documentLabel || "檔案";
+        if (list) list.innerHTML = driverJsonFileLinks(files, label);
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
         alert(error.message || error);
