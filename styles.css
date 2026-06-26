@@ -302,6 +302,34 @@ a { text-decoration: none; }
   color: #fff;
   background: #b91c1c;
 }
+.driver-photo-upload-field {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.driver-photo-upload-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.driver-photo-stack.large-photo {
+  width: 108px;
+  height: 132px;
+  border-radius: 8px;
+  flex: 0 0 auto;
+}
+.driver-photo-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.driver-photo-upload-actions span {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
 .assigned-vehicle-summary {
   display: flex;
   flex-wrap: wrap;

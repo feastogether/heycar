@@ -370,7 +370,11 @@
 
   function driverPhoto(driver) {
     const initial = String(driver?.name || "?").trim().slice(0, 1) || "?";
-    return `<span class="driver-photo-stack no-photo" title="${escapeHtml(driver?.name || "\u672a\u547d\u540d\u53f8\u6a5f")}"><span class="driver-avatar avatar-fallback" style="display:grid">${escapeHtml(initial)}</span></span>`;
+    const photo = driver?.photo_url || "";
+    return `<button class="driver-photo-stack ${photo ? "" : "no-photo"}" type="button" data-photo-preview data-photo-name="${escapeHtml(driver?.name || "司機")}" title="${escapeHtml(driver?.name || "\u672a\u547d\u540d\u53f8\u6a5f")}">
+      ${photo ? `<img src="${escapeHtml(photo)}" alt="${escapeHtml(driver?.name || "司機照片")}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` : ""}
+      <span class="driver-avatar avatar-fallback" style="display:${photo ? "none" : "grid"}">${escapeHtml(initial)}</span>
+    </button>`;
   }
 
   function driverVehicle(driverId) {
@@ -2209,6 +2213,25 @@
     </div>`;
   }
 
+  function driverPhotoUploadField(driver) {
+    const initial = String(driver?.name || "?").trim().slice(0, 1) || "?";
+    return `<div class="field full driver-photo-upload-field">
+      <label>司機照片</label>
+      <input type="hidden" name="photo_url" value="${escapeHtml(driver.photo_url || "")}" data-driver-photo-url>
+      <div class="driver-photo-upload-box">
+        <button class="driver-photo-stack large-photo ${driver.photo_url ? "" : "no-photo"}" type="button" data-photo-preview data-photo-name="${escapeHtml(driver.name || "司機")}">
+          ${driver.photo_url ? `<img src="${escapeHtml(driver.photo_url)}" alt="${escapeHtml(driver.name || "司機照片")}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` : ""}
+          <span class="driver-avatar avatar-fallback" style="display:${driver.photo_url ? "none" : "grid"}">${escapeHtml(initial)}</span>
+        </button>
+        <div class="driver-photo-upload-actions">
+          <label class="soft-btn">上傳照片<input type="file" accept="image/*" data-driver-photo-upload hidden></label>
+          <button class="danger-btn" type="button" data-driver-photo-clear ${driver.photo_url ? "" : "style=\"display:none\""}>刪除照片</button>
+          <span data-driver-photo-status>${driver.photo_url ? "已上傳照片" : "尚未上傳照片"}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
   function driverMultiDocumentField(item, name, label) {
     const files = Array.isArray(item?.[name]) ? item[name] : [];
     return `<div class="driver-file-box attachment-field driver-file-box-wide">
@@ -2357,6 +2380,7 @@
       <div class="driver-login-permission field full">
         ${checkbox("login_enabled", "允許手機登入", d.login_enabled !== false)}
       </div>
+      ${driverPhotoUploadField(d)}
       <div class="form-section-title field full">識別與狀態</div>
       ${input("driver_code", "編號", d.driver_code)}
       ${input("name", "姓名", d.name, "text", true)}
@@ -3021,6 +3045,19 @@
       field?.querySelector(".driver-file-actions")?.replaceChildren();
       return;
     }
+    if (target.dataset.driverPhotoClear !== undefined) {
+      const field = target.closest(".driver-photo-upload-field");
+      const hidden = field?.querySelector("[data-driver-photo-url]");
+      const img = field?.querySelector(".driver-photo-stack img");
+      const avatar = field?.querySelector(".avatar-fallback");
+      const status = field?.querySelector("[data-driver-photo-status]");
+      if (hidden) hidden.value = "";
+      if (img) img.remove();
+      if (avatar) avatar.style.display = "grid";
+      if (status) status.textContent = "尚未上傳照片";
+      target.style.display = "none";
+      return;
+    }
     if (target.dataset.driverMultiRemove !== undefined) {
       const field = target.closest(".attachment-field");
       const hidden = field?.querySelector("[data-multi-attachment-json]");
@@ -3278,6 +3315,37 @@
       return;
     }
     const attachmentInput = e.target.closest("[data-attachment-upload]");
+    const photoInput = e.target.closest("[data-driver-photo-upload]");
+    if (photoInput?.files?.[0]) {
+      const field = photoInput.closest(".driver-photo-upload-field");
+      const hidden = field?.querySelector("[data-driver-photo-url]");
+      const stack = field?.querySelector(".driver-photo-stack");
+      const avatar = field?.querySelector(".avatar-fallback");
+      const clearButton = field?.querySelector("[data-driver-photo-clear]");
+      const status = field?.querySelector("[data-driver-photo-status]");
+      try {
+        photoInput.disabled = true;
+        if (status) status.textContent = "照片壓縮中...";
+        const dataUrl = await compressPhoto(photoInput.files[0]);
+        if (hidden) hidden.value = dataUrl;
+        let img = stack?.querySelector("img");
+        if (!img && stack) {
+          img = document.createElement("img");
+          img.alt = "司機照片";
+          stack.prepend(img);
+        }
+        if (img) img.src = dataUrl;
+        if (avatar) avatar.style.display = "none";
+        if (clearButton) clearButton.style.display = "";
+        if (status) status.textContent = "已上傳照片，儲存後生效";
+      } catch (error) {
+        if (status) status.textContent = "照片處理失敗";
+        alert(error.message || error);
+      } finally {
+        photoInput.disabled = false;
+      }
+      return;
+    }
     if (attachmentInput?.files?.[0]) {
       const file = attachmentInput.files[0];
       const field = attachmentInput.closest(".attachment-field");
