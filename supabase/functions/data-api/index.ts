@@ -12,7 +12,7 @@ const tables = [
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
-  "driver_helper_articles"
+  "driver_helper_articles", "login_slogans"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -178,7 +178,8 @@ const tablePermission: Record<string, string> = {
   insurance_partners: "insurance",
   insurance_requests: "insurance",
   driver_links: "messages",
-  driver_helper_articles: "messages"
+  driver_helper_articles: "messages",
+  login_slogans: "messages"
 };
 
 async function loadPartnerData(partnerId: string) {
@@ -250,6 +251,16 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (!partner) return json({ error: "PARTNER_LOGIN_FAILED" }, 401);
       return json({ ...(await createSession("partner", partner.id)), partner });
+    }
+    if (body.action === "public_login_slogans") {
+      const { data, error } = await db
+        .from("login_slogans")
+        .select("*")
+        .eq("active", true)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return json({ login_slogans: data || [] });
     }
 
     const session = await getSession(req);

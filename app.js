@@ -21,6 +21,7 @@
     view: "home",
     adminView: "drivers",
     driverStatusFilter: "全部",
+    driverSearch: "",
     vehicleSearch: "",
     vehicleStatusFilter: "",
     vehicleRegionFilter: "",
@@ -43,7 +44,8 @@
     weatherLoading: false,
     error: "",
     apiSession: "",
-    loginLoading: false
+    loginLoading: false,
+    loginSlogansLoaded: false
   };
 
   const tables = [
@@ -65,7 +67,8 @@
     "vehicle_service_records",
     "feedbacks",
     "driver_links",
-    "driver_helper_articles"
+    "driver_helper_articles",
+    "login_slogans"
   ];
 
   const insuranceStatuses = [
@@ -231,6 +234,28 @@
       throw new Error(result.error === "SESSION_EXPIRED" ? "登入已逾時，請重新登入。" : (result.error || "資料服務暫時無法連線，請稍後再試。"));
     }
     return result;
+  }
+
+  async function loadPublicLoginSlogans() {
+    if (!hasSupabase || state.loginSlogansLoaded) return;
+    state.loginSlogansLoaded = true;
+    try {
+      const result = await apiRequest("public_login_slogans");
+      state.data = state.data && Object.keys(state.data).length ? state.data : emptyData();
+      state.data.login_slogans = result.login_slogans || [];
+      if (!state.user && !state.admin && !state.partner) renderLogin();
+    } catch (error) {
+      console.warn("Login slogans unavailable", error);
+    }
+  }
+
+  function loginSloganMarkup() {
+    const slogans = (state.data.login_slogans || [])
+      .filter((item) => item.active !== false && item.message)
+      .sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0) || String(b.created_at || "").localeCompare(String(a.created_at || "")))
+      .slice(0, 3);
+    if (!slogans.length) return "";
+    return `<div class="login-slogans">${slogans.map((item) => `<span>${escapeHtml(item.message)}</span>`).join("")}</div>`;
   }
 
 
@@ -412,8 +437,10 @@
   function driverManagementRows() {
     if (!state.data.drivers.length) return `<div class="empty">目前沒有駕駛資料</div>`;
     const statusOrder = { "跑趟中": 0, "待上線": 1, "停派中": 2, "留停中": 3, "已離職": 4, "其他": 5, "未上線": 6, "已上線": 7, "已退出": 8 };
+    const keyword = String(state.driverSearch || "").trim().toLowerCase();
     const drivers = [...state.data.drivers]
       .filter((driver) => state.driverStatusFilter === "全部" || driver.driver_status === state.driverStatusFilter)
+      .filter((driver) => !keyword || driverSearchText(driver).includes(keyword))
       .sort((a, b) => (statusOrder[a.driver_status] ?? 9) - (statusOrder[b.driver_status] ?? 9) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
     if (!drivers.length) return `<div class="empty">此狀態目前沒有駕駛</div>`;
     return `<div class="driver-management-list">${drivers.map((driver) => `
@@ -444,6 +471,25 @@
         </div>
       </article>
     `).join("")}</div>`;
+  }
+
+  function driverSearchText(driver) {
+    const assignedVehicles = (state.data.vehicles || [])
+      .filter((vehicle) => vehicle.current_driver_id === driver.id || String(vehicle.assigned_driver_names || "").includes(driver.name || ""))
+      .map((vehicle) => `${vehicle.plate_no || ""} ${vehicle.brand || ""} ${vehicle.model || ""} ${vehicle.vehicle_region || ""}`)
+      .join(" ");
+    return [
+      driver.name,
+      driver.phone,
+      driver.national_id,
+      driver.driver_code,
+      driver.region,
+      driver.service_area,
+      driver.group_name,
+      driver.driver_status,
+      driver.fleet_name,
+      assignedVehicles
+    ].filter(Boolean).join(" ").toLowerCase();
   }
 
   function statusBadge(status) {
@@ -830,6 +876,7 @@
   }
 
   function renderLogin() {
+    loadPublicLoginSlogans();
     const loadingText = state.mode === "driver" ? "正在驗證司機身分" : state.mode === "partner" ? "正在驗證合作單位" : "正在驗證管理權限";
     app.innerHTML = `
       <div class="login-wrap">
@@ -863,6 +910,7 @@
               </div>
             ` : ""}
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
+            ${loginSloganMarkup()}
           </div>
         </section>
       </div>
@@ -1568,6 +1616,7 @@
     marquee: "跑馬燈通知",
     emergencyEvents: "緊急事件",
     driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
+    loginSlogans: "\u6a19\u8a9e\u7ba1\u7406",
     driverLinks: "連結管理"
   };
 
@@ -1578,6 +1627,8 @@
     ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "driverLinks", "storage"]]
   ];
+
+  adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
 
   function groupedAdminNav(nav) {
     const byKey = Object.fromEntries(nav.map((item) => [item[0], item]));
@@ -1612,6 +1663,10 @@
       ["marquee", "跑馬燈通知", "🚨", "messages"],
       ["emergencyEvents", "緊急事件", "🆘", "messages"]
     ].filter(([, , , permission]) => !permission || adminCan(permission));
+    if (adminCan("messages") && !nav.some(([key]) => key === "loginSlogans")) {
+      const marqueeIndex = nav.findIndex(([key]) => key === "marquee");
+      nav.splice(marqueeIndex >= 0 ? marqueeIndex + 1 : nav.length, 0, ["loginSlogans", "\u6a19\u8a9e\u7ba1\u7406", "\u270d", "messages"]);
+    }
     if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
       adminUsers,
@@ -1630,6 +1685,7 @@
       feedbacks: adminFeedbacks,
       calendar: () => renderCalendar(true),
       marquee: adminMarquee,
+      loginSlogans: adminLoginSlogans,
       emergencyEvents: adminEmergencyEvents,
       driverLinks: adminDriverLinks
     }[state.adminView]();
@@ -1666,6 +1722,11 @@
         <span>狀態篩選</span>
         ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? state.data.drivers.length : (counts[status] || 0)}</b></button>`).join("")}
       </div>
+      <form id="driverSearchForm" class="driver-search-bar">
+        <input name="search" type="search" value="${escapeHtml(state.driverSearch || "")}" placeholder="\u641c\u5c0b\u59d3\u540d\u3001\u96fb\u8a71\u3001\u8eca\u724c\u3001\u5340\u57df\u6216\u7de8\u7d44">
+        <button class="primary-btn" type="submit">\u641c\u5c0b</button>
+        ${state.driverSearch ? `<button class="ghost-btn" type="button" data-action="clear-driver-search">\u6e05\u9664</button>` : ""}
+      </form>
       ${driverManagementRows()}
     `;
   }
@@ -1823,6 +1884,19 @@
     `;
   }
 
+  function adminLoginSlogans() {
+    return `
+      <div class="section-head"><h2>\u6a19\u8a9e\u7ba1\u7406</h2><button class="primary-btn" data-modal="loginSlogan">\u65b0\u589e\u6a19\u8a9e</button></div>
+      ${table(["\u6a19\u8a9e", "\u6392\u5e8f", "\u72c0\u614b", "\u5efa\u7acb\u65e5\u671f", "\u64cd\u4f5c"], (state.data.login_slogans || []).map((item) => [
+        escapeHtml(item.message || ""),
+        Number(item.sort_order || 0),
+        item.active === false ? `<span class="status returned">\u505c\u7528</span>` : `<span class="status done">\u555f\u7528</span>`,
+        fmtDate(item.created_at),
+        rowActions("loginSlogan", "login_slogans", item.id)
+      ]))}
+    `;
+  }
+
   function adminMaintenanceRecords() {
     return `
       <div class="section-head"><h2>保養管理</h2><button class="primary-btn" data-modal="maintenanceRecord">新增保養紀錄</button></div>
@@ -1901,6 +1975,7 @@
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
       driverLink: ["連結", "driver_links", driverLinkForm],
       driverHelperArticle: ["\u53f8\u6a5f\u5e6b\u624b", "driver_helper_articles", driverHelperArticleForm],
+      loginSlogan: ["\u6a19\u8a9e", "login_slogans", loginSloganForm],
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
       insuranceRequest: ["保險需求", "insurance_requests", insuranceRequestForm],
       insuranceAmendmentRequest: ["批改需求", "insurance_requests", insuranceAmendmentRequestForm],
@@ -1996,6 +2071,9 @@
       record.private_trip_count = Number(record.private_trip_count || 0);
       record.child_seat_count = Number(record.child_seat_count || 0);
       record.booster_seat_count = Number(record.booster_seat_count || 0);
+      record.license_ocr_confidence = record.license_ocr_confidence === "" || record.license_ocr_confidence == null
+        ? null
+        : Number(record.license_ocr_confidence) || null;
       record.driver_status = record.driver_status || "待上線";
       record.login_enabled = record.login_enabled === "true";
       ["id_card_files"].forEach((key) => {
@@ -2087,6 +2165,10 @@
       record.event_time = record.event_time || null;
     }
     if (tableName === "marquee_messages") record.active = record.active === "true";
+    if (tableName === "login_slogans") {
+      record.active = record.active === "true";
+      record.sort_order = Number(record.sort_order || 0);
+    }
     if (tableName === "emergency_events") record.active = record.active === "true";
     if (tableName === "driver_links") record.active = record.active === "true";
     if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
@@ -2228,6 +2310,23 @@
           <button class="danger-btn" type="button" data-driver-photo-clear ${driver.photo_url ? "" : "style=\"display:none\""}>刪除照片</button>
           <span data-driver-photo-status>${driver.photo_url ? "已上傳照片" : "尚未上傳照片"}</span>
         </div>
+      </div>
+    </div>`;
+  }
+
+  function driverPhotoUploadField(driver) {
+    const initial = String(driver?.name || "?").trim().slice(0, 1) || "?";
+    return `<div class="field full driver-photo-upload-field driver-photo-inline">
+      <input type="hidden" name="photo_url" value="${escapeHtml(driver.photo_url || "")}" data-driver-photo-url>
+      <button class="driver-photo-stack mini-photo ${driver.photo_url ? "" : "no-photo"}" type="button" data-photo-preview data-photo-name="${escapeHtml(driver.name || "\u53f8\u6a5f")}">
+        ${driver.photo_url ? `<img src="${escapeHtml(driver.photo_url)}" alt="${escapeHtml(driver.name || "\u53f8\u6a5f\u7167\u7247")}" onerror="this.style.display='none';this.nextElementSibling.style.display='grid';">` : ""}
+        <span class="driver-avatar avatar-fallback" style="display:${driver.photo_url ? "none" : "grid"}">${escapeHtml(initial)}</span>
+      </button>
+      <div class="driver-photo-upload-actions">
+        <strong>\u53f8\u6a5f\u7167\u7247</strong>
+        <span data-driver-photo-status>${driver.photo_url ? "\u5df2\u4e0a\u50b3" : "\u5c1a\u672a\u4e0a\u50b3"}</span>
+        <label class="photo-mini-btn">\u4e0a\u50b3<input type="file" accept="image/*" data-driver-photo-upload hidden></label>
+        <button class="photo-mini-btn danger" type="button" data-driver-photo-clear ${driver.photo_url ? "" : "style=\"display:none\""}>\u522a\u9664</button>
       </div>
     </div>`;
   }
@@ -2590,6 +2689,12 @@
 
   function marqueeMessageForm(item) {
     return text("message", "紅色跑馬燈通知內容", item.message) + checkbox("active", "啟用通知", item.active !== false);
+  }
+
+  function loginSloganForm(item) {
+    return text("message", "\u767b\u5165\u9801\u6a19\u8a9e", item.message)
+      + input("sort_order", "\u6392\u5e8f", item.sort_order || 0, "number")
+      + checkbox("active", "\u555f\u7528\u6a19\u8a9e", item.active !== false);
   }
 
   function emergencyEventForm(item) {
@@ -3115,6 +3220,10 @@
       state.vehicleFuelFilter = "";
       render();
     }
+    if (target.dataset.action === "clear-driver-search") {
+      state.driverSearch = "";
+      render();
+    }
     if (target.dataset.action === "refresh-insurance") {
       await loadAll();
       render();
@@ -3217,6 +3326,12 @@
         String(data.get("date") || today()),
         String(data.get("source") || "tdx")
       );
+    }
+    if (e.target.id === "driverSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.driverSearch = String(data.get("search") || "").trim();
+      render();
     }
     if (e.target.id === "vehicleSearchForm") {
       e.preventDefault();

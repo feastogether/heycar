@@ -330,6 +330,61 @@ a { text-decoration: none; }
   font-size: 13px;
   font-weight: 700;
 }
+.driver-photo-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+}
+.driver-photo-inline .mini-photo {
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  flex: 0 0 64px;
+}
+.driver-photo-inline .driver-photo-upload-actions {
+  gap: 7px;
+}
+.driver-photo-inline .driver-photo-upload-actions strong {
+  font-size: 14px;
+  font-weight: 900;
+}
+.photo-mini-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.photo-mini-btn:hover {
+  background: #f8fafc;
+}
+.photo-mini-btn.danger {
+  border-color: #fecaca;
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.photo-mini-btn.danger:hover {
+  background: #b91c1c;
+  color: #fff;
+}
+.driver-search-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+  margin: 0 0 14px;
+}
+.driver-search-bar input {
+  min-height: 42px;
+}
 .assigned-vehicle-summary {
   display: flex;
   flex-wrap: wrap;
@@ -568,6 +623,17 @@ a { text-decoration: none; }
 .login-hero img { width: 100%; max-width: 180px; display: block; }
 .login-card { padding: 40px; display: flex; flex-direction: column; justify-content: center; }
 .login-card h2 { margin: 0 0 22px; font-size: 24px; font-weight: 900; }
+.login-slogans {
+  display: grid;
+  gap: 5px;
+  margin-top: 16px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+}
+.login-slogans span { display: block; }
 .login-submit { min-height: 44px; }
 .login-submit:disabled,
 .mode-tabs .tab-btn:disabled,
@@ -2156,6 +2222,8 @@ tr:last-child td { border-bottom: 0; }
   }
   .driver-filter-bar span,
   .filter-btn { flex: 0 0 auto; }
+  .driver-search-bar { grid-template-columns: 1fr; }
+  .driver-photo-inline { align-items: flex-start; }
   .vehicle-search-bar { grid-template-columns: minmax(0, 1fr) auto; }
   .vehicle-search-bar .ghost-btn { grid-column: 1 / -1; }
   .vehicle-toolbar { grid-template-columns: 1fr; }
