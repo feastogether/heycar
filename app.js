@@ -883,6 +883,7 @@
         <section class="login-panel">
           <div class="login-hero">
             <img src="${logoUrl}" alt="heycar logo">
+            ${loginSloganMarkup()}
           </div>
           <div class="login-card">
             <div class="mode-tabs">
@@ -910,7 +911,6 @@
               </div>
             ` : ""}
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
-            ${loginSloganMarkup()}
           </div>
         </section>
       </div>

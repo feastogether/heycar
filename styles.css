@@ -616,8 +616,10 @@ a { text-decoration: none; }
   padding: 40px;
   background: #fff;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 18px;
   border-right: 1px solid var(--line);
 }
 .login-hero img { width: 100%; max-width: 180px; display: block; }
@@ -626,7 +628,7 @@ a { text-decoration: none; }
 .login-slogans {
   display: grid;
   gap: 5px;
-  margin-top: 16px;
+  margin-top: 0;
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
@@ -1423,16 +1425,38 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .driver-photo-stack {
   display: inline-grid;
+  place-items: center;
   flex-shrink: 0;
   width: 64px;
   height: 64px;
   padding: 0;
   border: 0;
+  border-radius: 14px;
   background: transparent;
   cursor: zoom-in;
+  overflow: hidden;
+  position: relative;
 }
 .driver-photo-stack > * {
   grid-area: 1 / 1;
+}
+.driver-photo-stack > img,
+.driver-photo-stack > .driver-avatar {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+.driver-photo-stack > img {
+  display: block;
+  object-fit: contain;
+  object-position: center;
+  border: 1px solid var(--line);
+  border-radius: inherit;
+  background: #f1f5f9;
+}
+.driver-photo-stack > .driver-avatar {
+  border-radius: inherit;
 }
 .driver-management-grid {
   display: grid;
@@ -1547,6 +1571,8 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .driver-row-identity .driver-photo-stack {
   width: 76px;
   height: 76px;
+  flex: 0 0 76px;
+  border-radius: 12px;
 }
 .driver-row-facts {
   display: grid;
