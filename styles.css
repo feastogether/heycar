@@ -601,12 +601,12 @@ a { text-decoration: none; }
   position: relative;
   display: grid;
   align-items: end;
-  justify-items: start;
-  padding: 112px max(24px, 7vw) max(28px, 7vh);
+  justify-items: end;
+  padding: 112px max(22px, 5vw) max(24px, 5vh);
   background:
     linear-gradient(90deg, rgba(7,15,26,.56) 0%, rgba(7,15,26,.22) 38%, rgba(7,15,26,.03) 72%),
     linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.30)),
-    url("./assets/login-aircraft.png") center / cover no-repeat;
+    url("./assets/login-aircraft.png") 48% center / cover no-repeat;
   overflow: hidden;
 }
 .login-brand-bar {
@@ -636,10 +636,10 @@ a { text-decoration: none; }
 .login-panel {
   position: relative;
   z-index: 1;
-  width: min(390px, 100%);
+  width: min(340px, 100%);
   display: grid;
   grid-template-columns: 1fr;
-  background: rgba(255,255,255,.82);
+  background: rgba(255,255,255,.76);
   border-radius: 10px;
   overflow: hidden;
   box-shadow: 0 22px 54px rgba(15,23,42,.18);
@@ -657,7 +657,7 @@ a { text-decoration: none; }
   border-right: 1px solid var(--line);
 }
 .login-hero img { width: 100%; max-width: 180px; display: block; }
-.login-card { padding: 30px; display: flex; flex-direction: column; justify-content: center; }
+.login-card { padding: 22px; display: flex; flex-direction: column; justify-content: center; }
 .login-card h2 { margin: 0 0 22px; font-size: 26px; font-weight: 900; }
 .login-slogans {
   display: grid;
@@ -672,12 +672,12 @@ a { text-decoration: none; }
 .login-slogans span { display: block; }
 .login-field-slogans {
   justify-items: start;
-  margin: -2px 0 4px;
+  margin: 0 0 8px;
   color: #475467;
   font-size: 11px;
   text-align: left;
 }
-.login-submit { min-height: 44px; }
+.login-submit { min-height: 42px; }
 .login-submit:disabled,
 .mode-tabs .tab-btn:disabled,
 #loginForm input:disabled {
@@ -2125,13 +2125,13 @@ tr:last-child td { border-bottom: 0; }
   .modern-air-login {
     align-items: end;
     justify-items: center;
-    padding: 112px 18px 24px;
+    padding: 112px 22px 24px;
     background-position: 60% center;
   }
   .login-brand-bar { min-height: 82px; padding: 12px 18px; }
   .login-brand-lockup img { height: 36px; }
-  .single-login-panel { width: min(420px, 100%); }
-  .login-card { padding: 28px 28px 34px; }
+  .single-login-panel { width: min(360px, 100%); }
+  .login-card { padding: 22px; }
   .main.admin-main { width: 100%; margin: 0; padding: 0; }
   .admin-sidebar {
     top: 61px;
