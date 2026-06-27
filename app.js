@@ -845,7 +845,6 @@
             ${state.partner?.logo_url ? `<img class="partner-brand-logo" src="${escapeHtml(state.partner.logo_url)}" alt="${escapeHtml(state.partner.name || "partner")} logo" onerror="this.remove()">` : ""}
             <div class="brand-copy">
               <div class="brand-title driver-name">${escapeHtml(state.partner?.name || state.user?.name || "亞菲得")}</div>
-              <div class="brand-subtitle">${state.partner ? (state.partner.partner_type === "broker" ? "保經作業入口" : "車商保險入口") : "車隊服務前台"}</div>
             </div>
           </div>
           <div class="userbox">
@@ -915,6 +914,27 @@
         </section>
       </div>
     `;
+    const loginWrap = app.querySelector(".login-wrap");
+    const loginPanel = app.querySelector(".login-panel");
+    const loginCard = app.querySelector(".login-card");
+    app.querySelector(".login-hero")?.remove();
+    app.querySelector(".mode-tabs")?.remove();
+    loginWrap?.classList.add("modern-air-login");
+    loginPanel?.classList.add("single-login-panel");
+    loginWrap?.insertAdjacentHTML("afterbegin", `
+      <header class="login-brand-bar">
+        <div class="login-brand-lockup">
+          <img src="${logoUrl}" alt="heycar logo">
+          ${loginSloganMarkup()}
+        </div>
+      </header>
+    `);
+    const loginTitle = loginCard?.querySelector("h2");
+    if (loginTitle) loginTitle.textContent = "\u767b\u5165\u7cfb\u7d71";
+    const loginLabel = loginCard?.querySelector("label");
+    if (loginLabel) loginLabel.textContent = "\u624b\u6a5f\u865f\u78bc / \u7ba1\u7406\u4ee3\u78bc / \u5ee0\u5546\u4ee3\u78bc";
+    const loginInput = loginCard?.querySelector('input[name="login"]');
+    if (loginInput) loginInput.placeholder = "\u8acb\u8f38\u5165\u767b\u5165\u4ee3\u78bc";
   }
 
   function renderDriver() {
@@ -2832,17 +2852,31 @@
       clearSession();
       state.apiSession = "";
       if (hasSupabase) {
-        const action = state.mode === "admin" ? "login_admin" : state.mode === "partner" ? "login_partner" : "login_driver";
-        const result = await apiRequest(
-          action,
-          state.mode === "driver" ? { phone: loginValue } : { code: loginValue }
-        );
+        const attempts = [
+          ["driver", "login_driver", { phone: loginValue }],
+          ["admin", "login_admin", { code: loginValue }],
+          ["partner", "login_partner", { code: loginValue }]
+        ];
+        let result = null;
+        let loginType = "";
+        let lastError = null;
+        for (const [type, action, payload] of attempts) {
+          try {
+            result = await apiRequest(action, payload);
+            loginType = type;
+            break;
+          } catch (attemptError) {
+            lastError = attemptError;
+          }
+        }
+        if (!result) throw new Error("LOGIN_FAILED");
         state.apiSession = result.token;
-        state.admin = state.mode === "admin";
+        state.mode = loginType;
+        state.admin = loginType === "admin";
         state.adminProfile = result.admin_profile || null;
         state.user = result.user || null;
         state.partner = result.partner || null;
-        saveSession(state.mode, state.partner || state.user, result.token, state.adminProfile);
+        saveSession(loginType, state.partner || state.user, result.token, state.adminProfile);
         await loadAll();
         state.view = "home";
         state.loginLoading = false;
@@ -2866,7 +2900,9 @@
         PARTNER_LOGIN_FAILED: "廠商登入代碼不正確或帳號已停用。",
         SESSION_EXPIRED: "登入已逾時，請重新登入。"
       };
-      state.error = messages[error.message] || error.message || String(error);
+      state.error = error.message === "LOGIN_FAILED"
+        ? "\u627e\u4e0d\u5230\u9019\u500b\u767b\u5165\u4ee3\u78bc\uff0c\u8acb\u78ba\u8a8d\u5f8c\u518d\u8a66\u3002"
+        : messages[error.message] || error.message || String(error);
       state.loginLoading = false;
       renderLogin();
     }
