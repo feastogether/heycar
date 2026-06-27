@@ -925,7 +925,6 @@
       <header class="login-brand-bar">
         <div class="login-brand-lockup">
           <img src="${logoUrl}" alt="heycar logo">
-          ${loginSloganMarkup()}
         </div>
       </header>
     `);
@@ -933,6 +932,8 @@
     if (loginTitle) loginTitle.textContent = "\u767b\u5165\u7cfb\u7d71";
     const loginLabel = loginCard?.querySelector("label");
     if (loginLabel) loginLabel.textContent = "\u624b\u6a5f\u865f\u78bc / \u7ba1\u7406\u4ee3\u78bc / \u5ee0\u5546\u4ee3\u78bc";
+    const slogan = loginSloganMarkup();
+    if (loginLabel && slogan) loginLabel.insertAdjacentHTML("afterend", slogan.replace("login-slogans", "login-slogans login-field-slogans"));
     const loginInput = loginCard?.querySelector('input[name="login"]');
     if (loginInput) loginInput.placeholder = "\u8acb\u8f38\u5165\u767b\u5165\u4ee3\u78bc";
   }
