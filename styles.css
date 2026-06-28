@@ -604,8 +604,9 @@ a { text-decoration: none; }
   justify-items: end;
   padding: 112px max(22px, 5vw) max(24px, 5vh);
   background:
-    linear-gradient(90deg, rgba(7,15,26,.56) 0%, rgba(7,15,26,.22) 38%, rgba(7,15,26,.03) 72%),
-    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,.30));
+    radial-gradient(circle at 72% 22%, rgba(255,255,255,.24), transparent 32rem),
+    linear-gradient(90deg, rgba(3,10,20,.64) 0%, rgba(3,10,20,.24) 46%, rgba(3,10,20,.06) 100%),
+    #07131f;
   overflow: hidden;
 }
 .login-wrap::before {
@@ -613,10 +614,11 @@ a { text-decoration: none; }
   position: absolute;
   inset: 86px 0 0;
   z-index: 0;
-  background: url("./assets/login-aircraft.png") center / cover no-repeat;
-  transform: scale(1.03);
+  background: url("./assets/login-cabin.jpeg") center / cover no-repeat;
+  filter: saturate(1.06) contrast(1.03);
+  transform: scale(1.02);
   transform-origin: center;
-  animation: aircraft-drift 18s ease-in-out infinite alternate;
+  animation: aircraft-drift 22s ease-in-out infinite alternate;
 }
 .login-wrap::after {
   content: "";
@@ -624,13 +626,13 @@ a { text-decoration: none; }
   inset: 86px 0 0;
   z-index: 0;
   background:
-    linear-gradient(90deg, rgba(7,15,26,.48) 0%, rgba(7,15,26,.16) 42%, rgba(7,15,26,.02) 74%),
-    linear-gradient(180deg, rgba(255,255,255,.02), rgba(255,255,255,.22));
+    linear-gradient(90deg, rgba(3,10,20,.58) 0%, rgba(3,10,20,.20) 44%, rgba(3,10,20,.04) 76%),
+    linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.18));
   pointer-events: none;
 }
 @keyframes aircraft-drift {
-  from { background-position: 58% center; transform: scale(1.05); }
-  to { background-position: 34% center; transform: scale(1.01); }
+  from { background-position: 46% center; transform: scale(1.035); }
+  to { background-position: 54% center; transform: scale(1.01); }
 }
 .login-brand-bar {
   position: absolute;
@@ -662,12 +664,13 @@ a { text-decoration: none; }
   width: min(340px, 100%);
   display: grid;
   grid-template-columns: 1fr;
-  background: rgba(255,255,255,.70);
+  background: linear-gradient(135deg, rgba(255,255,255,.68), rgba(255,255,255,.42));
   border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 22px 54px rgba(15,23,42,.18);
-  border: 1px solid rgba(255,255,255,.65);
-  backdrop-filter: blur(18px);
+  box-shadow: 0 28px 70px rgba(2,8,23,.28), inset 0 1px 0 rgba(255,255,255,.58);
+  border: 1px solid rgba(255,255,255,.78);
+  backdrop-filter: blur(26px) saturate(1.28);
+  -webkit-backdrop-filter: blur(26px) saturate(1.28);
 }
 .login-hero {
   padding: 40px;
@@ -2151,13 +2154,19 @@ tr:last-child td { border-bottom: 0; }
     padding: 112px 22px 24px;
   }
   .modern-air-login::before {
-    background-size: auto 78vh;
-    background-position: 70% center;
+    background-image: url("./assets/login-starlux-plane.jpeg");
+    background-size: cover;
+    background-position: center 44%;
     animation: aircraft-drift-mobile 16s ease-in-out infinite alternate;
   }
+  .modern-air-login::after {
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.04) 0%, rgba(8,15,28,.08) 42%, rgba(8,15,28,.34) 100%),
+      linear-gradient(90deg, rgba(6,14,26,.30), rgba(6,14,26,.05) 50%, rgba(6,14,26,.22));
+  }
   @keyframes aircraft-drift-mobile {
-    from { background-position: 78% center; transform: scale(1.03); }
-    to { background-position: 36% center; transform: scale(1); }
+    from { background-position: center 40%; transform: scale(1.035); }
+    to { background-position: center 58%; transform: scale(1); }
   }
   .login-brand-bar { min-height: 82px; padding: 12px 18px; }
   .login-brand-lockup img { height: 36px; }
