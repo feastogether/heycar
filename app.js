@@ -843,12 +843,8 @@
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
             ${state.partner?.logo_url ? `<img class="partner-brand-logo" src="${escapeHtml(state.partner.logo_url)}" alt="${escapeHtml(state.partner.name || "partner")} logo" onerror="this.remove()">` : ""}
-            <div class="brand-copy">
-              <div class="brand-title driver-name">${escapeHtml(state.partner?.name || state.user?.name || "亞菲得")}</div>
-            </div>
           </div>
           <div class="userbox">
-            ${notificationBell()}
             <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
             <button class="ghost-btn" data-action="logout">登出</button>
           </div>

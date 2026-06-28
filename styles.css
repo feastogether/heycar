@@ -109,19 +109,20 @@ a { text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px max(16px, 4vw);
+  gap: 10px;
+  padding: 8px max(14px, 4vw);
   background: rgba(255,255,255,.96);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(10px);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 .brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.brand img { height: 36px; width: auto; display: block; }
+.brand img { height: 32px; width: auto; display: block; }
 .brand .partner-brand-logo {
   max-width: 104px;
-  height: 34px;
+  height: 30px;
   object-fit: contain;
-  padding-left: 12px;
+  padding-left: 10px;
   margin-left: 4px;
   border-left: 1px solid var(--line);
 }
@@ -501,22 +502,26 @@ a { text-decoration: none; }
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(239,63,53,.08);
 }
-.brand-copy { display: grid; gap: 2px; min-width: 0; }
+.brand-copy { display: grid; gap: 1px; min-width: 0; }
 .brand-title { font-weight: 900; color: var(--ink); font-size: 15px; white-space: nowrap; }
 .brand-subtitle { color: var(--muted); font-size: 11px; font-weight: 700; }
-.userbox { display: flex; align-items: center; gap: 12px; }
+.userbox { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; flex-shrink: 0; }
 .airport-weather {
-  min-width: 156px;
-  padding: 6px 12px;
+  min-width: 146px;
+  padding: 5px 10px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 8px;
   background: #f8fafc;
   display: grid;
-  line-height: 1.25;
+  line-height: 1.18;
 }
-.airport-weather .weather-label { font-size: 11px; font-weight: 700; color: var(--muted); }
-.airport-weather strong { font-size: 14px; }
-.airport-weather small { font-size: 11px; color: var(--muted); }
+.airport-weather .weather-label { font-size: 10px; font-weight: 700; color: var(--muted); }
+.airport-weather strong { font-size: 13px; }
+.airport-weather small { font-size: 10px; color: var(--muted); }
+.topbar .ghost-btn {
+  min-height: 36px;
+  padding: 8px 14px;
+}
 .main { width: min(1200px, calc(100% - 32px)); margin: 24px auto 60px; flex: 1; }
 .main.admin-main {
   width: 100%;
@@ -1333,8 +1338,8 @@ button.calendar-pill:hover { filter: brightness(.96); }
   box-shadow: 0 8px 22px rgba(24,32,51,.04);
 }
 .menu-btn {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border-radius: 10px;
   font-size: 20px;
@@ -2308,8 +2313,10 @@ tr:last-child td { border-bottom: 0; }
   .insurance-vehicle-picker label { grid-column: auto; }
   .storage-file-row { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .storage-file-row time { display: none; }
-  .topbar { padding: 10px 14px; gap: 10px; flex-wrap: wrap; }
-  .brand img { height: 32px; }
+  .topbar { padding: 7px 10px; gap: 8px; flex-wrap: nowrap; }
+  .brand { gap: 8px; }
+  .brand img { height: 28px; }
+  .brand .partner-brand-logo { max-width: 72px; height: 26px; padding-left: 8px; }
   .brand-title { font-size: 14px; }
   .main { width: calc(100% - 28px); margin-top: 14px; }
   .form-grid { grid-template-columns: 1fr; }
@@ -2321,9 +2328,12 @@ tr:last-child td { border-bottom: 0; }
   .feature-card small { font-size: 11px; }
   .section-head { align-items: stretch; }
   .section-head h2 { font-size: 21px; }
-  .userbox { width: 100%; justify-content: space-between; }
-  .airport-weather { flex: 1; grid-template-columns: auto auto 1fr; align-items: center; gap: 8px; }
-  .airport-weather small { text-align: right; }
+  .userbox { width: auto; justify-content: flex-end; gap: 6px; }
+  .airport-weather { min-width: 108px; padding: 4px 8px; }
+  .airport-weather .weather-label { display: none; }
+  .airport-weather strong { font-size: 12px; white-space: nowrap; }
+  .airport-weather small { display: none; }
+  .topbar .ghost-btn { min-height: 32px; padding: 6px 10px; font-size: 13px; }
   .driver-page-head h2 { font-size: 21px; }
   .flight-search { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .flight-source-toggle,
