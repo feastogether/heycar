@@ -126,6 +126,13 @@ a { text-decoration: none; }
   margin-left: 4px;
   border-left: 1px solid var(--line);
 }
+.topbar-driver-name {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
 
 .notification-bell {
   position: relative;
@@ -2329,10 +2336,10 @@ tr:last-child td { border-bottom: 0; }
   .section-head { align-items: stretch; }
   .section-head h2 { font-size: 21px; }
   .userbox { width: auto; justify-content: flex-end; gap: 6px; }
-  .airport-weather { min-width: 108px; padding: 4px 8px; }
-  .airport-weather .weather-label { display: none; }
+  .airport-weather { min-width: 98px; padding: 3px 8px; line-height: 1.08; }
+  .airport-weather .weather-label { display: block; font-size: 9px; }
   .airport-weather strong { font-size: 12px; white-space: nowrap; }
-  .airport-weather small { display: none; }
+  .airport-weather small { display: block; font-size: 9px; white-space: nowrap; }
   .topbar .ghost-btn { min-height: 32px; padding: 6px 10px; font-size: 13px; }
   .driver-page-head h2 { font-size: 21px; }
   .flight-search { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }

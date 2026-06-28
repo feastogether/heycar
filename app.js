@@ -812,6 +812,12 @@
     </button>`;
   }
 
+  function shortDriverName() {
+    const name = String(state.user?.name || "").trim();
+    if (!name) return "";
+    return name.length > 2 ? name.slice(-2) : name;
+  }
+
   function layout(content) {
     if (state.admin) {
       app.innerHTML = `
@@ -842,6 +848,7 @@
         <header class="topbar">
           <div class="brand compact-brand">
             <img src="${logoUrl}" alt="heycar logo">
+            ${state.user ? `<span class="topbar-driver-name">${escapeHtml(shortDriverName())}</span>` : ""}
             ${state.partner?.logo_url ? `<img class="partner-brand-logo" src="${escapeHtml(state.partner.logo_url)}" alt="${escapeHtml(state.partner.name || "partner")} logo" onerror="this.remove()">` : ""}
           </div>
           <div class="userbox">
