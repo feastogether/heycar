@@ -1,0 +1,180 @@
+/* =====================================================================
+   亞菲得 heycar — 介面優化層 (heycar-ui-enhance.css)  v1
+
+   用法（擇一）：
+   A. 在 index.html 的 styles.css 之後再加一行（建議，方便日後移除）：
+        <link rel="stylesheet" href="./styles.css?v=...">
+        <link rel="stylesheet" href="./heycar-ui-enhance.css?v=1">
+   B. 直接把本檔內容貼到 styles.css 的「最末端」。
+
+   原理：本層只覆蓋既有規則，不更動 HTML 結構與 JS。
+   ===================================================================== */
+
+/* ---------- 0. 無障礙與動態 ----------
+   尊重系統「減少動態」設定（登入頁有飛機位移、跑馬燈、進度條等無限動畫，
+   對部分使用者會不適），並補上鍵盤聚焦框（原本只有輸入框有 focus 樣式）。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+/* ---------- 1. 移除通知鈴鐺 ----------
+   先用 CSS 隱藏即可生效；若要徹底移除（連同未讀計數運算），
+   見對話中說明：刪掉 app.js 第 851 行的 ${notificationBell()}。 */
+.notification-bell { display: none !important; }
+
+/* ---------- 2. 上方橫幅 topbar ----------
+   原本是平面白底 + 一條硬邊線，元素各自為政。
+   改成：更通透的毛玻璃、柔和落影、天氣資訊去框做成膠囊並加狀態小燈。 */
+.topbar {
+  padding-block: 14px;
+  background: rgba(255, 255, 255, .82);
+  border-bottom: 1px solid rgba(221, 229, 239, .65);
+  -webkit-backdrop-filter: saturate(180%) blur(16px);
+  backdrop-filter: saturate(180%) blur(16px);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, .7), 0 10px 26px -22px rgba(24, 32, 51, .5);
+}
+.brand { gap: 13px; }
+.brand img { height: 34px; }
+.brand-title { font-size: 16px; letter-spacing: -.01em; }
+.brand-subtitle { font-size: 11.5px; }
+
+/* 登出鍵：平時低調，hover 才透出品牌紅，避免誤觸也更好認 */
+.userbox .ghost-btn[data-action="logout"] {
+  border-radius: 999px;
+  padding-inline: 16px;
+}
+.userbox .ghost-btn[data-action="logout"]:hover {
+  border-color: #fecaca;
+  background: #fff5f5;
+  color: var(--brand-dark);
+}
+
+/* 桃園機場天氣：拿掉硬框，柔和膠囊 + 左側狀態小燈 */
+.airport-weather {
+  position: relative;
+  min-width: 150px;
+  border: 0;
+  border-radius: 11px;
+  padding: 7px 14px 7px 24px;
+  background: linear-gradient(180deg, #f7f9fc, #eef2f8);
+  box-shadow: inset 0 0 0 1px rgba(221, 229, 239, .9);
+}
+.airport-weather::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31, 122, 140, .14);
+}
+.airport-weather strong { letter-spacing: -.01em; }
+
+/* 管理後台漢堡鍵：給個外框，視覺重量與右側登出鍵平衡 */
+.admin-topbar .menu-btn {
+  border: 1px solid var(--line);
+  border-radius: 11px;
+}
+.admin-topbar .menu-btn:hover { background: #f8fafc; }
+
+/* ---------- 3. 登入頁 ----------
+   登入頁實際只有「品牌列 + 浮動玻璃卡（輸入框＋登入鈕）」。
+   強化玻璃質感、輸入框與按鈕，並替極簡面板補一行標題使其看起來是「設計」。 */
+.login-brand-bar {
+  min-height: 78px;
+  background: rgba(255, 255, 255, .8);
+  border-bottom: 1px solid rgba(255, 255, 255, .45);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  backdrop-filter: blur(18px) saturate(160%);
+  box-shadow: 0 1px 24px -10px rgba(15, 23, 42, .35);
+}
+.login-panel {
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .64);
+  border: 1px solid rgba(255, 255, 255, .8);
+  -webkit-backdrop-filter: blur(22px) saturate(170%);
+  backdrop-filter: blur(22px) saturate(170%);
+  box-shadow:
+    0 30px 64px -22px rgba(7, 15, 26, .58),
+    inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+.single-login-panel { width: min(372px, 100%); }
+.login-card { padding: 26px 26px 28px; gap: 4px; }
+
+/* 替精簡面板補一行標題（純 CSS，不需改 JS）。
+   想換字就改這裡的 content；想拿掉整行就刪掉這個區塊即可。 */
+.login-card::before {
+  content: "登入";
+  display: block;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(221, 229, 239, .85);
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: -.01em;
+}
+.login-field-slogans { margin: 2px 0 10px; color: #5a6675; }
+
+/* 輸入框：更高、更圓潤，聚焦時品牌色光暈 */
+.login-card input[name="login"] {
+  min-height: 46px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, .92);
+  border: 1px solid rgba(208, 217, 229, .9);
+  font-size: 15px;
+  letter-spacing: .04em;
+}
+.login-card input[name="login"]:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(239, 63, 53, .14);
+}
+
+/* 登入鍵：品牌漸層 + 柔影，hover 微浮起 */
+.login-submit {
+  min-height: 47px;
+  margin-top: 4px;
+  border-radius: 11px;
+  font-size: 15px;
+  letter-spacing: .06em;
+  background: linear-gradient(135deg, var(--brand), var(--brand-dark));
+  box-shadow: 0 12px 24px -10px rgba(239, 63, 53, .6);
+}
+.login-submit:hover { filter: brightness(1.04); transform: translateY(-1px); }
+.login-submit:active { transform: translateY(0); }
+
+/* ---------- 4. 主控台功能卡 ----------
+   保留原本深藍→湖綠的 icon 識別，只做質感打磨：更圓的卡、更俐落的浮起。 */
+.dashboard-grid { gap: 16px; }
+.feature-card {
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(24, 32, 51, .05);
+  transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease;
+}
+.feature-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(239, 63, 53, .35);
+  box-shadow: 0 24px 42px -24px rgba(24, 32, 51, .45);
+}
+.feature-icon {
+  border-radius: 13px;
+  background: linear-gradient(140deg, #1b2638, #1f7a8c);
+  box-shadow: 0 8px 16px -8px rgba(31, 122, 140, .55), inset 0 1px 0 rgba(255, 255, 255, .2);
+}
+.feature-card strong { letter-spacing: -.01em; }
+
+/* 未讀數字徽章：加白描邊，疊在卡片角落更清楚 */
+.alert-badge { box-shadow: 0 0 0 2px #fff, 0 4px 10px rgba(239, 68, 68, .35); }
