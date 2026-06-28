@@ -614,32 +614,72 @@ a { text-decoration: none; }
   position: absolute;
   inset: 86px 0 0;
   z-index: 0;
-  background: url("./assets/login-cabin.jpeg") center / cover no-repeat;
-  filter: saturate(1.06) contrast(1.03);
+  background:
+    radial-gradient(circle at 78% 22%, rgba(255,255,255,.18), transparent 30rem),
+    linear-gradient(135deg, rgba(5,13,25,.36), rgba(5,13,25,.04));
+  pointer-events: none;
+}
+.login-bg-slides {
+  position: absolute;
+  inset: 86px 0 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #07131f;
+}
+.login-bg-slide {
+  position: absolute;
+  inset: -1.5%;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: 0;
+  filter: saturate(1.05) contrast(1.02);
   transform: scale(1.02);
-  transform-origin: center;
-  animation: aircraft-drift 22s ease-in-out infinite alternate;
+  animation: login-bg-fade 28s ease-in-out infinite;
+  will-change: opacity, transform, background-position;
+}
+.login-bg-a350 {
+  background-image: url("./assets/login-a350-tail.png");
+  background-position: center center;
+  animation-delay: 0s;
+}
+.login-bg-cabin {
+  background-image: url("./assets/login-cabin.jpeg");
+  background-position: center center;
+  animation-delay: 7s;
+}
+.login-bg-wing {
+  background-image: url("./assets/login-wing-cloud.jpg");
+  background-position: center center;
+  animation-delay: 14s;
+}
+.login-bg-engine {
+  background-image: url("./assets/login-engine-wing.jpg");
+  background-position: center center;
+  animation-delay: 21s;
 }
 .login-wrap::after {
   content: "";
   position: absolute;
   inset: 86px 0 0;
-  z-index: 0;
+  z-index: 1;
   background:
     linear-gradient(90deg, rgba(3,10,20,.58) 0%, rgba(3,10,20,.20) 44%, rgba(3,10,20,.04) 76%),
     linear-gradient(180deg, rgba(255,255,255,.03), rgba(255,255,255,.18));
   pointer-events: none;
 }
-@keyframes aircraft-drift {
-  from { background-position: 46% center; transform: scale(1.035); }
-  to { background-position: 54% center; transform: scale(1.01); }
+@keyframes login-bg-fade {
+  0% { opacity: 1; transform: scale(1.04); }
+  5% { opacity: 1; transform: scale(1.035); }
+  23% { opacity: 1; transform: scale(1.015); }
+  29% { opacity: 0; transform: scale(1.005); }
+  100% { opacity: 0; transform: scale(1.005); }
 }
 .login-brand-bar {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  z-index: 2;
+  z-index: 3;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -660,7 +700,7 @@ a { text-decoration: none; }
 }
 .login-panel {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   width: min(340px, 100%);
   display: grid;
   grid-template-columns: 1fr;
@@ -2153,20 +2193,23 @@ tr:last-child td { border-bottom: 0; }
     justify-items: center;
     padding: 112px 22px 24px;
   }
-  .modern-air-login::before {
-    background-image: url("./assets/login-starlux-plane.jpeg");
-    background-size: cover;
-    background-position: center 44%;
-    animation: aircraft-drift-mobile 16s ease-in-out infinite alternate;
-  }
+  .login-bg-slides { inset: 82px 0 0; }
+  .login-bg-slide { inset: -1%; animation-name: login-bg-fade-mobile; }
+  .login-bg-a350 { background-position: 72% center; }
+  .login-bg-cabin { background-position: center center; }
+  .login-bg-wing { background-position: 68% center; }
+  .login-bg-engine { background-position: 42% center; }
   .modern-air-login::after {
     background:
       linear-gradient(180deg, rgba(255,255,255,.04) 0%, rgba(8,15,28,.08) 42%, rgba(8,15,28,.34) 100%),
       linear-gradient(90deg, rgba(6,14,26,.30), rgba(6,14,26,.05) 50%, rgba(6,14,26,.22));
   }
-  @keyframes aircraft-drift-mobile {
-    from { background-position: center 40%; transform: scale(1.035); }
-    to { background-position: center 58%; transform: scale(1); }
+  @keyframes login-bg-fade-mobile {
+    0% { opacity: 1; transform: scale(1.07); }
+    5% { opacity: 1; transform: scale(1.055); }
+    23% { opacity: 1; transform: scale(1.02); }
+    29% { opacity: 0; transform: scale(1.01); }
+    100% { opacity: 0; transform: scale(1.01); }
   }
   .login-brand-bar { min-height: 82px; padding: 12px 18px; }
   .login-brand-lockup img { height: 36px; }

@@ -879,6 +879,12 @@
     const loadingText = state.mode === "driver" ? "正在驗證司機身分" : state.mode === "partner" ? "正在驗證合作單位" : "正在驗證管理權限";
     app.innerHTML = `
       <div class="login-wrap">
+        <div class="login-bg-slides" aria-hidden="true">
+          <span class="login-bg-slide login-bg-a350"></span>
+          <span class="login-bg-slide login-bg-cabin"></span>
+          <span class="login-bg-slide login-bg-wing"></span>
+          <span class="login-bg-slide login-bg-engine"></span>
+        </div>
         <section class="login-panel">
           <div class="login-hero">
             <img src="${logoUrl}" alt="heycar logo">
