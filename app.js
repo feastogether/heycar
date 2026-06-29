@@ -117,6 +117,19 @@
     ,driverHelper: "M5 4h14v15H5V4Zm3 4h8M8 12h8M8 16h5"
   };
 
+  const driverFrontendFeatures = [
+    ["messagesCenter", "訊息中心"],
+    ["calendar", "共同行事曆"],
+    ["maintenance", "保養維修"],
+    ["payments", "費用管理"],
+    ["feedback", "意見反饋"],
+    ["driverHelper", "司機幫手"],
+    ["links", "連結中心"],
+    ["flights", "航班資訊"],
+    ["emergency", "緊急事件"],
+    ["broadcast", "機場轉播"]
+  ];
+
   const seed = {
     drivers: [
       { id: uid(), national_id: "A123456789", phone: "0912345678", name: "王小明", fleet_name: "亞菲得車隊", employment_type: "全職", driver_status: "待上線", license_expiry: "2027-12-31", notes: "示範司機" }
@@ -521,7 +534,7 @@
   function sanitizeRichHtml(value) {
     const template = document.createElement("template");
     template.innerHTML = String(value || "");
-    const allowedTags = new Set(["P", "BR", "B", "STRONG", "I", "EM", "U", "UL", "OL", "LI", "A", "IMG", "H3", "H4", "SPAN", "DIV"]);
+    const allowedTags = new Set(["P", "BR", "B", "STRONG", "I", "EM", "U", "UL", "OL", "LI", "A", "IMG", "H3", "H4", "SPAN", "DIV", "FONT"]);
     template.content.querySelectorAll("*").forEach((node) => {
       if (!allowedTags.has(node.tagName)) {
         node.replaceWith(document.createTextNode(node.textContent || ""));
@@ -529,7 +542,7 @@
       }
       [...node.attributes].forEach((attr) => {
         const name = attr.name.toLowerCase();
-        const keep = ["href", "src", "alt", "target", "rel", "style"].includes(name);
+        const keep = ["href", "src", "alt", "target", "rel", "style", "color", "size", "face"].includes(name);
         if (!keep || /^javascript:/i.test(attr.value)) node.removeAttribute(attr.name);
       });
       if (node.tagName === "A") {
@@ -954,21 +967,21 @@
     const pendingMsg = mine("personal_messages").filter((x) => x.status === "pending").length;
     const showLinkCenter = (state.data.driver_links || []).length > 0;
 
-    if (state.view === "home") {
-      layout(`
-        <div class="dashboard-grid">
-          ${feature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
-          ${feature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
-          ${feature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
-          ${feature("payments", "費用管理", "費用與款項通知", pendingPay)}
-          ${feature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
-          ${feature("driverHelper", "\u53f8\u6a5f\u5e6b\u624b", "\u6559\u5b78\u6587\u7ae0\u8207\u5e38\u7528\u6307\u5357", 0)}
-          ${showLinkCenter ? feature("links", "連結中心", "新進司機群組與常用連結", 0) : ""}
-          ${feature("flights", "航班資訊", "桃園機場航班查詢", 0)}
-          ${feature("emergency", "緊急事件", "查看事件處理流程", 0)}
-          ${feature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
-        </div>
-      `);
+        if (state.view === "home") {
+          layout(`
+            <div class="dashboard-grid">
+          ${driverFeature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
+          ${driverFeature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
+          ${driverFeature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
+          ${driverFeature("payments", "費用管理", "費用與款項通知", pendingPay)}
+          ${driverFeature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
+          ${driverFeature("driverHelper", "\u53f8\u6a5f\u5e6b\u624b", "\u6559\u5b78\u6587\u7ae0\u8207\u5e38\u7528\u6307\u5357", 0)}
+          ${showLinkCenter ? driverFeature("links", "連結中心", "新進司機群組與常用連結", 0) : ""}
+          ${driverFeature("flights", "航班資訊", "桃園機場航班查詢", 0)}
+          ${driverFeature("emergency", "緊急事件", "查看事件處理流程", 0)}
+          ${driverFeature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
+            </div>
+          `);
       return;
     }
 
@@ -986,6 +999,11 @@
       flights: driverFlights,
       calendar: () => renderCalendar(false)
     };
+    if (!canShowDriverFeature(state.view) || !views[state.view]) {
+      state.view = "home";
+      renderDriver();
+      return;
+    }
     layout(views[state.view]());
     if (state.view === "flights") loadFlights();
   }
@@ -1015,8 +1033,45 @@
     return state.user.fleet_name || fleetNames(false)[0] || "亞菲得車隊";
   }
 
+  function driverDealer() {
+    const dealerId = state.user?.dealer_partner_id || "";
+    if (dealerId) {
+      const dealer = (state.data.insurance_partners || []).find((item) => item.id === dealerId);
+      if (dealer) return dealer;
+    }
+    const fleet = String(state.user?.fleet_name || "").trim();
+    return (state.data.insurance_partners || []).find((item) => item.partner_type === "dealer" && item.name === fleet) || null;
+  }
+
+  function driverDealerName() {
+    return driverDealer()?.name || state.user?.fleet_name || "";
+  }
+
+  function driverFrontendPermissions() {
+    let permissions = driverDealer()?.frontend_permissions;
+    if (typeof permissions === "string") {
+      try { permissions = JSON.parse(permissions || "{}"); } catch { permissions = null; }
+    }
+    if (!permissions || typeof permissions !== "object" || Array.isArray(permissions)) return null;
+    return permissions;
+  }
+
+  function canShowDriverFeature(view) {
+    const permissions = driverFrontendPermissions();
+    return !permissions || permissions[view] !== false;
+  }
+
+  function driverFeature(view, title, desc, count) {
+    return canShowDriverFeature(view) ? feature(view, title, desc, count) : "";
+  }
+
   function visibleAnnouncements() {
-    return state.data.announcements.filter((item) => !item.target_fleet || item.target_fleet === "全部車隊" || item.target_fleet === driverFleet());
+    const dealerName = driverDealerName();
+    const legacyFleet = driverFleet();
+    return state.data.announcements.filter((item) => {
+      const target = item.target_fleet || item.target_dealer || "全部車隊";
+      return !target || target === "全部車隊" || target === "全部車商" || target === dealerName || target === legacyFleet;
+    });
   }
 
   function backButton() {
@@ -1143,9 +1198,11 @@
 
 
   function driverLinkCenter() {
+    const dealerName = driverDealerName();
+    const legacyFleet = driverFleet();
     const links = (state.data.driver_links || []).filter((item) => {
       const targetFleets = Array.isArray(item.target_fleets) && item.target_fleets.length ? item.target_fleets : ["全部車隊"];
-      return targetFleets.includes("全部車隊") || targetFleets.includes(state.user?.fleet_name || "");
+      return targetFleets.includes("全部車隊") || targetFleets.includes("全部車商") || targetFleets.includes(dealerName) || targetFleets.includes(legacyFleet);
     });
     return `${pageHeader("連結中心")}<div class="link-center-grid">${links.length ? links.map((item) => `
       <a class="link-center-item" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
@@ -1296,7 +1353,18 @@
 
   function calendarItems(isAdmin) {
     const items = state.data.calendar_events || [];
-    return isAdmin ? items : items.filter((item) => item.fleet_name === driverFleet());
+    if (isAdmin) return items;
+    const dealerName = driverDealerName();
+    const legacyFleet = driverFleet();
+    return items.filter((item) => {
+      const target = item.fleet_name || "全部車商";
+      return !target || target === "全部車隊" || target === "全部車商" || target === dealerName || target === legacyFleet;
+    });
+  }
+
+  function calendarMonthItems(isAdmin) {
+    const monthKey = state.calendarMonth.slice(0, 7);
+    return calendarItems(isAdmin).filter((item) => String(item.event_date || "").slice(0, 7) === monthKey);
   }
 
   function shiftCalendarMonth(step) {
@@ -1339,7 +1407,7 @@
           <button class="ghost-btn calendar-nav" data-calendar-month="1" aria-label="下個月">${iconSvg("M9 18l6-6-6-6")}</button>
         </div>
         <div class="calendar-legend">
-          <span class="maintenance">保養</span><span class="tires">調胎</span><span class="other">其他</span>
+          <span class="maintenance">保養</span><span class="repair">維修</span><span class="tires">調胎</span><span class="other">其他</span>
         </div>
         <div class="calendar-weekdays">${["日", "一", "二", "三", "四", "五", "六"].map((day) => `<span>${day}</span>`).join("")}</div>
         <div class="calendar-grid">${days.join("")}</div>
@@ -1349,7 +1417,7 @@
     return `
       <div class="section-head"><h2>共同行事曆</h2><button class="primary-btn" data-modal="calendarEvent">新增行程</button></div>
       ${content}
-      ${table(["日期", "時間", "類型", "車隊", "車牌", "指定駕駛", "保養廠", "內容", "操作"], calendarItems(true).map((item) => [
+      ${table(["日期", "時間", "類型", "車商", "車牌", "指定駕駛", "保養廠", "內容", "操作"], calendarMonthItems(true).map((item) => [
         fmtDate(item.event_date), item.event_time || "-", calendarTypeName(item.event_type), item.fleet_name || "", item.plate_no || "",
         driverName(item.driver_id), item.vendor || "-", item.content || "", rowActions("calendarEvent", "calendar_events", item.id)
       ]))}
@@ -1363,7 +1431,7 @@
   }
 
   function calendarTypeName(type) {
-    return ({ maintenance: "保養", tires: "調胎", other: "其他" })[type] || "其他";
+    return ({ maintenance: "保養", repair: "維修", tires: "調胎", other: "其他" })[type] || "其他";
   }
 
   function openCalendarDay(date) {
@@ -1939,8 +2007,8 @@
   function adminAnnouncements() {
     return `
       <div class="section-head"><h2>公告管理</h2><button class="primary-btn" data-modal="announcement">新增公告</button></div>
-      ${table(["標題", "通知車隊", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [
-        a.title, a.target_fleet || "全部車隊", `${escapeHtml(a.content || "")}${attachmentLink(a)}`, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
+      ${table(["標題", "通知車商", "內容", "建立日期", "已讀數", "操作"], state.data.announcements.map((a) => [
+        a.title, a.target_fleet || "全部車商", `${escapeHtml(a.content || "")}${attachmentLink(a)}`, fmtDate(a.created_at), state.data.announcement_reads.filter((r) => r.announcement_id === a.id).length, rowActions("announcement", "announcements", a.id)
       ]))}
     `;
   }
@@ -2068,6 +2136,10 @@
       if (tableName === "driver_links") {
         record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
       }
+      if (tableName === "insurance_partners") {
+        record.frontend_permissions = Object.fromEntries(driverFrontendFeatures.map(([key]) => [key, formData.get(`frontend_${key}`) === "true"]));
+        driverFrontendFeatures.forEach(([key]) => delete record[`frontend_${key}`]);
+      }
       try {
         const saved = id
           ? await update(tableName, id, normalizeRecord(tableName, record))
@@ -2183,7 +2255,7 @@
     }
     if (tableName === "driver_links") {
       record.active = record.active === "true";
-      record.target_fleets = Array.isArray(record.target_fleets) && record.target_fleets.length ? record.target_fleets : ["全部車隊"];
+      record.target_fleets = Array.isArray(record.target_fleets) && record.target_fleets.length ? record.target_fleets : ["全部車商"];
     }
     if (tableName === "maintenance_notifications") {
       record.driver_id = record.driver_id || null;
@@ -2417,7 +2489,7 @@
       .map((item) => String(item.name || "").trim())
       .filter(Boolean);
     const names = [...new Set(dealerNames.length ? dealerNames : fleets)];
-    return includeAll ? ["全部車隊", ...names] : names;
+    return includeAll ? ["全部車商", ...names] : names;
   }
 
   function fleetOptions(name, label, value, includeAll = false) {
@@ -2426,7 +2498,7 @@
   }
 
   function fleetMultiOptions(name, label, selectedValues) {
-    const selected = new Set(Array.isArray(selectedValues) && selectedValues.length ? selectedValues : ["全部車隊"]);
+    const selected = new Set(Array.isArray(selectedValues) && selectedValues.length ? selectedValues : ["全部車商"]);
     return `<div class="field full fleet-picker">
       <label>${label}</label>
       <div class="fleet-picker-list">
@@ -2682,7 +2754,7 @@
   }
 
   function announcementForm(a) {
-    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車隊", a.target_fleet, true) + text("content", "公告內容", a.content) + attachmentField(a);
+    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車商", a.target_fleet, true) + text("content", "公告內容", a.content) + attachmentField(a);
   }
 
   function maintenanceNotificationForm(n) {
@@ -2709,8 +2781,8 @@
   function calendarEventForm(item) {
     return input("event_date", "日期", formDate(item.event_date) || today(), "date", true) +
       input("event_time", "時間", item.event_time || "", "time") +
-      select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["tires", "調胎"], ["other", "其他"]]) +
-      fleetOptions("fleet_name", "通知車隊", item.fleet_name) +
+      select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["repair", "維修"], ["tires", "調胎"], ["other", "其他"]]) +
+      fleetOptions("fleet_name", "通知車商", item.fleet_name) +
       input("plate_no", "車牌", item.plate_no, "text", true) +
       searchableDriverOptions(item.driver_id) +
       input("vendor", "保養廠", item.vendor) +
@@ -2735,6 +2807,16 @@
       + checkbox("active", "啟用此事件", item.active !== false);
   }
 
+  function frontendPermissionFields(item = {}) {
+    const permissions = item.frontend_permissions && typeof item.frontend_permissions === "object" ? item.frontend_permissions : {};
+    return `<div class="field full fleet-picker">
+      <label>司機前台可見功能</label>
+      <div class="fleet-picker-list">
+        ${driverFrontendFeatures.map(([key, label]) => `<label class="check-field"><input type="checkbox" name="frontend_${key}" value="true" ${permissions[key] === false ? "" : "checked"}>${escapeHtml(label)}</label>`).join("")}
+      </div>
+    </div>`;
+  }
+
   function insurancePartnerForm(item) {
     return input("name", "單位名稱", item.name, "text", true)
       + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"]])
@@ -2744,6 +2826,7 @@
       + partnerLogoField(item)
       + input("login_code", item.id ? "登入代碼（留空則不變更）" : "登入代碼", "", "password", !item.id)
       + checkbox("active", "允許此單位登入", item.active !== false)
+      + frontendPermissionFields(item)
       + text("notes", "備註", item.notes);
   }
 
@@ -2834,7 +2917,7 @@
   }
 
   async function syncCalendarNotification(item) {
-    if (!["maintenance", "tires"].includes(item.event_type) || !item.driver_id) return;
+    if (!["maintenance", "repair", "tires"].includes(item.event_type) || !item.driver_id) return;
     const vehicle = state.data.vehicles.find((row) => String(row.plate_no).toUpperCase() === String(item.plate_no).toUpperCase());
     const patch = {
       driver_id: item.driver_id,
@@ -3151,6 +3234,11 @@
       helperDetail.classList.remove("is-unread");
       helperDetail.classList.add("is-read");
       if (!target) return;
+    }
+    if (target?.dataset.helperCategory !== undefined) {
+      state.driverHelperCategory = target.dataset.helperCategory;
+      render();
+      return;
     }
     if (target?.dataset.modal) {
       e.preventDefault();

@@ -1230,6 +1230,7 @@ textarea { min-height: 100px; resize: vertical; }
   border-radius: 3px;
 }
 .calendar-legend .maintenance::before { background: #dc2626; }
+.calendar-legend .repair::before { background: #f97316; }
 .calendar-legend .tires::before { background: #2563eb; }
 .calendar-legend .other::before { background: #15803d; }
 .calendar-weekdays, .calendar-grid {
@@ -1308,6 +1309,7 @@ textarea { min-height: 100px; resize: vertical; }
 }
 button.calendar-pill:hover { filter: brightness(.96); }
 .calendar-pill.maintenance, .calendar-detail-item.maintenance { background: #fee2e2; color: #b91c1c; }
+.calendar-pill.repair, .calendar-detail-item.repair { background: #ffedd5; color: #c2410c; }
 .calendar-pill.tires, .calendar-detail-item.tires { background: #dbeafe; color: #1d4ed8; }
 .calendar-pill.other, .calendar-detail-item.other { background: #dcfce7; color: #15803d; }
 .calendar-day-detail { display: grid; gap: 10px; }
