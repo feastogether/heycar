@@ -372,6 +372,11 @@
     return v ? `${v.plate_no} ${v.brand || ""} ${v.model || ""}`.trim() : "未指定";
   }
 
+  function vehiclePlate(id) {
+    const v = state.data.vehicles.find((row) => row.id === id);
+    return v?.plate_no || "未指定車輛";
+  }
+
   function normalizePhone(value) {
     const digits = String(value || "").replace(/\D/g, "");
     if (digits.startsWith("886")) return `0${digits.slice(3)}`;
@@ -1356,10 +1361,38 @@
     if (isAdmin) return items;
     const dealerName = driverDealerName();
     const legacyFleet = driverFleet();
-    return items.filter((item) => {
+    const visibleCalendarEvents = items.filter((item) => {
       const target = item.fleet_name || "全部車商";
       return !target || target === "全部車隊" || target === "全部車商" || target === dealerName || target === legacyFleet;
     });
+    return [...visibleCalendarEvents, ...maintenanceNotificationsAsCalendarItems(visibleCalendarEvents)];
+  }
+
+  function maintenanceNotificationsAsCalendarItems(existingEvents = []) {
+    if (!state.user) return [];
+    const eventNotificationIds = new Set(existingEvents.map((item) => item.maintenance_notification_id).filter(Boolean));
+    const eventKeys = new Set(existingEvents.map((item) => `${item.event_date || ""}|${String(item.plate_no || "").toUpperCase()}|${item.driver_id || ""}`));
+    return (state.data.maintenance_notifications || [])
+      .filter((item) => item.driver_id === state.user.id)
+      .filter((item) => item.service_date)
+      .filter((item) => !eventNotificationIds.has(item.id))
+      .map((item) => {
+        const plate = vehiclePlate(item.vehicle_id);
+        return {
+          id: `maintenance-${item.id}`,
+          event_date: item.service_date,
+          event_time: item.service_time || "",
+          event_type: "maintenance",
+          fleet_name: driverDealerName() || driverFleet(),
+          plate_no: plate,
+          driver_id: item.driver_id,
+          vendor: item.vendor || "",
+          content: item.content || "保養通知",
+          status: item.status || "pending",
+          source_table: "maintenance_notifications"
+        };
+      })
+      .filter((item) => !eventKeys.has(`${item.event_date || ""}|${String(item.plate_no || "").toUpperCase()}|${item.driver_id || ""}`));
   }
 
   function calendarMonthItems(isAdmin) {
