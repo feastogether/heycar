@@ -26,9 +26,12 @@
     vehicleStatusFilter: "",
     vehicleRegionFilter: "",
     vehicleFuelFilter: "",
+    vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
     insuranceStatusFilter: "",
     serviceSearch: "",
     serviceTypeFilter: "",
+    serviceMonthFilter: "",
+    serviceVehicleFilter: "",
     loanStatusFilter: "",
     messageReadFilter: "unread",
     storageFiles: [],
@@ -476,6 +479,8 @@
         <dl class="driver-row-facts">
           <div><dt>服務區域</dt><dd>${escapeHtml(driver.service_area || driver.region || "-")}</dd></div>
           <div><dt>服務時段</dt><dd>${escapeHtml(driver.service_shift || driver.dispatch_time || "-")}</dd></div>
+          <div><dt>所屬車商</dt><dd>${escapeHtml(driverDealerName(driver))}</dd></div>
+          <div><dt>目前車輛</dt><dd>${escapeHtml(assignedVehicleNames(driver))}</dd></div>
           <div><dt>年資</dt><dd>${escapeHtml(yearsFrom(driver.onboard_date))}</dd></div>
           <div><dt>審驗日期</dt><dd>${expiryDateBadge(driver.license_review_date || driver.license_expiry, 30)}</dd></div>
         </dl>
@@ -506,8 +511,34 @@
       driver.group_name,
       driver.driver_status,
       driver.fleet_name,
+      driverDealerName(driver),
       assignedVehicles
     ].filter(Boolean).join(" ").toLowerCase();
+  }
+
+  function partnerName(id) {
+    if (!id) return "";
+    return (state.data.insurance_partners || []).find((item) => item.id === id)?.name || "";
+  }
+
+  function partnerTypeName(type) {
+    return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠" })[type] || type || "-";
+  }
+
+  function driverDealerName(driver) {
+    return partnerName(driver.dealer_partner_id) || driver.fleet_name || "-";
+  }
+
+  function assignedVehiclesForDriver(driver) {
+    return (state.data.vehicles || []).filter((vehicle) =>
+      vehicle.current_driver_id === driver.id ||
+      String(vehicle.assigned_driver_names || "").split("/").map((name) => name.trim()).includes(driver.name || "")
+    );
+  }
+
+  function assignedVehicleNames(driver) {
+    const plates = assignedVehiclesForDriver(driver).map((vehicle) => vehicle.plate_no).filter(Boolean);
+    return plates.length ? plates.join(" / ") : "-";
   }
 
   function statusBadge(status) {
@@ -843,7 +874,7 @@
           <header class="topbar admin-topbar">
             <div class="brand compact-brand">
               <button class="ghost-btn menu-btn" data-action="toggle-admin-sidebar" aria-label="開啟選單">☰</button>
-              <img src="${logoUrl}" alt="heycar logo">
+              <button class="brand-logo-button" data-admin-view="drivers" title="回到駕駛管理"><img src="${logoUrl}" alt="heycar logo"></button>
               <div class="brand-copy">
                 <div class="brand-title">管理後台</div>
                 <div class="brand-subtitle">${escapeHtml(state.adminProfile?.name || "亞菲得車隊管理")}</div>
@@ -1652,9 +1683,9 @@
 
   function adminInsurancePartners() {
     return `
-      <div class="section-head"><div><h2>廠商管理</h2><small>設定車商、保經與前台登入代碼</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
+      <div class="section-head"><div><h2>廠商管理</h2><small>設定車商、保經、保修廠與前台登入代碼</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
       ${table(["單位名稱", "類型", "聯絡人", "電話", "狀態", "操作"], (state.data.insurance_partners || []).map((item) => [
-        escapeHtml(item.name), item.partner_type === "broker" ? "保經" : "車商", escapeHtml(item.contact_name || "-"),
+        escapeHtml(item.name), partnerTypeName(item.partner_type), escapeHtml(item.contact_name || "-"),
         escapeHtml(item.phone || "-"), item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
         rowActions("insurancePartner", "insurance_partners", item.id)
       ]))}
@@ -1911,21 +1942,37 @@
 
   function adminServiceRecords() {
     const search = state.serviceSearch.trim().toUpperCase();
+    const month = state.serviceMonthFilter;
+    const vehicleId = state.serviceVehicleFilter;
     const items = [...(state.data.vehicle_service_records || [])]
-      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.parts_replaced].join(" ").toUpperCase().includes(search))
-        && (!state.serviceTypeFilter || item.record_type === state.serviceTypeFilter))
+      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.parts_replaced, servicePartsToText(parseServiceParts(item))].join(" ").toUpperCase().includes(search))
+        && (!state.serviceTypeFilter || item.record_type === state.serviceTypeFilter)
+        && (!month || String(item.service_date || "").slice(0, 7) === month)
+        && (!vehicleId || item.vehicle_id === vehicleId))
       .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
+    const totalCost = items.reduce((sum, item) => sum + Number(item.total_cost || 0), 0);
+    const repairCount = items.filter((item) => item.record_type === "維修").length;
+    const maintenanceCount = items.filter((item) => item.record_type === "定期保養").length;
+    const vehicleCount = new Set(items.map((item) => item.plate_no || item.vehicle_id).filter(Boolean)).size;
     return `
       <div class="section-head"><div><h2>車輛履歷</h2><small>維修、保養、檢驗與零組件更換的完整歷史</small></div><button class="primary-btn" data-modal="serviceRecord">新增履歷</button></div>
       <form id="serviceSearchForm" class="service-filter-bar">
         <input name="search" value="${escapeHtml(state.serviceSearch)}" placeholder="搜尋車牌、廠商、處置或零組件">
+        <select name="vehicle"><option value="">全部車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" ${state.serviceVehicleFilter === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select>
+        <input name="month" type="month" value="${escapeHtml(state.serviceMonthFilter)}" title="依月份查詢">
         <select name="type"><option value="">全部類型</option>${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<option ${state.serviceTypeFilter === value ? "selected" : ""}>${value}</option>`).join("")}</select>
         <button class="primary-btn">搜尋</button>
       </form>
+      <div class="service-kpi-grid">
+        <article><small>查詢總費用</small><strong>$${totalCost.toLocaleString()}</strong></article>
+        <article><small>涵蓋車輛</small><strong>${vehicleCount}</strong></article>
+        <article><small>定期保養</small><strong>${maintenanceCount}</strong></article>
+        <article><small>維修案件</small><strong>${repairCount}</strong></article>
+      </div>
       <div class="service-record-list">
         ${items.length ? items.map((item) => `<article class="service-record-row">
           <div class="service-record-head"><span class="plate-chip">${escapeHtml(item.plate_no)}</span><span class="record-type">${escapeHtml(item.record_type)}</span><strong>${fmtDate(item.service_date)}</strong>${item.odometer ? `<small>${Number(item.odometer).toLocaleString()} km</small>` : ""}</div>
-          <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>更換零組件</small><p>${escapeHtml(item.parts_replaced || "-")}</p></div></div>
+          <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
           <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>總成本：$${Number(item.total_cost || 0).toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
           <div class="service-record-actions">${attachmentLink(item)}${rowActions("serviceRecord", "vehicle_service_records", item.id)}</div>
         </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
@@ -1973,9 +2020,9 @@
           <button class="primary-btn" type="submit">套用篩選</button>
           <button class="ghost-btn" type="button" data-action="clear-vehicle-search">重設</button>
         </form>
-        <div class="actions"><button class="ghost-btn" data-export="vehicles">匯出 Excel</button><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
+        <div class="actions"><button class="ghost-btn ${state.vehicleViewMode === "list" ? "active" : ""}" data-vehicle-view="list">列表</button><button class="ghost-btn ${state.vehicleViewMode === "visual" ? "active" : ""}" data-vehicle-view="visual">圖像</button><button class="ghost-btn" data-export="vehicles">匯出 Excel</button><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
       </div>
-      ${vehicleManagementRows(vehicles)}
+      ${state.vehicleViewMode === "visual" ? vehicleManagementCards(vehicles) : vehicleManagementRows(vehicles)}
     `;
   }
 
@@ -2013,6 +2060,40 @@
         rowActions("marqueeMessage", "marquee_messages", item.id)
       ]))}
     `;
+  }
+
+  function vehicleManagementCards(vehicles) {
+    if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
+    return `<div class="vehicle-visual-grid">${vehicles.map((vehicle) => {
+      const drivers = vehicleDrivers(vehicle);
+      return `<article class="vehicle-visual-card">
+        <div class="vehicle-visual-top">
+          <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
+          ${vehicleStatusBadge(vehicle.status)}
+        </div>
+        <div class="vehicle-art">${carIconSvg()}<div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div></div>
+        <div class="vehicle-visual-info">
+          <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
+          <small>目前使用人：${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</small>
+          <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
+        </div>
+        <div class="vehicle-card-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+      </article>`;
+    }).join("")}</div>`;
+  }
+
+  function vehicleDrivers(vehicle) {
+    const names = String(vehicle.assigned_driver_names || "").split("/").map((name) => name.trim()).filter(Boolean);
+    return (state.data.drivers || []).filter((driver) => vehicle.current_driver_id === driver.id || names.includes(driver.name));
+  }
+
+  function driverAvatarBubble(driver) {
+    const image = driver.photo_url ? `<img src="${escapeHtml(driver.photo_url)}" alt="${escapeHtml(driver.name || "駕駛")}">` : "";
+    return `<span class="driver-avatar-bubble" title="${escapeHtml(driver.name || "")}">${image || escapeHtml(String(driver.name || "?").slice(0, 1))}</span>`;
+  }
+
+  function carIconSvg() {
+    return `<svg viewBox="0 0 280 130" aria-hidden="true"><path d="M55 80h170l-18-40c-5-11-15-18-27-18H103c-12 0-22 7-27 18L55 80Z" fill="#f8fafc" stroke="#c9d2df" stroke-width="6"/><path d="M86 76 101 44h76l16 32H86Z" fill="#dceaf7"/><path d="M35 75h210c13 0 24 11 24 24v9H12v-9c0-13 10-24 23-24Z" fill="#253142"/><circle cx="73" cy="108" r="18" fill="#111827"/><circle cx="207" cy="108" r="18" fill="#111827"/><circle cx="73" cy="108" r="7" fill="#e5edf6"/><circle cx="207" cy="108" r="7" fill="#e5edf6"/></svg>`;
   }
 
   function adminLoginSlogans() {
@@ -2156,6 +2237,7 @@
     modal.querySelector("#modalForm").addEventListener("submit", async (e) => {
       e.preventDefault();
       syncRichEditors(e.currentTarget);
+      collectServiceParts(e.currentTarget);
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
       if (tableName === "vehicles") {
@@ -2250,10 +2332,22 @@
     if (tableName === "vehicle_service_records") {
       record.vehicle_id = record.vehicle_id || null;
       blankToNull(record, ["next_service_date"]);
+      if (typeof record.parts_json === "string") {
+        try { record.parts_json = JSON.parse(record.parts_json || "[]"); } catch { record.parts_json = []; }
+      }
+      if (!Array.isArray(record.parts_json)) record.parts_json = [];
+      record.parts_json = record.parts_json.map((part) => ({
+        part_no: String(part.part_no || "").trim(),
+        name: String(part.name || "").trim(),
+        quantity: Number(part.quantity || 0),
+        amount: Number(part.amount || 0)
+      })).filter((part) => part.part_no || part.name || part.quantity || part.amount);
+      record.parts_replaced = record.parts_replaced || servicePartsToText(record.parts_json);
       ["odometer", "next_service_odometer", "downtime_hours"].forEach((key) => {
         record[key] = Number(record[key] || 0) || null;
       });
       ["labor_cost", "parts_cost", "other_cost", "total_cost"].forEach((key) => record[key] = Number(record[key] || 0));
+      if (record.parts_json.length) record.parts_cost = record.parts_json.reduce((sum, part) => sum + Number(part.amount || 0), 0);
       record.total_cost = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
     }
     if (tableName === "feedbacks") {
@@ -2516,6 +2610,14 @@
     return select("vehicle_id", "指定車輛", value || "", [["", "請選擇"], ...state.data.vehicles.map((v) => [v.id, vehicleName(v.id)])]);
   }
 
+  function repairShopOptions(value, label = "維修／保養廠商") {
+    const shops = (state.data.insurance_partners || [])
+      .filter((item) => item.partner_type === "repair_shop" && item.active !== false)
+      .map((item) => [item.name, item.name]);
+    const options = [["", shops.length ? "請選擇保修廠" : "尚未建立保修廠"], ...shops];
+    return select("vendor", label, value || "", options);
+  }
+
   function fleetNames(includeAll = false) {
     const dealerNames = (state.data.insurance_partners || [])
       .filter((item) => item.partner_type === "dealer" && item.active !== false)
@@ -2733,6 +2835,71 @@
     return `<div class="field full vehicle-plate-picker"><label>${label}</label><input type="search" data-vehicle-picker-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-vehicle-plate-select required><option value="">請選擇車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select><input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"></div>`;
   }
 
+  function servicePartsEditor(item = {}) {
+    const parts = parseServiceParts(item);
+    const rows = parts.length ? parts : [{ part_no: "", name: "", quantity: "", amount: "" }];
+    return `<div class="field full service-parts-editor">
+      <label>更換零組件</label>
+      <input type="hidden" name="parts_json" value="${escapeHtml(JSON.stringify(parts))}" data-service-parts-json>
+      <input type="hidden" name="parts_replaced" value="${escapeHtml(item.parts_replaced || "")}" data-service-parts-text>
+      <div class="service-parts-head"><span>料號</span><span>名稱</span><span>數量</span><span>金額</span><span></span></div>
+      <div class="service-parts-rows" data-service-parts-rows>
+        ${rows.map(servicePartRow).join("")}
+      </div>
+      <button class="soft-btn" type="button" data-service-part-add>新增零件</button>
+    </div>`;
+  }
+
+  function servicePartRow(part = {}) {
+    return `<div class="service-part-row" data-service-part-row>
+      <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號">
+      <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱">
+      <input data-service-part-field="quantity" type="number" min="0" step="1" value="${escapeHtml(part.quantity ?? "")}" placeholder="數量">
+      <input data-service-part-field="amount" type="number" min="0" step="1" value="${escapeHtml(part.amount ?? "")}" placeholder="金額">
+      <button class="danger-btn" type="button" data-service-part-remove>刪除</button>
+    </div>`;
+  }
+
+  function parseServiceParts(item = {}) {
+    if (Array.isArray(item.parts_json)) return item.parts_json.filter((part) => part && (part.part_no || part.name || part.quantity || part.amount));
+    if (typeof item.parts_json === "string" && item.parts_json.trim()) {
+      try {
+        const parsed = JSON.parse(item.parts_json);
+        if (Array.isArray(parsed)) return parsed.filter((part) => part && (part.part_no || part.name || part.quantity || part.amount));
+      } catch {}
+    }
+    return [];
+  }
+
+  function collectServiceParts(scope) {
+    const editor = scope?.querySelector?.(".service-parts-editor");
+    if (!editor) return [];
+    const parts = Array.from(editor.querySelectorAll("[data-service-part-row]")).map((row) => {
+      const get = (name) => row.querySelector(`[data-service-part-field="${name}"]`)?.value || "";
+      return {
+        part_no: get("part_no").trim(),
+        name: get("name").trim(),
+        quantity: Number(get("quantity") || 0),
+        amount: Number(get("amount") || 0)
+      };
+    }).filter((part) => part.part_no || part.name || part.quantity || part.amount);
+    const jsonInput = editor.querySelector("[data-service-parts-json]");
+    const textInput = editor.querySelector("[data-service-parts-text]");
+    if (jsonInput) jsonInput.value = JSON.stringify(parts);
+    if (textInput) textInput.value = servicePartsToText(parts);
+    return parts;
+  }
+
+  function servicePartsToText(parts) {
+    return (parts || []).map((part) => `${part.part_no || "-"} ${part.name || "-"} x${Number(part.quantity || 0)} $${Number(part.amount || 0).toLocaleString()}`).join("\n");
+  }
+
+  function servicePartsSummary(item = {}) {
+    const parts = parseServiceParts(item);
+    if (!parts.length) return `<p>${escapeHtml(item.parts_replaced || "-")}</p>`;
+    return `<div class="service-parts-summary">${parts.map((part) => `<span><b>${escapeHtml(part.part_no || "-")}</b>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
+  }
+
   function vehicleLoanForm(item) {
     return vehiclePlatePicker(item)
       + input("borrow_at", "借車時間", item.borrow_at ? String(item.borrow_at).slice(0, 16) : String(now()).slice(0, 16), "datetime-local", true)
@@ -2751,11 +2918,11 @@
       + select("record_type", "履歷類型", item.record_type || "定期保養", [["定期保養", "定期保養"], ["維修", "維修"], ["檢驗", "檢驗"], ["輪胎", "輪胎"], ["事故修復", "事故修復"], ["召回", "召回"], ["其他", "其他"]])
       + input("service_date", "作業日期", formDate(item.service_date) || today(), "date", true)
       + input("odometer", "當下里程（km）", item.odometer, "number")
-      + input("vendor", "維修／保養廠商", item.vendor)
+      + repairShopOptions(item.vendor)
       + text("complaint", "送修原因／駕駛反映", item.complaint)
       + text("diagnosis", "檢查與故障診斷", item.diagnosis)
       + text("work_performed", "實際維修／保養內容", item.work_performed)
-      + text("parts_replaced", "更換零組件（品名、品牌、料號、數量）", item.parts_replaced)
+      + servicePartsEditor(item)
       + input("labor_cost", "工資", item.labor_cost, "number")
       + input("parts_cost", "零件費", item.parts_cost, "number")
       + input("other_cost", "其他費用", item.other_cost, "number")
@@ -2781,7 +2948,7 @@
 
   function maintenanceRecordForm(r) {
     return vehicleOptions(r.vehicle_id) + input("service_date", "保養日期", formDate(r.service_date) || today(), "date", true) +
-      input("mileage", "里程", r.mileage, "number") + input("vendor", "維修廠", r.vendor) +
+      input("mileage", "里程", r.mileage, "number") + repairShopOptions(r.vendor, "維修廠") +
       input("cost", "金額", r.cost, "number") + input("next_service_date", "下次保養日期", formDate(r.next_service_date), "date") +
       text("items", "保養項目與詳細資料", r.items);
   }
@@ -2792,7 +2959,7 @@
 
   function maintenanceNotificationForm(n) {
     return driverOptions(n.driver_id) + vehicleOptions(n.vehicle_id) + input("service_date", "保養日期", formDate(n.service_date) || today(), "date", true) +
-      input("service_time", "保養時間", n.service_time, "time") + input("vendor", "維修廠", n.vendor) +
+      input("service_time", "保養時間", n.service_time, "time") + repairShopOptions(n.vendor, "維修／保養廠商") +
       select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
       text("content", "保養維修內容", n.content);
   }
@@ -2816,9 +2983,9 @@
       input("event_time", "時間", item.event_time || "", "time") +
       select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["repair", "維修"], ["tires", "調胎"], ["other", "其他"]]) +
       fleetOptions("fleet_name", "通知車商", item.fleet_name) +
-      input("plate_no", "車牌", item.plate_no, "text", true) +
+      vehiclePlatePicker(item, "車牌") +
       searchableDriverOptions(item.driver_id) +
-      input("vendor", "保養廠", item.vendor) +
+      repairShopOptions(item.vendor, "維修／保養廠商") +
       text("content", "內容", item.content);
   }
 
@@ -2852,7 +3019,7 @@
 
   function insurancePartnerForm(item) {
     return input("name", "單位名稱", item.name, "text", true)
-      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"]])
+      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"], ["repair_shop", "保修廠"]])
       + input("contact_name", "聯絡人", item.contact_name)
       + input("phone", "電話", item.phone, "tel")
       + input("email", "電子信箱", item.email, "email")
@@ -3368,6 +3535,26 @@
       localStorage.setItem("afide-admin-collapsed", String(state.adminCollapsed));
       render();
     }
+    if (target.dataset.vehicleView) {
+      state.vehicleViewMode = target.dataset.vehicleView;
+      localStorage.setItem("afide-vehicle-view-mode", state.vehicleViewMode);
+      render();
+      return;
+    }
+    if (target.dataset.servicePartAdd !== undefined) {
+      const rows = target.closest(".service-parts-editor")?.querySelector("[data-service-parts-rows]");
+      rows?.insertAdjacentHTML("beforeend", servicePartRow());
+      collectServiceParts(target.closest("form"));
+      return;
+    }
+    if (target.dataset.servicePartRemove !== undefined) {
+      const editor = target.closest(".service-parts-editor");
+      const row = target.closest("[data-service-part-row]");
+      if (editor?.querySelectorAll("[data-service-part-row]").length > 1) row?.remove();
+      else row?.querySelectorAll("input").forEach((input) => input.value = "");
+      collectServiceParts(target.closest("form"));
+      return;
+    }
     if (target.dataset.view) {
       state.view = target.dataset.view;
       state.page = 1;
@@ -3514,6 +3701,8 @@
       const data = new FormData(e.target);
       state.serviceSearch = String(data.get("search") || "");
       state.serviceTypeFilter = String(data.get("type") || "");
+      state.serviceMonthFilter = String(data.get("month") || "");
+      state.serviceVehicleFilter = String(data.get("vehicle") || "");
       render();
     }
   });
@@ -3521,6 +3710,10 @@
   document.addEventListener("input", (e) => {
     if (e.target.closest("[data-rich-editor]")) {
       syncRichEditors(e.target.closest("form") || document);
+      return;
+    }
+    if (e.target.closest("[data-service-part-field]")) {
+      collectServiceParts(e.target.closest("form"));
       return;
     }
     const vehiclePickerSearch = e.target.closest("[data-vehicle-picker-search]");
