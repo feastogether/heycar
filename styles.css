@@ -1663,10 +1663,10 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .driver-management-row {
   display: grid;
-  grid-template-columns: minmax(230px, 1.1fr) minmax(460px, 2fr) auto;
+  grid-template-columns: minmax(190px, .9fr) minmax(0, 3fr) auto;
   align-items: center;
-  gap: 18px;
-  padding: 14px 4px;
+  gap: 10px;
+  padding: 9px 4px;
   border-bottom: 1px solid var(--line);
   background: transparent;
   transition: background .15s ease;
@@ -1677,33 +1677,33 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .driver-row-identity {
   display: flex;
   align-items: center;
-  gap: 13px;
+  gap: 9px;
   min-width: 0;
   color: var(--muted);
   font-size: 13px;
 }
 .driver-row-identity .driver-avatar {
-  width: 76px;
-  height: 76px;
-  border-radius: 12px;
-  flex: 0 0 76px;
-  font-size: 24px;
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  flex: 0 0 54px;
+  font-size: 19px;
 }
 .driver-row-identity .driver-photo-stack {
-  width: 76px;
-  height: 76px;
-  flex: 0 0 76px;
-  border-radius: 12px;
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  border-radius: 10px;
 }
 .driver-row-facts {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 4px;
   margin: 0;
 }
 .driver-row-facts div {
   min-width: 0;
-  padding: 8px 10px;
+  padding: 6px 7px;
   border-left: 2px solid #e6ebf1;
 }
 .driver-row-facts dt {
@@ -1714,14 +1714,17 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .driver-row-facts dd {
   margin: 3px 0 0;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 800;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .driver-row-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 7px;
+  gap: 6px;
+  white-space: nowrap;
 }
 .driver-filter-bar {
   display: flex;
@@ -1827,7 +1830,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-make-model small { color: var(--muted); font-size: 10px; font-weight: 700; }
 .vehicle-row-facts {
   display: grid;
-  grid-template-columns: 1.45fr .55fr .8fr 1fr 1fr 1fr;
+  grid-template-columns: 1.3fr .5fr .75fr .9fr .9fr 1fr .9fr;
   gap: 8px;
   margin: 0;
 }

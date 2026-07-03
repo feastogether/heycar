@@ -522,7 +522,7 @@
   }
 
   function partnerTypeName(type) {
-    return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠" })[type] || type || "-";
+    return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠", insurance_company: "保險公司" })[type] || type || "-";
   }
 
   function driverDealerName(driver) {
@@ -2044,6 +2044,7 @@
           <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
           <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
+          <div><dt>道路救援</dt><dd>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</dd></div>
         </dl>
         <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>
@@ -2076,6 +2077,7 @@
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
           <small>目前使用人：${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</small>
           <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
+          <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
         </div>
         <div class="vehicle-card-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>`;
@@ -2246,7 +2248,11 @@
         record.current_driver_id = driverIds[0] || null;
         record.assigned_driver_names = driverIds.length
           ? driverIds.map((driverId) => driverName(driverId)).join("/")
-          : (item?.assigned_driver_names || item?.current_usage || "");
+          : "";
+        record.registration_doc_url = record.attachment_url || record.registration_doc_url || "";
+        record.registration_doc_name = record.attachment_name || record.registration_doc_name || "";
+        delete record.attachment_url;
+        delete record.attachment_name;
       }
       if (tableName === "driver_links") {
         record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
@@ -2304,6 +2310,7 @@
       record.dealer_partner_id = record.dealer_partner_id || null;
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
       record.insurance_company = record.compulsory_insurance_company || record.voluntary_insurance_company || record.insurance_company || "";
+      record.roadside_assistance_phone = record.roadside_assistance_phone || insuranceCompanyPhone(record.voluntary_insurance_company) || "";
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
     if (tableName === "driver_helper_articles") {
@@ -2618,6 +2625,19 @@
     return select("vendor", label, value || "", options);
   }
 
+  function insuranceCompanyOptions(value, label, name = "insurance_company") {
+    const companies = (state.data.insurance_partners || [])
+      .filter((item) => item.partner_type === "insurance_company" && item.active !== false)
+      .map((item) => ({ name: item.name, phone: item.phone || item.contact_phone || "" }));
+    const hasCurrent = value && !companies.some((company) => company.name === value);
+    return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "請選擇保險公司" : "尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
+  }
+
+  function insuranceCompanyPhone(name) {
+    if (!name) return "";
+    return (state.data.insurance_partners || []).find((item) => item.partner_type === "insurance_company" && item.name === name)?.phone || "";
+  }
+
   function fleetNames(includeAll = false) {
     const dealerNames = (state.data.insurance_partners || [])
       .filter((item) => item.partner_type === "dealer" && item.active !== false)
@@ -2807,10 +2827,15 @@
       <div class="form-section-title field full">識別與狀態</div>
       ${multiSelect("assigned_driver_ids", "搜尋並複選駕駛", selectedDriverIds, state.data.drivers.map((d) => [d.id, `${d.name}${d.phone ? `｜${d.phone}` : ""}`]))}
       <div class="form-section-title field full">保險資料</div>
-      ${input("compulsory_insurance_company", "強制險保險公司", v.compulsory_insurance_company || v.insurance_company || "")}
-      ${input("voluntary_insurance_company", "任意險保險公司", v.voluntary_insurance_company || v.insurance_company || "")}
+      ${insuranceCompanyOptions(v.compulsory_insurance_company || v.insurance_company || "", "強制險保險公司", "compulsory_insurance_company")}
+      ${insuranceCompanyOptions(v.voluntary_insurance_company || v.insurance_company || "", "任意險保險公司", "voluntary_insurance_company")}
       ${input("compulsory_insurance_expiry", "強制險到期日", formDate(v.compulsory_insurance_expiry), "date")}
       ${input("voluntary_insurance_expiry", "任意險到期日", formDate(v.voluntary_insurance_expiry), "date")}
+      ${input("roadside_assistance_phone", "道路救援電話", v.roadside_assistance_phone || insuranceCompanyPhone(v.voluntary_insurance_company || v.insurance_company), "tel")}
+      <div class="form-section-title field full">車輛文件</div>
+      ${attachmentField({ attachment_url: v.registration_doc_url, attachment_name: v.registration_doc_name }, "行照附件")}
+      <input type="hidden" name="registration_doc_url" value="${escapeHtml(v.registration_doc_url || "")}" data-registration-doc-url>
+      <input type="hidden" name="registration_doc_name" value="${escapeHtml(v.registration_doc_name || "")}" data-registration-doc-name>
       ${text("notes", "備註", v.notes)}
     `;
   }
@@ -3019,7 +3044,7 @@
 
   function insurancePartnerForm(item) {
     return input("name", "單位名稱", item.name, "text", true)
-      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"], ["repair_shop", "保修廠"]])
+      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"], ["repair_shop", "保修廠"], ["insurance_company", "保險公司"]])
       + input("contact_name", "聯絡人", item.contact_name)
       + input("phone", "電話", item.phone, "tel")
       + input("email", "電子信箱", item.email, "email")
@@ -3055,7 +3080,7 @@
       + input("deductible", "\u81ea\u4ed8\u984d(\u842c)", item.deductible, "number")
       + input("requested_driver", "\u99d5\u99db(\u9078\u586b)", item.requested_driver)
       + select("lienholder", "\u62b5\u62bc\u6b0a\u4eba", item.lienholder || "", [["", "\u7121"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u4e2d\u4fe1", "\u4e2d\u4fe1"], ["\u6c38\u8c50", "\u6c38\u8c50"], ["\u83ef\u5357", "\u83ef\u5357"]])
-      + select("assigned_insurance_company", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", item.assigned_insurance_company || "", [["", "\u8acb\u9078\u64c7"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u83ef\u5357", "\u83ef\u5357"], ["\u570b\u6cf0", "\u570b\u6cf0"], ["\u65b0\u5b89\u6771\u4eac", "\u65b0\u5b89\u6771\u4eac"]])
+      + insuranceCompanyOptions(item.assigned_insurance_company || "", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", "assigned_insurance_company")
       + text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes);
   }
 
@@ -3818,6 +3843,16 @@
         alert(error.message || error);
       } finally {
         photoInput.disabled = false;
+      }
+      return;
+    }
+    const insuranceCompanySelect = e.target.closest("[data-insurance-company-select]");
+    if (insuranceCompanySelect) {
+      const phone = insuranceCompanySelect.selectedOptions[0]?.dataset.phone || "";
+      const form = insuranceCompanySelect.closest("form");
+      if (insuranceCompanySelect.name === "voluntary_insurance_company" && phone) {
+        const roadPhoneInput = form?.querySelector('[name="roadside_assistance_phone"]');
+        if (roadPhoneInput && !roadPhoneInput.value) roadPhoneInput.value = phone;
       }
       return;
     }
