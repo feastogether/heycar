@@ -1830,7 +1830,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-make-model small { color: var(--muted); font-size: 10px; font-weight: 700; }
 .vehicle-row-facts {
   display: grid;
-  grid-template-columns: 1.3fr .5fr .75fr .9fr .9fr 1fr .9fr;
+  grid-template-columns: 1.2fr .45fr .7fr .85fr .85fr .85fr .9fr .85fr;
   gap: 8px;
   margin: 0;
 }
@@ -1840,6 +1840,18 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-status { min-width: 62px; text-align: center; }
 .vehicle-status-fact dd { margin-top: 5px; }
 .vehicle-row-actions .actions { flex-wrap: nowrap; }
+.salary-locked-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #f2caca;
+  border-radius: 8px;
+  background: #fff8f8;
+  color: var(--ink);
+}
+.salary-locked-card strong { font-size: 15px; font-weight: 900; }
+.salary-locked-card span { color: var(--muted); font-size: 13px; font-weight: 700; }
+.salary-locked-card .primary-btn { justify-self: start; }
 .vehicle-visual-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));

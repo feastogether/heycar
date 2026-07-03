@@ -48,7 +48,8 @@
     error: "",
     apiSession: "",
     loginLoading: false,
-    loginSlogansLoaded: false
+    loginSlogansLoaded: false,
+    unlockedSalaryPayments: new Set()
   };
 
   const tables = [
@@ -1324,12 +1325,9 @@
               </div>
               ${statusBadge(item.status || "pending")}
             </div>
-            <div class="lux-item-body">
-              ${isMaint ? maintenanceSchedule(item) : ""}
-              ${escapeHtml(item.content || item.description || item.memo || "無詳細內容")}
-            </div>
-            ${attachmentLink(item)}
-            ${item.status === "pending" ? `
+            ${driverTaskBody(table, item, isMaint)}
+            ${canShowTaskDetail(table, item) ? attachmentLink(item) : ""}
+            ${item.status === "pending" && canShowTaskDetail(table, item) ? `
               <div class="lux-item-actions">
                 <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
                 <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
@@ -2072,6 +2070,24 @@
     `;
   }
 
+  function canShowTaskDetail(table, item) {
+    return !(table === "payment_notices" && item.fee_type === "薪資") || state.unlockedSalaryPayments.has(item.id);
+  }
+
+  function driverTaskBody(table, item, isMaint) {
+    if (table === "payment_notices" && item.fee_type === "薪資" && !state.unlockedSalaryPayments.has(item.id)) {
+      return `<div class="salary-locked-card">
+        <strong>薪資單已加密</strong>
+        <span>請先輸入身分證字號，驗證通過後才能查看內容與附件。</span>
+        <button class="primary-btn" data-unlock-salary="${item.id}">驗證查看</button>
+      </div>`;
+    }
+    return `<div class="lux-item-body">
+      ${isMaint ? maintenanceSchedule(item) : ""}
+      ${escapeHtml(item.content || item.description || item.memo || "無詳細內容")}
+    </div>`;
+  }
+
   function vehicleManagementRows(vehicles) {
     if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
     return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
@@ -2089,6 +2105,7 @@
           <div class="vehicle-status-fact"><dt>目前狀態</dt><dd>${vehicleStatusBadge(vehicle.status)}</dd></div>
           <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
           <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
+          <div><dt>下次定檢</dt><dd>${expiryDateBadge(vehicle.next_inspection_date, 30)}</dd></div>
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
           <div><dt>道路救援</dt><dd>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</dd></div>
         </dl>
@@ -2358,7 +2375,7 @@
     if (tableName === "vehicles") {
       record.current_driver_id = record.current_driver_id || null;
       record.dealer_partner_id = record.dealer_partner_id || null;
-      blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry"]);
+      blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry", "next_inspection_date"]);
       record.insurance_company = record.compulsory_insurance_company || record.voluntary_insurance_company || record.insurance_company || "";
       record.roadside_assistance_phone = record.roadside_assistance_phone || insuranceCompanyPhone(record.voluntary_insurance_company) || "";
     }
@@ -2677,7 +2694,7 @@
 
   function insuranceCompanyOptions(value, label, name = "insurance_company") {
     const companies = (state.data.insurance_partners || [])
-      .filter((item) => item.partner_type === "insurance_company" && item.active !== false)
+      .filter((item) => ["insurance_company", "insurer", "insurance"].includes(item.partner_type) && item.active !== false)
       .map((item) => ({ name: item.name, phone: item.phone || item.contact_phone || "" }));
     const hasCurrent = value && !companies.some((company) => company.name === value);
     return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "請選擇保險公司" : "尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
@@ -2685,7 +2702,7 @@
 
   function insuranceCompanyPhone(name) {
     if (!name) return "";
-    return (state.data.insurance_partners || []).find((item) => item.partner_type === "insurance_company" && item.name === name)?.phone || "";
+    return (state.data.insurance_partners || []).find((item) => ["insurance_company", "insurer", "insurance"].includes(item.partner_type) && item.name === name)?.phone || "";
   }
 
   function fleetNames(includeAll = false) {
@@ -2881,9 +2898,10 @@
       ${insuranceCompanyOptions(v.voluntary_insurance_company || v.insurance_company || "", "任意險保險公司", "voluntary_insurance_company")}
       ${input("compulsory_insurance_expiry", "強制險到期日", formDate(v.compulsory_insurance_expiry), "date")}
       ${input("voluntary_insurance_expiry", "任意險到期日", formDate(v.voluntary_insurance_expiry), "date")}
+      ${input("next_inspection_date", "下次定檢日", formDate(v.next_inspection_date), "date")}
       ${input("roadside_assistance_phone", "道路救援電話", v.roadside_assistance_phone || insuranceCompanyPhone(v.voluntary_insurance_company || v.insurance_company), "tel")}
       <div class="form-section-title field full">車輛文件</div>
-      ${attachmentField({ attachment_url: v.registration_doc_url, attachment_name: v.registration_doc_name }, "行照附件")}
+      ${attachmentField({ attachment_url: v.registration_doc_url, attachment_name: v.registration_doc_name }, "行照")}
       <input type="hidden" name="registration_doc_url" value="${escapeHtml(v.registration_doc_url || "")}" data-registration-doc-url>
       <input type="hidden" name="registration_doc_name" value="${escapeHtml(v.registration_doc_name || "")}" data-registration-doc-name>
       ${text("notes", "備註", v.notes)}
@@ -3590,6 +3608,19 @@
       const img = target.querySelector("img");
       if (img?.src && img.style.display !== "none") {
         openFilePreview(img.src, `${target.dataset.photoName || "司機"}大頭貼`, "image/unknown");
+      }
+      return;
+    }
+    if (target.dataset.unlockSalary) {
+      const input = await showPrompt("請輸入您的身分證字號，驗證通過後即可查看薪資單。", "", "薪資單驗證");
+      const normalizedInput = String(input || "").trim().toUpperCase();
+      const normalizedId = String(state.user?.national_id || "").trim().toUpperCase();
+      if (!normalizedInput) return;
+      if (normalizedInput === normalizedId) {
+        state.unlockedSalaryPayments.add(target.dataset.unlockSalary);
+        render();
+      } else {
+        await showAlert("身分證字號不正確，請確認後再試一次。", "驗證失敗");
       }
       return;
     }
