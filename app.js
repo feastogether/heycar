@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
@@ -358,8 +358,54 @@
     return state.data[table].find((row) => row.id === id);
   }
 
+  function showAppDialog({ title = "系統訊息", message = "", kind = "info", input = false, defaultValue = "", confirmText = "確定", cancelText = "取消", showCancel = false } = {}) {
+    return new Promise((resolve) => {
+      const modal = document.createElement("div");
+      modal.className = "modal-backdrop app-dialog-backdrop";
+      modal.innerHTML = `<div class="app-dialog ${kind}">
+        <div class="app-dialog-icon">${kind === "danger" ? "!" : kind === "prompt" ? "↗" : "i"}</div>
+        <div class="app-dialog-body">
+          <h3>${escapeHtml(title)}</h3>
+          ${message ? `<p>${escapeHtml(message)}</p>` : ""}
+          ${input ? `<input class="app-dialog-input" value="${escapeHtml(defaultValue)}" autofocus>` : ""}
+        </div>
+        <div class="app-dialog-actions">
+          ${showCancel ? `<button class="ghost-btn" data-dialog-cancel>${escapeHtml(cancelText)}</button>` : ""}
+          <button class="${kind === "danger" ? "danger-btn" : "primary-btn"}" data-dialog-confirm>${escapeHtml(confirmText)}</button>
+        </div>
+      </div>`;
+      document.body.appendChild(modal);
+      const inputEl = modal.querySelector(".app-dialog-input");
+      setTimeout(() => inputEl?.focus(), 0);
+      const close = (value) => {
+        modal.remove();
+        resolve(value);
+      };
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal || event.target.closest("[data-dialog-cancel]")) close(input ? null : false);
+        if (event.target.closest("[data-dialog-confirm]")) close(input ? inputEl.value : true);
+      });
+      modal.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") close(input ? null : false);
+        if (event.key === "Enter" && (input || event.target.closest(".app-dialog"))) close(input ? inputEl?.value : true);
+      });
+    });
+  }
+
+  function showAlert(message, title = "系統訊息") {
+    return showAppDialog({ title, message, confirmText: "知道了" });
+  }
+
+  function showConfirm(message, title = "請確認") {
+    return showAppDialog({ title, message, kind: "danger", showCancel: true, confirmText: "確定", cancelText: "取消" });
+  }
+
+  function showPrompt(message, defaultValue = "", title = "請輸入") {
+    return showAppDialog({ title, message, kind: "prompt", input: true, defaultValue, showCancel: true, confirmText: "套用", cancelText: "取消" });
+  }
+
   async function remove(table, id) {
-    if (!confirm("確定要刪除這筆資料嗎？")) return;
+    if (!await showConfirm("確定要刪除這筆資料嗎？")) return;
     if (hasSupabase && state.apiSession) await apiRequest("delete", { table, id });
     state.data[table] = state.data[table].filter((row) => row.id !== id);
     localSave();
@@ -1079,7 +1125,7 @@
     return (state.data.insurance_partners || []).find((item) => item.partner_type === "dealer" && item.name === fleet) || null;
   }
 
-  function driverDealerName() {
+  function currentDriverDealerName() {
     return driverDealer()?.name || state.user?.fleet_name || "";
   }
 
@@ -1102,7 +1148,7 @@
   }
 
   function visibleAnnouncements() {
-    const dealerName = driverDealerName();
+    const dealerName = currentDriverDealerName();
     const legacyFleet = driverFleet();
     return state.data.announcements.filter((item) => {
       const target = item.target_fleet || item.target_dealer || "全部車隊";
@@ -1234,7 +1280,7 @@
 
 
   function driverLinkCenter() {
-    const dealerName = driverDealerName();
+    const dealerName = currentDriverDealerName();
     const legacyFleet = driverFleet();
     const links = (state.data.driver_links || []).filter((item) => {
       const targetFleets = Array.isArray(item.target_fleets) && item.target_fleets.length ? item.target_fleets : ["全部車隊"];
@@ -1390,7 +1436,7 @@
   function calendarItems(isAdmin) {
     const items = state.data.calendar_events || [];
     if (isAdmin) return items;
-    const dealerName = driverDealerName();
+    const dealerName = currentDriverDealerName();
     const legacyFleet = driverFleet();
     const visibleCalendarEvents = items.filter((item) => {
       const target = item.fleet_name || "全部車商";
@@ -1414,7 +1460,7 @@
           event_date: item.service_date,
           event_time: item.service_time || "",
           event_type: "maintenance",
-          fleet_name: driverDealerName() || driverFleet(),
+          fleet_name: currentDriverDealerName() || driverFleet(),
           plate_no: plate,
           driver_id: item.driver_id,
           vendor: item.vendor || "",
@@ -1709,7 +1755,7 @@
       state.storageUsedBytes = Number(result.used_bytes || 0);
       state.storageQuotaBytes = Number(result.quota_bytes || 1024 * 1024 * 1024);
     } catch (error) {
-      alert(error.message || error);
+      await showAlert(error.message || error, "讀取失敗");
     } finally {
       state.storageLoading = false;
       render();
@@ -2038,7 +2084,7 @@
           </div>
         </div>
         <dl class="vehicle-row-facts">
-          <div><dt>目前使用人</dt><dd>${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</dd></div>
+          <div><dt>目前使用人</dt><dd>${escapeHtml(vehicleAssignedDriverLabel(vehicle))}</dd></div>
           <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
           <div class="vehicle-status-fact"><dt>目前狀態</dt><dd>${vehicleStatusBadge(vehicle.status)}</dd></div>
           <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
@@ -2075,7 +2121,7 @@
         <div class="vehicle-art">${carIconSvg()}<div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div></div>
         <div class="vehicle-visual-info">
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
-          <small>目前使用人：${escapeHtml(vehicle.assigned_driver_names || vehicle.current_usage || driverName(vehicle.current_driver_id))}</small>
+          <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
           <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
         </div>
@@ -2087,6 +2133,10 @@
   function vehicleDrivers(vehicle) {
     const names = String(vehicle.assigned_driver_names || "").split("/").map((name) => name.trim()).filter(Boolean);
     return (state.data.drivers || []).filter((driver) => vehicle.current_driver_id === driver.id || names.includes(driver.name));
+  }
+
+  function vehicleAssignedDriverLabel(vehicle) {
+    return vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
   }
 
   function driverAvatarBubble(driver) {
@@ -2207,7 +2257,7 @@
     const modalConfig = map[type];
     if (!modalConfig) {
       console.warn("Unknown modal type:", type);
-      alert("\u627e\u4e0d\u5230\u9019\u500b\u8868\u55ae\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002");
+      showAlert("\u627e\u4e0d\u5230\u9019\u500b\u8868\u55ae\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002", "表單錯誤");
       return;
     }
     const [title, tableName, formFn] = modalConfig;
@@ -2220,7 +2270,7 @@
       formHtml = formFn(item || {});
     } catch (error) {
       console.error("Modal render failed:", type, error);
-      alert("\u8868\u55ae\u8f09\u5165\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002");
+      showAlert("\u8868\u55ae\u8f09\u5165\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002", "表單錯誤");
       return;
     }
     modal.innerHTML = `
@@ -2269,7 +2319,7 @@
         modal.remove();
         render();
       } catch (err) {
-        alert(err.message || err);
+        await showAlert(err.message || err, "儲存失敗");
       }
     });
   }
@@ -3443,13 +3493,13 @@
       return;
     }
     if (target?.dataset.richLink !== undefined) {
-      const url = prompt("請輸入連結網址");
+      const url = await showPrompt("請輸入連結網址");
       if (url) document.execCommand("createLink", false, url);
       syncRichEditors(target.closest("form") || document);
       return;
     }
     if (target?.dataset.richImage !== undefined) {
-      const url = prompt("請輸入圖片網址");
+      const url = await showPrompt("請輸入圖片網址");
       if (url) document.execCommand("insertImage", false, url);
       syncRichEditors(target.closest("form") || document);
       return;
@@ -3613,8 +3663,8 @@
     if (target.dataset.action === "delete-storage-files") {
       const paths = Array.from(document.querySelectorAll("[data-storage-file]:checked")).map((input) => input.value);
       if (!paths.length) {
-        alert("請先選擇要刪除的檔案");
-      } else if (confirm(`確定要刪除選取的 ${paths.length} 個檔案嗎？刪除後無法復原。`)) {
+        await showAlert("請先選擇要刪除的檔案");
+      } else if (await showConfirm(`確定要刪除選取的 ${paths.length} 個檔案嗎？刪除後無法復原。`)) {
         await storageRequest("delete", { paths });
         await loadStorageUsage();
       }
@@ -3840,7 +3890,7 @@
         if (status) status.textContent = "已上傳照片，儲存後生效";
       } catch (error) {
         if (status) status.textContent = "照片處理失敗";
-        alert(error.message || error);
+        await showAlert(error.message || error, "上傳失敗");
       } finally {
         photoInput.disabled = false;
       }
@@ -3885,7 +3935,7 @@
         if (attachmentInput.dataset.driverDocument === "license_file") await runDriverLicenseOcr(file, field);
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
-        alert(error.message || error);
+        await showAlert(error.message || error, "上傳失敗");
       } finally {
         attachmentInput.disabled = false;
       }
@@ -3915,7 +3965,7 @@
         if (list) list.innerHTML = driverJsonFileLinks(files, label);
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
-        alert(error.message || error);
+        await showAlert(error.message || error, "上傳失敗");
       } finally {
         driverMultiInput.disabled = false;
       }
@@ -3941,7 +3991,7 @@
         if (status) status.textContent = `已附加 ${files.length} 個檔案`;
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
-        alert(error.message || error);
+        await showAlert(error.message || error, "上傳失敗");
       } finally {
         multiInput.disabled = false;
       }
@@ -3972,3 +4022,4 @@
     render();
   });
 })();
+

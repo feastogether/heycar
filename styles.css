@@ -2258,11 +2258,12 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .storage-file-row small, .storage-file-row time { color: var(--muted); font-size: 11px; }
 .storage-file-check { display: grid; place-items: center; cursor: pointer; }
 .storage-file-check input { width: auto; }
-.file-preview-modal { width: min(1100px, 96vw); height: min(88vh, 900px); display: flex; flex-direction: column; overflow: hidden; }
+.file-preview-modal { width: min(980px, 96vw); height: min(88vh, 900px); display: flex; flex-direction: column; overflow: hidden; border-radius: 18px; background: linear-gradient(180deg, #fff, #f8fafc); }
+.file-preview-head { margin: 0; padding: 18px 20px 14px; border-bottom: 1px solid var(--line); }
 .file-preview-head h3 { font-size: 18px; }
 .file-preview-head small { display: block; max-width: 58vw; margin-top: 3px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-preview-media { width: 100%; min-height: 0; flex: 1; object-fit: contain; background: #f3f5f7; border-radius: 6px; }
-.file-preview-frame { width: 100%; min-height: 0; flex: 1; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.file-preview-media { width: calc(100% - 32px); min-height: 0; flex: 1; object-fit: contain; margin: 16px; background: #eef2f6; border: 1px solid var(--line); border-radius: 14px; }
+.file-preview-frame { width: calc(100% - 32px); min-height: 0; flex: 1; margin: 16px; border: 1px solid var(--line); border-radius: 14px; background: #fff; }
 
 .photo-upload-field .driver-avatar {
   width: 132px;
@@ -2381,6 +2382,52 @@ tr:last-child td { border-bottom: 0; }
   flex-shrink: 0;
 }
 .modal h3 { margin: 0; font-size: 20px; font-weight: 900; }
+.app-dialog-backdrop {
+  z-index: 260;
+  background: rgba(15,23,42,.42);
+  backdrop-filter: blur(8px);
+}
+.app-dialog {
+  width: min(420px, calc(100vw - 32px));
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid rgba(226,232,240,.9);
+  border-radius: 16px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 24px 70px rgba(15,23,42,.22);
+}
+.app-dialog-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: #eff6ff;
+  color: var(--blue);
+  font-size: 22px;
+  font-weight: 950;
+}
+.app-dialog.danger .app-dialog-icon {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.app-dialog.prompt .app-dialog-icon {
+  background: #f5f1e8;
+  color: var(--gold);
+}
+.app-dialog-body { display: grid; gap: 8px; min-width: 0; }
+.app-dialog-body h3 { margin: 0; color: var(--ink); font-size: 18px; font-weight: 950; }
+.app-dialog-body p { margin: 0; color: var(--muted); font-size: 14px; font-weight: 700; line-height: 1.6; white-space: pre-wrap; }
+.app-dialog-input { margin-top: 4px; }
+.app-dialog-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 6px;
+}
 
 @media (max-width: 900px) {
   .insurance-pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
