@@ -1774,7 +1774,7 @@
       <div class="section-head"><div><h2>廠商管理</h2><small>設定車商、保經、保修廠與前台登入代碼</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
       ${table(["單位名稱", "類型", "聯絡人", "電話", "狀態", "操作"], (state.data.insurance_partners || []).map((item) => [
         escapeHtml(item.name), partnerTypeName(item.partner_type), escapeHtml(item.contact_name || "-"),
-        escapeHtml(item.phone || "-"), item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
+        escapeHtml(item.phone || "-"), isInsuranceCompanyPartner(item) ? `<span class="status done">可選用</span>` : item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
         rowActions("insurancePartner", "insurance_partners", item.id)
       ]))}
     `;
@@ -2738,7 +2738,7 @@
 
   function insuranceCompanyOptions(value, label, name = "insurance_company") {
     const companies = (state.data.insurance_partners || [])
-      .filter((item) => isInsuranceCompanyPartner(item) && item.active !== false)
+      .filter((item) => isInsuranceCompanyPartner(item))
       .map((item) => ({ name: item.name, phone: item.phone || item.contact_phone || "" }));
     const hasCurrent = value && !companies.some((company) => company.name === value);
     return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "請選擇保險公司" : "尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
