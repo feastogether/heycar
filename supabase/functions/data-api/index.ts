@@ -34,6 +34,7 @@ const phoneMatches = (left: unknown, right: unknown) => {
   const b = phoneDigits(right).replace(/^886/, "0");
   return Boolean(a && b && (a === b || a.slice(-9) === b.slice(-9)));
 };
+const normalizedText = (value: unknown) => String(value || "").trim().replace(/\s+/g, "").toUpperCase();
 
 const hashCode = async (value: unknown) => {
   const bytes = new TextEncoder().encode(normalizeLoginCode(value));
@@ -126,6 +127,14 @@ async function loadAdminData(session: Record<string, unknown>) {
       continue;
     }
     if (permission && !(await adminCan(session, permission))) {
+      if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "service_records")))) {
+        const { data, error } = await db
+          .from("insurance_partners")
+          .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name");
+        if (error) throw error;
+        result[table] = data || [];
+        continue;
+      }
       result[table] = [];
       continue;
     }
@@ -191,6 +200,29 @@ async function loadPartnerData(partnerId: string) {
     .single();
   if (partnerError || !partner) throw new Error("PARTNER_NOT_FOUND");
   const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
+  if (partner.partner_type === "repair_shop") {
+    const partnerName = normalizedText(partner.name);
+    const [calendarEvents, maintenanceNotifications, vehicles] = await Promise.all([
+      db.from("calendar_events").select("*"),
+      db.from("maintenance_notifications").select("*"),
+      db.from("vehicles").select("*")
+    ]);
+    if (calendarEvents.error) throw calendarEvents.error;
+    if (maintenanceNotifications.error) throw maintenanceNotifications.error;
+    if (vehicles.error) throw vehicles.error;
+    result.calendar_events = (calendarEvents.data || []).filter((item) => normalizedText(item.vendor) === partnerName);
+    result.maintenance_notifications = (maintenanceNotifications.data || []).filter((item) => normalizedText(item.vendor) === partnerName);
+    const calendarRows = result.calendar_events as Record<string, unknown>[];
+    const notificationRows = result.maintenance_notifications as Record<string, unknown>[];
+    const vehicleIds = new Set([
+      ...calendarRows.map((item) => item.vehicle_id).filter(Boolean),
+      ...notificationRows.map((item) => item.vehicle_id).filter(Boolean)
+    ]);
+    const plates = new Set(calendarRows.map((item) => normalizedText(item.plate_no)).filter(Boolean));
+    result.vehicles = (vehicles.data || []).filter((item) => vehicleIds.has(item.id) || plates.has(normalizedText(item.plate_no)));
+    result.insurance_partners = [partner];
+    return { data: result, partner };
+  }
   const requestQuery = partner.partner_type === "dealer"
     ? db.from("insurance_requests").select("*").eq("dealer_partner_id", partnerId)
     : db.from("insurance_requests").select("*");

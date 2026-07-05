@@ -572,6 +572,10 @@
     return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠", insurance_company: "保險公司" })[type] || type || "-";
   }
 
+  function normalizedText(value) {
+    return String(value || "").trim().replace(/\s+/g, "").toUpperCase();
+  }
+
   function driverDealerName(driver) {
     return partnerName(driver.dealer_partner_id) || driver.fleet_name || "-";
   }
@@ -887,7 +891,7 @@
       return;
     }
     if (state.admin) renderAdmin();
-    else if (state.partner) renderInsurancePortal();
+    else if (state.partner) renderPartnerPortal();
     else renderDriver();
   }
 
@@ -1434,6 +1438,7 @@
   function calendarItems(isAdmin) {
     const items = state.data.calendar_events || [];
     if (isAdmin) return items;
+    if (state.partner?.partner_type === "repair_shop") return repairShopCalendarItems();
     const dealerName = currentDriverDealerName();
     const legacyFleet = driverFleet();
     const visibleCalendarEvents = items.filter((item) => {
@@ -1441,6 +1446,33 @@
       return !target || target === "全部車隊" || target === "全部車商" || target === dealerName || target === legacyFleet;
     });
     return [...visibleCalendarEvents, ...maintenanceNotificationsAsCalendarItems(visibleCalendarEvents)];
+  }
+
+  function repairShopCalendarItems() {
+    const partnerNameText = normalizedText(state.partner?.name);
+    const visibleCalendarEvents = (state.data.calendar_events || []).filter((item) => normalizedText(item.vendor) === partnerNameText);
+    const eventKeys = new Set(visibleCalendarEvents.map((item) => `${item.event_date || ""}|${String(item.plate_no || "").toUpperCase()}|${normalizedText(item.vendor)}`));
+    const notificationEvents = (state.data.maintenance_notifications || [])
+      .filter((item) => normalizedText(item.vendor) === partnerNameText)
+      .filter((item) => item.service_date)
+      .map((item) => {
+        const plate = vehiclePlate(item.vehicle_id);
+        return {
+          id: `maintenance-${item.id}`,
+          event_date: item.service_date,
+          event_time: item.service_time || "",
+          event_type: "maintenance",
+          fleet_name: item.fleet_name || "",
+          plate_no: plate,
+          driver_id: item.driver_id,
+          vendor: item.vendor || "",
+          content: item.content || "保養通知",
+          status: item.status || "pending",
+          source_table: "maintenance_notifications"
+        };
+      })
+      .filter((item) => !eventKeys.has(`${item.event_date || ""}|${String(item.plate_no || "").toUpperCase()}|${normalizedText(item.vendor)}`));
+    return [...visibleCalendarEvents, ...notificationEvents];
   }
 
   function maintenanceNotificationsAsCalendarItems(existingEvents = []) {
@@ -1521,7 +1553,11 @@
         <div class="calendar-grid">${days.join("")}</div>
       </div>
     `;
-    if (!isAdmin) return `${pageHeader("共同行事曆")}${content}`;
+    if (!isAdmin) {
+      const title = state.partner?.partner_type === "repair_shop" ? `${state.partner.name} 保養行事曆` : "共同行事曆";
+      const header = state.partner ? `<div class="driver-page-head"><h2>${escapeHtml(title)}</h2></div>` : pageHeader(title);
+      return `${header}${content}`;
+    }
     return `
       <div class="section-head"><h2>共同行事曆</h2><button class="primary-btn" data-modal="calendarEvent">新增行程</button></div>
       ${content}
@@ -1692,6 +1728,14 @@
     `;
   }
 
+
+  function renderPartnerPortal() {
+    if (state.partner?.partner_type === "repair_shop") {
+      layout(renderCalendar(false));
+      return;
+    }
+    renderInsurancePortal();
+  }
 
   function renderInsurancePortal() {
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
@@ -2377,7 +2421,7 @@
       record.dealer_partner_id = record.dealer_partner_id || null;
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry", "next_inspection_date"]);
       record.insurance_company = record.compulsory_insurance_company || record.voluntary_insurance_company || record.insurance_company || "";
-      record.roadside_assistance_phone = record.roadside_assistance_phone || insuranceCompanyPhone(record.voluntary_insurance_company) || "";
+      record.roadside_assistance_phone = insuranceCompanyPhone(record.voluntary_insurance_company) || record.roadside_assistance_phone || "";
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
     if (tableName === "driver_helper_articles") {
@@ -2694,7 +2738,7 @@
 
   function insuranceCompanyOptions(value, label, name = "insurance_company") {
     const companies = (state.data.insurance_partners || [])
-      .filter((item) => ["insurance_company", "insurer", "insurance"].includes(item.partner_type) && item.active !== false)
+      .filter((item) => isInsuranceCompanyPartner(item) && item.active !== false)
       .map((item) => ({ name: item.name, phone: item.phone || item.contact_phone || "" }));
     const hasCurrent = value && !companies.some((company) => company.name === value);
     return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "請選擇保險公司" : "尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
@@ -2702,7 +2746,12 @@
 
   function insuranceCompanyPhone(name) {
     if (!name) return "";
-    return (state.data.insurance_partners || []).find((item) => ["insurance_company", "insurer", "insurance"].includes(item.partner_type) && item.name === name)?.phone || "";
+    return (state.data.insurance_partners || []).find((item) => isInsuranceCompanyPartner(item) && item.name === name)?.phone || "";
+  }
+
+  function isInsuranceCompanyPartner(item) {
+    const type = String(item?.partner_type || "").trim();
+    return ["insurance_company", "insurer", "insurance", "insurance-company", "保險公司"].includes(type);
   }
 
   function fleetNames(includeAll = false) {
@@ -2899,7 +2948,7 @@
       ${input("compulsory_insurance_expiry", "強制險到期日", formDate(v.compulsory_insurance_expiry), "date")}
       ${input("voluntary_insurance_expiry", "任意險到期日", formDate(v.voluntary_insurance_expiry), "date")}
       ${input("next_inspection_date", "下次定檢日", formDate(v.next_inspection_date), "date")}
-      ${input("roadside_assistance_phone", "道路救援電話", v.roadside_assistance_phone || insuranceCompanyPhone(v.voluntary_insurance_company || v.insurance_company), "tel")}
+      ${input("roadside_assistance_phone", "道路救援電話", insuranceCompanyPhone(v.voluntary_insurance_company || v.insurance_company) || v.roadside_assistance_phone, "tel")}
       <div class="form-section-title field full">車輛文件</div>
       ${attachmentField({ attachment_url: v.registration_doc_url, attachment_name: v.registration_doc_name }, "行照")}
       <input type="hidden" name="registration_doc_url" value="${escapeHtml(v.registration_doc_url || "")}" data-registration-doc-url>
@@ -3933,7 +3982,7 @@
       const form = insuranceCompanySelect.closest("form");
       if (insuranceCompanySelect.name === "voluntary_insurance_company" && phone) {
         const roadPhoneInput = form?.querySelector('[name="roadside_assistance_phone"]');
-        if (roadPhoneInput && !roadPhoneInput.value) roadPhoneInput.value = phone;
+        if (roadPhoneInput) roadPhoneInput.value = phone;
       }
       return;
     }
