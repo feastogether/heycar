@@ -12,7 +12,7 @@ const tables = [
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
-  "driver_helper_articles", "login_slogans"
+  "driver_helper_articles", "login_slogans", "bom_parts", "bom_packages"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -188,7 +188,9 @@ const tablePermission: Record<string, string> = {
   insurance_requests: "insurance",
   driver_links: "messages",
   driver_helper_articles: "messages",
-  login_slogans: "messages"
+  login_slogans: "messages",
+  bom_parts: "service_records",
+  bom_packages: "service_records"
 };
 
 async function loadPartnerData(partnerId: string) {

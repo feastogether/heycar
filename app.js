@@ -72,7 +72,9 @@
     "feedbacks",
     "driver_links",
     "driver_helper_articles",
-    "login_slogans"
+    "login_slogans",
+    "bom_parts",
+    "bom_packages"
   ];
 
   const insuranceStatuses = [
@@ -1588,10 +1590,13 @@
         <div class="calendar-day-detail">
           ${items.length ? items.map((item) => `
             <article class="calendar-detail-item ${escapeHtml(item.event_type || "other")}">
-              <div><strong>${escapeHtml(item.plate_no)}</strong><span>${calendarTypeName(item.event_type)}</span></div>
-              <p>${escapeHtml(item.event_time || "時間未指定")} ｜ ${escapeHtml(driverName(item.driver_id))}</p>
-              ${item.vendor ? `<p>保養廠：${escapeHtml(item.vendor)}</p>` : ""}
-              <p>${escapeHtml(item.content || "無詳細內容")}</p>
+              <div class="calendar-detail-title"><strong>${escapeHtml(item.plate_no || "-")}</strong><span>${calendarTypeName(item.event_type)}</span></div>
+              <dl class="calendar-detail-grid">
+                <div><dt>時間</dt><dd>${escapeHtml(item.event_time || "未指定")}</dd></div>
+                <div><dt>指定駕駛</dt><dd>${escapeHtml(driverName(item.driver_id))}</dd></div>
+                <div><dt>保養廠</dt><dd>${escapeHtml(item.vendor || "-")}</dd></div>
+              </dl>
+              <p class="calendar-detail-content">${escapeHtml(item.content || "無詳細內容")}</p>
             </article>
           `).join("") : `<div class="empty">當日沒有車隊行程</div>`}
         </div>
@@ -1828,6 +1833,36 @@
     `;
   }
 
+  function adminBom() {
+    const parts = state.data.bom_parts || [];
+    const packages = state.data.bom_packages || [];
+    return `
+      <div class="section-head"><div><h2>BOM表</h2><small>依保修廠管理零件庫與套餐庫，供車輛履歷自動帶入</small></div><div class="actions"><button class="soft-btn" data-modal="bomPackage">新增套餐</button><button class="primary-btn" data-modal="bomPart">新增零件</button></div></div>
+      <section class="bom-grid">
+        <div class="panel">
+          <div class="subsection-head"><h3>零件庫</h3><small>${parts.length} 筆</small></div>
+          ${table(["供應商", "料號", "名稱", "單價", "操作"], parts.map((item) => [
+            escapeHtml(item.supplier || "-"),
+            escapeHtml(item.part_no || "-"),
+            escapeHtml(item.name || "-"),
+            `$${Number(item.unit_price || 0).toLocaleString()}`,
+            rowActions("bomPart", "bom_parts", item.id)
+          ]))}
+        </div>
+        <div class="panel">
+          <div class="subsection-head"><h3>套餐庫</h3><small>${packages.length} 筆</small></div>
+          ${table(["供應商", "套餐號", "套餐內容", "價格", "操作"], packages.map((item) => [
+            escapeHtml(item.supplier || "-"),
+            escapeHtml(item.package_code || "-"),
+            escapeHtml(item.content || "-"),
+            `$${Number(item.price || 0).toLocaleString()}`,
+            rowActions("bomPackage", "bom_packages", item.id)
+          ]))}
+        </div>
+      </section>
+    `;
+  }
+
 
   function openFilePreview(url, name, type) {
     const modal = document.createElement("div");
@@ -1867,7 +1902,8 @@
     emergencyEvents: "緊急事件",
     driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
     loginSlogans: "\u6a19\u8a9e\u7ba1\u7406",
-    driverLinks: "連結管理"
+    driverLinks: "連結管理",
+    bom: "BOM表"
   };
 
   const adminNavDepartments = [
@@ -1875,7 +1911,7 @@
     ["禮賓司機", ["drivers", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
-    ["系統管理", ["adminUsers", "driverLinks", "storage"]]
+    ["系統管理", ["adminUsers", "driverLinks", "bom", "storage"]]
   ];
 
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
@@ -1903,6 +1939,7 @@
       ["insurancePartners", "廠商管理", "🏢", "insurance"],
       ["storage", "儲存空間", "💾"],
       ["driverLinks", "連結管理", "🔗", "messages"],
+      ["bom", "BOM表", "🧩", "service_records"],
       ["calendar", "共同行事曆", "📅"],
       ["maintenanceNotifications", "保養通知", "🔔", "service_records"],
       ["announcements", "公告管理", "📢", "messages"],
@@ -1937,7 +1974,8 @@
       marquee: adminMarquee,
       loginSlogans: adminLoginSlogans,
       emergencyEvents: adminEmergencyEvents,
-      driverLinks: adminDriverLinks
+      driverLinks: adminDriverLinks,
+      bom: adminBom
     }[state.adminView]();
 
     layout(`
@@ -2018,6 +2056,7 @@
           <div><small>\u7528\u9014</small><strong>${escapeHtml(item.purpose)}</strong></div>
           <span class="status ${item.status === "completed" ? "done" : item.status === "return_pending" ? "returned" : "pending"}">${escapeHtml(loanStatuses.find(([value]) => value === item.status)?.[1] || item.status)}</span>
           <div class="actions">
+            <button class="soft-btn" data-loan-detail="${item.id}">查看</button>
             ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">\u540c\u610f\u501f\u8eca</button>` : ""}
             ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">\u767b\u8a18\u9084\u8eca</button>` : ""}
             ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">\u78ba\u8a8d\u7d50\u6848</button>` : ""}
@@ -2028,12 +2067,34 @@
     `;
   }
 
+  function openLoanDetail(id) {
+    const item = (state.data.vehicle_loans || []).find((row) => row.id === id);
+    if (!item) return;
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `
+      <div class="modal compact-detail-modal">
+        <div class="section-head"><h3>車輛租借詳情</h3><button class="ghost-btn" data-close-modal>關閉</button></div>
+        <div class="detail-grid">
+          <div><small>車牌</small><strong>${escapeHtml(item.plate_no || "-")}</strong></div>
+          <div><small>申請人</small><strong>${escapeHtml(item.requested_by_name || "-")}</strong></div>
+          <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
+          <div><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+          <div><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
+          <div><small>用途</small><strong>${escapeHtml(item.purpose || "-")}</strong></div>
+          <div class="full"><small>備註</small><p>${escapeHtml(item.notes || "無備註")}</p></div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
   function adminServiceRecords() {
     const search = state.serviceSearch.trim().toUpperCase();
     const month = state.serviceMonthFilter;
     const vehicleId = state.serviceVehicleFilter;
     const items = [...(state.data.vehicle_service_records || [])]
-      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.parts_replaced, servicePartsToText(parseServiceParts(item))].join(" ").toUpperCase().includes(search))
+      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.actual_work_performed, item.parts_replaced, servicePartsToText(parseServiceParts(item))].join(" ").toUpperCase().includes(search))
         && (!state.serviceTypeFilter || item.record_type === state.serviceTypeFilter)
         && (!month || String(item.service_date || "").slice(0, 7) === month)
         && (!vehicleId || item.vehicle_id === vehicleId))
@@ -2060,7 +2121,7 @@
       <div class="service-record-list">
         ${items.length ? items.map((item) => `<article class="service-record-row">
           <div class="service-record-head"><span class="plate-chip">${escapeHtml(item.plate_no)}</span><span class="record-type">${escapeHtml(item.record_type)}</span><strong>${fmtDate(item.service_date)}</strong>${item.odometer ? `<small>${Number(item.odometer).toLocaleString()} km</small>` : ""}</div>
-          <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
+          <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>實際維修／保養內容</small><p>${escapeHtml(item.actual_work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
           <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>總成本：$${Number(item.total_cost || 0).toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
           <div class="service-record-actions">${attachmentLink(item)}${rowActions("serviceRecord", "vehicle_service_records", item.id)}</div>
         </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
@@ -2296,6 +2357,8 @@
       personalMessage: ["個人訊息", "personal_messages", personalMessageForm],
       paymentNotice: ["繳費通知", "payment_notices", paymentNoticeForm],
       calendarEvent: ["行程", "calendar_events", calendarEventForm],
+      bomPart: ["BOM零件", "bom_parts", bomPartForm],
+      bomPackage: ["BOM套餐", "bom_packages", bomPackageForm],
       marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
       driverLink: ["連結", "driver_links", driverLinkForm],
@@ -2458,7 +2521,8 @@
         part_no: String(part.part_no || "").trim(),
         name: String(part.name || "").trim(),
         quantity: Number(part.quantity || 0),
-        amount: Number(part.amount || 0)
+        unit_price: Number(part.unit_price || 0),
+        amount: Number(part.amount || 0) || (Number(part.quantity || 0) * Number(part.unit_price || 0))
       })).filter((part) => part.part_no || part.name || part.quantity || part.amount);
       record.parts_replaced = record.parts_replaced || servicePartsToText(record.parts_json);
       ["odometer", "next_service_odometer", "downtime_hours"].forEach((key) => {
@@ -2467,6 +2531,14 @@
       ["labor_cost", "parts_cost", "other_cost", "total_cost"].forEach((key) => record[key] = Number(record[key] || 0));
       if (record.parts_json.length) record.parts_cost = record.parts_json.reduce((sum, part) => sum + Number(part.amount || 0), 0);
       record.total_cost = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
+    }
+    if (tableName === "bom_parts") {
+      record.supplier = record.supplier || "";
+      record.unit_price = Number(record.unit_price || 0);
+    }
+    if (tableName === "bom_packages") {
+      record.supplier = record.supplier || "";
+      record.price = Number(record.price || 0);
     }
     if (tableName === "feedbacks") {
       if (state.user) {
@@ -2508,6 +2580,7 @@
       record.service_time = record.service_time || null;
     }
     if (tableName === "calendar_events") {
+      record.vehicle_id = record.vehicle_id || null;
       record.driver_id = record.driver_id || null;
       record.event_time = record.event_time || null;
     }
@@ -2977,14 +3050,21 @@
     return `<div class="field full vehicle-plate-picker"><label>${label}</label><input type="search" data-vehicle-picker-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-vehicle-plate-select required><option value="">請選擇車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select><input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"></div>`;
   }
 
+  function repairShopNameOptions(value, name = "supplier", label = "供應商／保修廠") {
+    const shops = (state.data.insurance_partners || [])
+      .filter((item) => item.partner_type === "repair_shop" && item.active !== false)
+      .map((item) => [item.name, item.name]);
+    return select(name, label, value || "", [["", shops.length ? "請選擇保修廠" : "尚未建立保修廠"], ...shops]);
+  }
+
   function servicePartsEditor(item = {}) {
     const parts = parseServiceParts(item);
-    const rows = parts.length ? parts : [{ part_no: "", name: "", quantity: "", amount: "" }];
+    const rows = parts.length ? parts : [{ part_no: "", name: "", quantity: "", unit_price: "", amount: "" }];
     return `<div class="field full service-parts-editor">
       <label>更換零組件</label>
       <input type="hidden" name="parts_json" value="${escapeHtml(JSON.stringify(parts))}" data-service-parts-json>
       <input type="hidden" name="parts_replaced" value="${escapeHtml(item.parts_replaced || "")}" data-service-parts-text>
-      <div class="service-parts-head"><span>料號</span><span>名稱</span><span>數量</span><span>金額</span><span></span></div>
+      <div class="service-parts-head"><span>料號／套餐號</span><span>名稱／內容</span><span>數量</span><span>單價</span><span>金額</span><span></span></div>
       <div class="service-parts-rows" data-service-parts-rows>
         ${rows.map(servicePartRow).join("")}
       </div>
@@ -2994,9 +3074,10 @@
 
   function servicePartRow(part = {}) {
     return `<div class="service-part-row" data-service-part-row>
-      <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號">
-      <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱">
+      <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號或套餐號">
+      <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱或套餐內容">
       <input data-service-part-field="quantity" type="number" min="0" step="1" value="${escapeHtml(part.quantity ?? "")}" placeholder="數量">
+      <input data-service-part-field="unit_price" type="number" min="0" step="1" value="${escapeHtml(part.unit_price ?? "")}" placeholder="單價">
       <input data-service-part-field="amount" type="number" min="0" step="1" value="${escapeHtml(part.amount ?? "")}" placeholder="金額">
       <button class="danger-btn" type="button" data-service-part-remove>刪除</button>
     </div>`;
@@ -3022,6 +3103,7 @@
         part_no: get("part_no").trim(),
         name: get("name").trim(),
         quantity: Number(get("quantity") || 0),
+        unit_price: Number(get("unit_price") || 0),
         amount: Number(get("amount") || 0)
       };
     }).filter((part) => part.part_no || part.name || part.quantity || part.amount);
@@ -3032,14 +3114,43 @@
     return parts;
   }
 
+  function updateServicePartRow(row, form) {
+    if (!row) return;
+    const field = (name) => row.querySelector(`[data-service-part-field="${name}"]`);
+    const partNo = String(field("part_no")?.value || "").trim();
+    const supplier = String(form?.querySelector('[name="vendor"]')?.value || "").trim();
+    const match = findBomEntry(partNo, supplier);
+    if (match) {
+      if (field("name")) field("name").value = match.name;
+      if (field("quantity") && !Number(field("quantity").value || 0)) field("quantity").value = match.quantity || 1;
+      if (field("unit_price")) field("unit_price").value = match.unit_price || 0;
+    }
+    const quantity = Number(field("quantity")?.value || 0);
+    const unitPrice = Number(field("unit_price")?.value || 0);
+    const amount = field("amount");
+    if (amount && quantity && unitPrice) amount.value = String(quantity * unitPrice);
+  }
+
+  function findBomEntry(code, supplier) {
+    const normalizedCode = normalizedText(code);
+    if (!normalizedCode) return null;
+    const normalizedSupplier = normalizedText(supplier);
+    const supplierMatches = (item) => !normalizedSupplier || normalizedText(item.supplier) === normalizedSupplier;
+    const part = (state.data.bom_parts || []).find((item) => supplierMatches(item) && normalizedText(item.part_no) === normalizedCode);
+    if (part) return { name: part.name || "", quantity: 1, unit_price: Number(part.unit_price || 0) };
+    const pkg = (state.data.bom_packages || []).find((item) => supplierMatches(item) && normalizedText(item.package_code) === normalizedCode);
+    if (pkg) return { name: pkg.content || "", quantity: 1, unit_price: Number(pkg.price || 0) };
+    return null;
+  }
+
   function servicePartsToText(parts) {
-    return (parts || []).map((part) => `${part.part_no || "-"} ${part.name || "-"} x${Number(part.quantity || 0)} $${Number(part.amount || 0).toLocaleString()}`).join("\n");
+    return (parts || []).map((part) => `${part.part_no || "-"} ${part.name || "-"} x${Number(part.quantity || 0)} 單價 $${Number(part.unit_price || 0).toLocaleString()} 金額 $${Number(part.amount || 0).toLocaleString()}`).join("\n");
   }
 
   function servicePartsSummary(item = {}) {
     const parts = parseServiceParts(item);
     if (!parts.length) return `<p>${escapeHtml(item.parts_replaced || "-")}</p>`;
-    return `<div class="service-parts-summary">${parts.map((part) => `<span><b>${escapeHtml(part.part_no || "-")}</b>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
+    return `<div class="service-parts-summary">${parts.map((part) => `<span><b>${escapeHtml(part.part_no || "-")}</b>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
   }
 
   function vehicleLoanForm(item) {
@@ -3063,7 +3174,8 @@
       + repairShopOptions(item.vendor)
       + text("complaint", "送修原因／駕駛反映", item.complaint)
       + text("diagnosis", "檢查與故障診斷", item.diagnosis)
-      + text("work_performed", "實際維修／保養內容", item.work_performed)
+      + text("work_performed", "處置／保養內容", item.work_performed)
+      + text("actual_work_performed", "實際維修／保養內容", item.actual_work_performed)
       + servicePartsEditor(item)
       + input("labor_cost", "工資", item.labor_cost, "number")
       + input("parts_cost", "零件費", item.parts_cost, "number")
@@ -3073,6 +3185,22 @@
       + input("next_service_odometer", "下次建議里程", item.next_service_odometer, "number")
       + text("warranty_info", "保固資訊", item.warranty_info)
       + attachmentField(item, "工單／發票附件")
+      + text("notes", "備註", item.notes);
+  }
+
+  function bomPartForm(item = {}) {
+    return repairShopNameOptions(item.supplier)
+      + input("part_no", "料號", item.part_no, "text", true)
+      + input("name", "名稱", item.name, "text", true)
+      + input("unit_price", "單價", item.unit_price, "number")
+      + text("notes", "備註", item.notes);
+  }
+
+  function bomPackageForm(item = {}) {
+    return repairShopNameOptions(item.supplier)
+      + input("package_code", "套餐號", item.package_code, "text", true)
+      + text("content", "套餐內容", item.content)
+      + input("price", "價格", item.price, "number")
       + text("notes", "備註", item.notes);
   }
 
@@ -3811,6 +3939,10 @@
       state.messageReadFilter = target.dataset.messageFilter;
       render();
     }
+    if (target.dataset.loanDetail) {
+      openLoanDetail(target.dataset.loanDetail);
+      return;
+    }
     if (target.dataset.loanAction) {
       const [id, action] = target.dataset.loanAction.split(":");
       await update("vehicle_loans", id, action === "approve"
@@ -3868,6 +4000,7 @@
       return;
     }
     if (e.target.closest("[data-service-part-field]")) {
+      updateServicePartRow(e.target.closest("[data-service-part-row]"), e.target.closest("form"));
       collectServiceParts(e.target.closest("form"));
       return;
     }
@@ -3920,6 +4053,13 @@
       const option = vehiclePlateSelect.selectedOptions[0];
       const plateInput = form?.querySelector('[name="plate_no"]');
       if (plateInput) plateInput.value = option?.dataset.plate || "";
+      return;
+    }
+    const serviceVendorSelect = e.target.closest('select[name="vendor"]');
+    if (serviceVendorSelect) {
+      const form = serviceVendorSelect.closest("form");
+      form?.querySelectorAll("[data-service-part-row]").forEach((row) => updateServicePartRow(row, form));
+      collectServiceParts(form);
       return;
     }
     const insuranceVehicle = e.target.closest("[data-insurance-vehicle]");

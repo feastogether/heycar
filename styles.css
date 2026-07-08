@@ -592,11 +592,17 @@ a { text-decoration: none; }
 .loan-row { grid-template-columns: auto repeat(4, minmax(100px, 1fr)) auto auto; }
 .loan-row > div { display: grid; gap: 2px; }
 .loan-row small, .access-user-row small { color: var(--muted); font-size: 10px; font-weight: 800; }
+.compact-detail-modal { max-width: 760px; }
+.detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.detail-grid > div { padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: #fbfdff; }
+.detail-grid .full { grid-column: 1 / -1; }
+.detail-grid small { display: block; color: var(--muted); font-size: 11px; font-weight: 800; margin-bottom: 4px; }
+.detail-grid strong, .detail-grid p { margin: 0; color: var(--ink); font-size: 14px; font-weight: 850; white-space: pre-line; }
 .service-record-row { padding: 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: #fff; }
 .service-record-head, .service-record-meta, .service-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 16px; }
 .record-type { padding: 4px 8px; border-radius: 4px; background: #e8f4f6; color: var(--accent); font-size: 11px; font-weight: 900; }
 .service-record-head small, .service-record-meta { color: var(--muted); font-size: 11px; }
-.service-record-main { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; padding: 10px 0; border-block: 1px dashed var(--line); }
+.service-record-main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 12px 0; padding: 10px 0; border-block: 1px dashed var(--line); }
 .service-record-main small { color: var(--muted); font-size: 10px; font-weight: 800; }
 .service-record-main p { margin: 4px 0 0; font-size: 13px; white-space: pre-line; }
 .service-record-actions { justify-content: flex-end; margin-top: 10px; }
@@ -1313,11 +1319,15 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .calendar-pill.tires, .calendar-detail-item.tires { background: #dbeafe; color: #1d4ed8; }
 .calendar-pill.other, .calendar-detail-item.other { background: #dcfce7; color: #15803d; }
 .calendar-day-detail { display: grid; gap: 10px; }
-.calendar-detail-item { padding: 14px; border-radius: 8px; }
-.calendar-detail-item div { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
-.calendar-detail-item div strong { font-size: 18px; }
-.calendar-detail-item div span { font-size: 12px; font-weight: 800; }
-.calendar-detail-item p { margin: 4px 0; color: var(--ink); font-size: 14px; }
+.calendar-detail-item { padding: 16px; border-radius: 8px; border: 1px solid rgba(24,32,51,.08); }
+.calendar-detail-title { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.calendar-detail-title strong { font-size: 20px; color: var(--ink); }
+.calendar-detail-title span { padding: 4px 9px; border-radius: 999px; background: rgba(255,255,255,.65); font-size: 12px; font-weight: 900; }
+.calendar-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0 0 12px; }
+.calendar-detail-grid div { padding: 9px; border-radius: 7px; background: rgba(255,255,255,.72); }
+.calendar-detail-grid dt { color: var(--muted); font-size: 11px; font-weight: 900; }
+.calendar-detail-grid dd { margin: 3px 0 0; color: var(--ink); font-size: 13px; font-weight: 850; }
+.calendar-detail-content { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.6; white-space: pre-line; }
 .lux-item-actions {
   display: flex;
   justify-content: flex-end;
@@ -1980,7 +1990,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .service-parts-head,
 .service-part-row {
   display: grid;
-  grid-template-columns: 1fr 1.4fr .55fr .8fr auto;
+  grid-template-columns: 1fr 1.4fr .5fr .7fr .8fr auto;
   gap: 8px;
   align-items: center;
 }
@@ -2017,6 +2027,10 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-weight: 800;
   white-space: nowrap;
 }
+.bom-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.subsection-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.subsection-head h3 { margin: 0; font-size: 18px; font-weight: 950; }
+.subsection-head small { color: var(--muted); font-weight: 800; }
 .permission-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
 .permission-switch input { position: absolute; opacity: 0; pointer-events: none; }
 .permission-switch span { width: 34px; height: 20px; padding: 2px; border-radius: 10px; background: #cbd5e1; transition: background .2s ease; }
@@ -2665,4 +2679,9 @@ tr:last-child td { border-bottom: 0; }
   .service-filter-bar { grid-template-columns: 1fr; }
   .service-record-main, .vehicle-plate-picker, .driver-select-picker { grid-template-columns: 1fr; }
   .vehicle-plate-picker label, .driver-select-picker label { grid-column: auto; }
+}
+
+@media (max-width: 760px) {
+  .bom-grid, .detail-grid, .calendar-detail-grid { grid-template-columns: 1fr; }
+  .service-part-row, .service-parts-head { grid-template-columns: 1fr; }
 }
