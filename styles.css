@@ -866,7 +866,10 @@ textarea { min-height: 100px; resize: vertical; }
 }
 .feature-card {
   position: relative;
-  background: var(--panel);
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.98), rgba(248,250,252,.92));
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 20px;
@@ -878,30 +881,55 @@ textarea { min-height: 100px; resize: vertical; }
   box-shadow: 0 10px 25px rgba(24,32,51,.04);
   transition: all .2s ease;
 }
+.feature-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  background: linear-gradient(180deg, var(--brand), var(--gold), var(--accent));
+  opacity: .95;
+}
+.feature-card::after {
+  content: "";
+  position: absolute;
+  right: -34px;
+  bottom: -42px;
+  width: 112px;
+  height: 112px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(201,139,44,.16), transparent 68%);
+  z-index: -1;
+}
 .feature-card:hover {
   transform: translateY(-3px);
   border-color: rgba(239,63,53,.4);
   box-shadow: 0 16px 36px rgba(24,32,51,.08);
 }
 .feature-icon {
-  width: 46px;
-  height: 46px;
+  width: 50px;
+  height: 50px;
   display: grid;
   place-items: center;
-  border-radius: 10px;
-  color: white;
-  background: linear-gradient(135deg, #192231, var(--accent));
+  border-radius: 15px;
+  color: #172033;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.96), rgba(245,241,232,.92));
+  border: 1px solid rgba(201,139,44,.28);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 10px 22px rgba(24,32,51,.08);
   flex-shrink: 0;
 }
 .feature-icon svg {
-  width: 23px;
-  height: 23px;
+  width: 24px;
+  height: 24px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 2.1;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+.feature-card:nth-child(3n + 1) .feature-icon { color: var(--brand); }
+.feature-card:nth-child(3n + 2) .feature-icon { color: var(--accent); }
+.feature-card:nth-child(3n) .feature-icon { color: var(--gold); }
 .feature-copy { display: grid; gap: 4px; min-width: 0; }
 .feature-card strong { font-size: 18px; color: var(--ink); font-weight: 900; }
 .feature-card small { color: var(--muted); font-size: 12px; }
@@ -1785,7 +1813,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .vehicle-search-bar {
   display: grid;
-  grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(120px, .75fr)) auto auto;
+  grid-template-columns: minmax(220px, 1.6fr) repeat(4, minmax(120px, .75fr)) auto auto;
   gap: 8px;
 }
 .plate-number,
@@ -2372,19 +2400,20 @@ tr:last-child td { border-bottom: 0; }
   position: fixed;
   inset: 0;
   z-index: 200;
-  background: rgba(15,23,42,.5);
+  background: rgba(15,23,42,.46);
   display: grid;
   place-items: center;
   padding: 16px;
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(8px);
 }
 .modal {
   width: min(680px, 100%);
   max-height: 85vh;
   overflow: hidden;
-  background: white;
-  border-radius: var(--radius);
-  box-shadow: 0 20px 40px rgba(0,0,0,.15);
+  background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,250,252,.98));
+  border: 1px solid rgba(226,232,240,.92);
+  border-radius: 18px;
+  box-shadow: 0 28px 80px rgba(15,23,42,.22);
   display: flex;
   flex-direction: column;
 }

@@ -26,6 +26,7 @@
     vehicleStatusFilter: "",
     vehicleRegionFilter: "",
     vehicleFuelFilter: "",
+    vehicleDealerFilter: "",
     vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
     insuranceStatusFilter: "",
     serviceSearch: "",
@@ -398,6 +399,7 @@
   function showAlert(message, title = "系統訊息") {
     return showAppDialog({ title, message, confirmText: "知道了" });
   }
+  window.AFIDE_SHOW_ALERT = showAlert;
 
   function showConfirm(message, title = "請確認") {
     return showAppDialog({ title, message, kind: "danger", showCancel: true, confirmText: "確定", cancelText: "取消" });
@@ -2090,21 +2092,13 @@
   }
 
   function adminServiceRecords() {
-    const search = state.serviceSearch.trim().toUpperCase();
-    const month = state.serviceMonthFilter;
-    const vehicleId = state.serviceVehicleFilter;
-    const items = [...(state.data.vehicle_service_records || [])]
-      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.actual_work_performed, item.parts_replaced, servicePartsToText(parseServiceParts(item))].join(" ").toUpperCase().includes(search))
-        && (!state.serviceTypeFilter || item.record_type === state.serviceTypeFilter)
-        && (!month || String(item.service_date || "").slice(0, 7) === month)
-        && (!vehicleId || item.vehicle_id === vehicleId))
-      .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
+    const items = filteredServiceRecords();
     const totalCost = items.reduce((sum, item) => sum + Number(item.total_cost || 0), 0);
     const repairCount = items.filter((item) => item.record_type === "維修").length;
     const maintenanceCount = items.filter((item) => item.record_type === "定期保養").length;
     const vehicleCount = new Set(items.map((item) => item.plate_no || item.vehicle_id).filter(Boolean)).size;
     return `
-      <div class="section-head"><div><h2>車輛履歷</h2><small>維修、保養、檢驗與零組件更換的完整歷史</small></div><button class="primary-btn" data-modal="serviceRecord">新增履歷</button></div>
+      <div class="section-head"><div><h2>車輛履歷</h2><small>維修、保養、檢驗與零組件更換的完整歷史</small></div><div class="actions"><button class="ghost-btn" data-export="serviceRecords">匯出 Excel</button><button class="primary-btn" data-modal="serviceRecord">新增履歷</button></div></div>
       <form id="serviceSearchForm" class="service-filter-bar">
         <input name="search" value="${escapeHtml(state.serviceSearch)}" placeholder="搜尋車牌、廠商、處置或零組件">
         <select name="vehicle"><option value="">全部車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" ${state.serviceVehicleFilter === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select>
@@ -2127,6 +2121,18 @@
         </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
       </div>
     `;
+  }
+
+  function filteredServiceRecords() {
+    const search = state.serviceSearch.trim().toUpperCase();
+    const month = state.serviceMonthFilter;
+    const vehicleId = state.serviceVehicleFilter;
+    return [...(state.data.vehicle_service_records || [])]
+      .filter((item) => (!search || [item.plate_no, item.vendor, item.work_performed, item.actual_work_performed, item.parts_replaced, servicePartsToText(parseServiceParts(item))].join(" ").toUpperCase().includes(search))
+        && (!state.serviceTypeFilter || item.record_type === state.serviceTypeFilter)
+        && (!month || String(item.service_date || "").slice(0, 7) === month)
+        && (!vehicleId || item.vehicle_id === vehicleId))
+      .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
   }
 
   function adminFeedbacks() {
@@ -2152,18 +2158,21 @@
         return (!search || searchable.includes(search))
           && (!state.vehicleStatusFilter || vehicle.status === state.vehicleStatusFilter)
           && (!state.vehicleRegionFilter || vehicle.vehicle_region === state.vehicleRegionFilter)
-          && (!state.vehicleFuelFilter || vehicle.fuel_type === state.vehicleFuelFilter);
+          && (!state.vehicleFuelFilter || vehicle.fuel_type === state.vehicleFuelFilter)
+          && (!state.vehicleDealerFilter || vehicle.dealer_partner_id === state.vehicleDealerFilter);
       })
       .sort((a, b) => String(a.plate_no || "").localeCompare(String(b.plate_no || "")));
     const statuses = [...new Set(state.data.vehicles.map((item) => item.status).filter(Boolean))].sort();
     const regions = [...new Set(state.data.vehicles.map((item) => item.vehicle_region).filter(Boolean))].sort();
     const fuels = [...new Set(state.data.vehicles.map((item) => item.fuel_type).filter(Boolean))].sort();
+    const dealers = (state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer" && item.active !== false);
     return `
       <div class="vehicle-toolbar">
         <div><h2>車輛管理</h2><small>共 ${vehicles.length} 輛符合條件</small></div>
         <form id="vehicleSearchForm" class="vehicle-search-bar">
           <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="搜尋車牌、品牌、車款或駕駛" autocomplete="off">
           <select name="status"><option value="">全部狀態</option>${statuses.map((value) => `<option ${state.vehicleStatusFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select name="dealer"><option value="">全部車商</option>${dealers.map((dealer) => `<option value="${dealer.id}" ${state.vehicleDealerFilter === dealer.id ? "selected" : ""}>${escapeHtml(dealer.name)}</option>`).join("")}</select>
           <select name="region"><option value="">全部區域</option>${regions.map((value) => `<option ${state.vehicleRegionFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
           <select name="fuel"><option value="">全部油品</option>${fuels.map((value) => `<option ${state.vehicleFuelFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
           <button class="primary-btn" type="submit">套用篩選</button>
@@ -2522,7 +2531,9 @@
         name: String(part.name || "").trim(),
         quantity: Number(part.quantity || 0),
         unit_price: Number(part.unit_price || 0),
-        amount: Number(part.amount || 0) || (Number(part.quantity || 0) * Number(part.unit_price || 0))
+        amount: Number(part.amount || 0) || (Number(part.quantity || 0) * Number(part.unit_price || 0)),
+        supplier: record.vendor || part.supplier || "",
+        price_snapshot_at: part.price_snapshot_at || now()
       })).filter((part) => part.part_no || part.name || part.quantity || part.amount);
       record.parts_replaced = record.parts_replaced || servicePartsToText(record.parts_json);
       ["odometer", "next_service_odometer", "downtime_hours"].forEach((key) => {
@@ -2622,15 +2633,22 @@
   }
 
   function exportExcel(kind) {
+    const serviceRows = filteredServiceRecords();
     const configs = {
       drivers: ["駕駛管理", state.data.drivers || [], [["姓名", "name"], ["電話", "phone"], ["狀態", "driver_status"], ["服務區域", "service_area"], ["服務時段", "service_shift"], ["到職日期", "onboard_date"], ["駕照到期日", "license_expiry"], ["備註", "notes"]]],
       vehicles: ["車輛管理", state.data.vehicles || [], [["車牌", "plate_no"], ["品牌", "brand"], ["車款", "model"], ["目前使用人", "assigned_driver_names"], ["油品", "fuel_type"], ["狀態", "status"], ["強制險", "compulsory_insurance_expiry"], ["任意險", "voluntary_insurance_expiry"], ["保險公司", "insurance_company"]]],
-      insurance: ["保險管理", state.data.insurance_requests || [], [["車牌", "plate_no"], ["保險種類", "insurance_type"], ["規格", "coverage_spec"], ["旅客險額度", "passenger_limit"], ["自付額", "deductible"], ["抵押權人", "lienholder"], ["指定保險公司", "assigned_insurance_company"], ["狀態", "status"], ["保險備註", "insurance_notes"], ["保經備註", "broker_notes"]]]
+      insurance: ["保險管理", state.data.insurance_requests || [], [["車牌", "plate_no"], ["保險種類", "insurance_type"], ["規格", "coverage_spec"], ["旅客險額度", "passenger_limit"], ["自付額", "deductible"], ["抵押權人", "lienholder"], ["指定保險公司", "assigned_insurance_company"], ["狀態", "status"], ["保險備註", "insurance_notes"], ["保經備註", "broker_notes"]]],
+      serviceRecords: ["車輛履歷", serviceRows, [["車牌", "plate_no"], ["履歷類型", "record_type"], ["作業日期", "service_date"], ["里程", "odometer"], ["保修廠", "vendor"], ["處置／保養內容", "work_performed"], ["實際維修／保養內容", "actual_work_performed"], ["零組件明細", "__parts"], ["工資", "labor_cost"], ["零件費", "parts_cost"], ["其他費用", "other_cost"], ["總成本", "total_cost"], ["下次建議日期", "next_service_date"], ["下次建議里程", "next_service_odometer"], ["備註", "notes"]]]
     };
     const [name, rows, columns] = configs[kind] || [];
     if (!rows) return;
     const escapeCell = (value) => String(value ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    const html = `<html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${columns.map(([label]) => `<th>${escapeCell(label)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map(([, key]) => `<td>${escapeCell(key === "status" && kind === "insurance" ? insuranceStatusLabel(row[key]) : row[key])}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
+    const cellValue = (row, key) => {
+      if (key === "status" && kind === "insurance") return insuranceStatusLabel(row[key]);
+      if (key === "__parts") return servicePartsToText(parseServiceParts(row));
+      return row[key];
+    };
+    const html = `<html><head><meta charset="utf-8"></head><body><table border="1"><thead><tr>${columns.map(([label]) => `<th>${escapeCell(label)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${columns.map(([, key]) => `<td>${escapeCell(cellValue(row, key))}</td>`).join("")}</tr>`).join("")}</tbody></table></body></html>`;
     const link = document.createElement("a");
     link.href = URL.createObjectURL(new Blob(["\ufeff", html], { type: "application/vnd.ms-excel;charset=utf-8" }));
     link.download = `${name}-${today()}.xls`;
@@ -3097,6 +3115,7 @@
   function collectServiceParts(scope) {
     const editor = scope?.querySelector?.(".service-parts-editor");
     if (!editor) return [];
+    const supplier = String(scope?.querySelector?.('[name="vendor"]')?.value || "").trim();
     const parts = Array.from(editor.querySelectorAll("[data-service-part-row]")).map((row) => {
       const get = (name) => row.querySelector(`[data-service-part-field="${name}"]`)?.value || "";
       return {
@@ -3104,7 +3123,9 @@
         name: get("name").trim(),
         quantity: Number(get("quantity") || 0),
         unit_price: Number(get("unit_price") || 0),
-        amount: Number(get("amount") || 0)
+        amount: Number(get("amount") || 0),
+        supplier,
+        price_snapshot_at: now()
       };
     }).filter((part) => part.part_no || part.name || part.quantity || part.amount);
     const jsonInput = editor.querySelector("[data-service-parts-json]");
@@ -3855,6 +3876,7 @@
       state.vehicleStatusFilter = "";
       state.vehicleRegionFilter = "";
       state.vehicleFuelFilter = "";
+      state.vehicleDealerFilter = "";
       render();
     }
     if (target.dataset.action === "clear-driver-search") {
@@ -3981,6 +4003,7 @@
       state.vehicleStatusFilter = String(data.get("status") || "");
       state.vehicleRegionFilter = String(data.get("region") || "");
       state.vehicleFuelFilter = String(data.get("fuel") || "");
+      state.vehicleDealerFilter = String(data.get("dealer") || "");
       render();
     }
     if (e.target.id === "serviceSearchForm") {
