@@ -85,7 +85,7 @@ async function loadDriverData(driverId: string) {
   const onboardAt = driver.onboard_date ? new Date(`${driver.onboard_date}T00:00:00+08:00`).getTime() : 0;
   const canSeeLinks = Boolean(onboardAt && Date.now() < onboardAt + 4 * 24 * 60 * 60 * 1000);
   const queries = await Promise.all([
-    db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region"),
+    db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region,assigned_driver_names,fuel_type,registration_doc_url,registration_doc_name,roadside_assistance_phone,voluntary_insurance_company,insurance_company,dealer_partner_id"),
     db.from("announcements").select("*").in("target_fleet", ["全部車隊", fleet]),
     db.from("announcement_reads").select("*").eq("driver_id", driverId),
     db.from("maintenance_notifications").select("*").eq("driver_id", driverId),
@@ -96,12 +96,13 @@ async function loadDriverData(driverId: string) {
     db.from("emergency_events").select("*").eq("active", true),
     db.from("feedbacks").select("*").eq("driver_id", driverId),
     canSeeLinks ? db.from("driver_links").select("*").eq("active", true) : Promise.resolve({ data: [], error: null }),
-    db.from("driver_helper_articles").select("*").eq("active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: false })
+    db.from("driver_helper_articles").select("*").eq("active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: false }),
+    db.from("insurance_partners").select("id,name,partner_type,phone,active,frontend_permissions").eq("active", true)
   ]);
   const names = [
     "vehicles", "announcements", "announcement_reads", "maintenance_notifications",
     "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks", "driver_links",
-    "driver_helper_articles"
+    "driver_helper_articles", "insurance_partners"
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;

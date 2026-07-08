@@ -29,6 +29,8 @@
     vehicleDealerFilter: "",
     vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
     insuranceStatusFilter: "",
+    loanSearch: "",
+    loanDateFilter: "",
     serviceSearch: "",
     serviceTypeFilter: "",
     serviceMonthFilter: "",
@@ -108,6 +110,7 @@
 
   const vehicleStatuses = ["正常", "待修", "維修中", "閒置", "備用車", "公務車"];
   const fleets = ["亞菲得車隊", "亞緻車隊", "合作車隊"];
+  const loanStatuses = [["", "進行中"], ["pending_approval", "待審核"], ["approved", "已核准借用中"], ["return_pending", "待確認還車"], ["completed", "已結案"]];
 
   const featureIcons = {
     announcements: "M4 6.5A2.5 2.5 0 0 1 6.5 4H20v13H7.5A3.5 3.5 0 0 0 4 20.5v-14Zm3 0h10M7.5 10h8M7.5 13.5h6",
@@ -117,7 +120,8 @@
     emergency: "M12 3 3 20h18L12 3Zm0 6v5m0 3h.01",
     broadcast: "M4 6h16v12H4V6Zm6 12v2m4-2v2M8 22h8M9 10l6 2-6 2v-4Z",
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
-    calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z"
+    calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z",
+    myVehicle: "M4 13l1.4-4.2A2.6 2.6 0 0 1 7.9 7h8.2a2.6 2.6 0 0 1 2.5 1.8L20 13M5 13h14v5H5v-5Zm2 5v2m10-2v2M7.5 15.5h.01m9 0h.01"
     ,messagesCenter: "M4 5h16v12H7l-3 3V5Zm4 4h8m-8 4h5"
     ,feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
     ,links: "M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"
@@ -126,6 +130,7 @@
 
   const driverFrontendFeatures = [
     ["messagesCenter", "訊息中心"],
+    ["myVehicle", "我的車輛"],
     ["calendar", "共同行事曆"],
     ["maintenance", "保養維修"],
     ["payments", "費用管理"],
@@ -1062,6 +1067,7 @@
           layout(`
             <div class="dashboard-grid">
           ${driverFeature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
+          ${driverFeature("myVehicle", "我的車輛", "行照與車輛資訊", 0)}
           ${driverFeature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
           ${driverFeature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${driverFeature("payments", "費用管理", "費用與款項通知", pendingPay)}
@@ -1079,6 +1085,7 @@
     const views = {
       announcements: driverAnnouncements,
       messagesCenter: driverMessagesCenter,
+      myVehicle: driverMyVehicle,
       maintenance: () => driverTaskList("maintenance_notifications", "保養維修"),
       payments: () => driverTaskList("payment_notices", "費用管理"),
       messages: () => driverTaskList("personal_messages", "私人訊息"),
@@ -1153,6 +1160,80 @@
 
   function driverFeature(view, title, desc, count) {
     return canShowDriverFeature(view) ? feature(view, title, desc, count) : "";
+  }
+
+  function driverAssignedVehicles() {
+    if (!state.user) return [];
+    return (state.data.vehicles || []).filter((vehicle) => {
+      const assignedIds = parseAssignedDriverIds(vehicle);
+      const assignedNames = String(vehicle.assigned_driver_names || "")
+        .split("/")
+        .map((name) => name.trim())
+        .filter(Boolean);
+      return vehicle.current_driver_id === state.user.id
+        || assignedIds.includes(state.user.id)
+        || assignedNames.includes(state.user.name || "");
+    });
+  }
+
+  function parseAssignedDriverIds(vehicle = {}) {
+    const raw = vehicle.assigned_driver_ids;
+    if (Array.isArray(raw)) return raw.map(String);
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw || "[]");
+        if (Array.isArray(parsed)) return parsed.map(String);
+      } catch {}
+      return raw.split(/[,\s/]+/).map((value) => value.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function vehicleUpcomingCalendar(vehicle) {
+    const plate = String(vehicle?.plate_no || "").trim().toUpperCase();
+    const vehicleId = vehicle?.id || "";
+    const todayValue = today();
+    return calendarItems(false)
+      .filter((item) => String(item.event_date || "") >= todayValue)
+      .filter((item) => {
+        const itemPlate = String(item.plate_no || "").trim().toUpperCase();
+        return (vehicleId && item.vehicle_id === vehicleId) || (plate && itemPlate === plate);
+      })
+      .sort((a, b) => String(a.event_date || "").localeCompare(String(b.event_date || "")) || String(a.event_time || "").localeCompare(String(b.event_time || "")))
+      .slice(0, 8);
+  }
+
+  function driverMyVehicle() {
+    const vehicles = driverAssignedVehicles();
+    return `
+      ${pageHeader("我的車輛")}
+      <div class="my-vehicle-list">
+        ${vehicles.length ? vehicles.map((vehicle) => {
+          const events = vehicleUpcomingCalendar(vehicle);
+          const rescuePhone = insuranceCompanyPhone(vehicle.voluntary_insurance_company || vehicle.insurance_company) || vehicle.roadside_assistance_phone || "-";
+          return `<article class="my-vehicle-card">
+            <header class="my-vehicle-head">
+              <span class="plate-chip">${escapeHtml(vehicle.plate_no || "-")}</span>
+              <div><strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "未設定車型")}</strong><small>${escapeHtml(vehicle.status || "未設定狀態")}</small></div>
+            </header>
+            <div class="my-vehicle-info">
+              <div><small>油品</small><strong>${escapeHtml(vehicle.fuel_type || "-")}</strong></div>
+              <div><small>道路救援</small><strong>${rescuePhone !== "-" ? `<a href="tel:${escapeHtml(rescuePhone)}">${escapeHtml(rescuePhone)}</a>` : "-"}</strong></div>
+              <div><small>行照</small>${vehicle.registration_doc_url ? `<button class="soft-btn" data-preview-file="${escapeHtml(vehicle.registration_doc_url)}" data-preview-name="${escapeHtml(vehicle.registration_doc_name || `${vehicle.plate_no || "車輛"} 行照`)}" data-preview-type="">查看行照</button>` : `<strong>-</strong>`}</div>
+            </div>
+            <section class="my-vehicle-schedule">
+              <h3>未來行事曆</h3>
+              ${events.length ? events.map((event) => `<div class="my-vehicle-event ${escapeHtml(event.event_type || "other")}">
+                <time>${fmtDate(event.event_date)} ${escapeHtml(event.event_time || "")}</time>
+                <strong>${escapeHtml(calendarTypeName(event.event_type))}</strong>
+                <span>${escapeHtml(event.vendor || "未指定廠商")}</span>
+                <p>${escapeHtml(event.content || "無詳細內容")}</p>
+              </div>`).join("") : `<div class="empty mini-empty">目前沒有未來行程</div>`}
+            </section>
+          </article>`;
+        }).join("") : `<div class="empty">目前沒有指派車輛，若資料有誤請聯絡管理中心。</div>`}
+      </div>
+    `;
   }
 
   function visibleAnnouncements() {
@@ -2040,39 +2121,80 @@
   }
 
   function adminVehicleLoans() {
+    const search = String(state.loanSearch || "").trim().toUpperCase();
+    const date = String(state.loanDateFilter || "");
     const items = [...(state.data.vehicle_loans || [])]
       .filter((item) => state.loanStatusFilter ? item.status === state.loanStatusFilter : item.status !== "completed")
+      .filter((item) => !search || [
+        item.plate_no,
+        item.requested_by_name,
+        item.purpose,
+        item.notes,
+        loanStatusText(item.status)
+      ].join(" ").toUpperCase().includes(search))
+      .filter((item) => !date || loanTouchesDate(item, date))
       .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
-    const loanStatuses = [["", "\u9032\u884c\u4e2d"], ["pending_approval", "\u5f85\u5be9\u6838"], ["approved", "\u5df2\u6838\u51c6\u501f\u7528\u4e2d"], ["return_pending", "\u5f85\u78ba\u8a8d\u9084\u8eca"], ["completed", "\u5df2\u7d50\u6848"]];
     return `
-      <div class="section-head"><div><h2>\u8eca\u8f1b\u79df\u501f</h2><small>\u767b\u5165\u540c\u4ec1\uff1a${escapeHtml(state.adminProfile?.name || "\u7ba1\u7406\u8005")}</small></div><button class="primary-btn" data-modal="vehicleLoan">\u767b\u8a18\u4f7f\u7528</button></div>
-      <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
+      <div class="section-head"><div><h2>車輛租借</h2><small>登入同仁：${escapeHtml(state.adminProfile?.name || "管理者")}</small></div><button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div>
+      <form id="loanSearchForm" class="loan-filter-panel">
+        <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button type="button" class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
+        <div class="loan-search-row">
+          <input name="search" value="${escapeHtml(state.loanSearch)}" placeholder="搜尋車牌、申請人、用途或備註">
+          <input name="date" type="date" value="${escapeHtml(state.loanDateFilter)}" title="查看指定日期被誰使用">
+          <button class="primary-btn">篩選</button>
+          <button class="ghost-btn" type="button" data-action="clear-loan-search">清除</button>
+        </div>
+      </form>
       <div class="loan-list">
         ${items.length ? items.map((item) => `<article class="loan-row ${item.status === "completed" ? "is-muted" : ""}">
-          <div class="plate-chip">${escapeHtml(item.plate_no)}</div>
-          <div><small>\u7533\u8acb\u4eba</small><strong>${escapeHtml(item.requested_by_name)}</strong></div>
-          <div><small>\u501f\u8eca\u6642\u9593</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
-          <div><small>\u9810\u8a08\u9084\u8eca</small><strong>${fmtDateTime(item.return_at)}</strong></div>
-          <div><small>\u5be6\u969b\u9084\u8eca</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
-          <div><small>\u7528\u9014</small><strong>${escapeHtml(item.purpose)}</strong></div>
-          <span class="status ${item.status === "completed" ? "done" : item.status === "return_pending" ? "returned" : "pending"}">${escapeHtml(loanStatuses.find(([value]) => value === item.status)?.[1] || item.status)}</span>
+          <div class="loan-row-plate"><span class="plate-chip">${escapeHtml(item.plate_no || "-")}</span><span class="status ${loanStatusClass(item.status)}">${escapeHtml(loanStatusText(item.status))}</span></div>
+          <div class="loan-row-main">
+            <div class="loan-row-facts">
+              <div><small>申請人</small><strong>${escapeHtml(item.requested_by_name || "-")}</strong></div>
+              <div><small>用途</small><strong>${escapeHtml(item.purpose || "-")}</strong></div>
+              <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
+              <div><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+              <div><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
+            </div>
+            <p class="loan-row-note"><b>備註</b>${escapeHtml(item.notes || "無備註")}</p>
+          </div>
           <div class="actions">
             <button class="soft-btn" data-loan-detail="${item.id}">查看</button>
-            ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">\u540c\u610f\u501f\u8eca</button>` : ""}
-            ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">\u767b\u8a18\u9084\u8eca</button>` : ""}
-            ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">\u78ba\u8a8d\u7d50\u6848</button>` : ""}
-            ${state.adminProfile?.is_super_admin ? `<button class="danger-btn" data-delete="vehicle_loans:${item.id}">\u522a\u9664</button>` : ""}
+            ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">同意借車</button>` : ""}
+            ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">登記還車</button>` : ""}
+            ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">確認結案</button>` : ""}
+            ${state.adminProfile?.is_super_admin ? `<button class="danger-btn" data-delete="vehicle_loans:${item.id}">刪除</button>` : ""}
           </div>
-        </article>`).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u79df\u501f\u7d00\u9304</div>`}
+        </article>`).join("") : `<div class="empty">目前沒有符合條件的租借紀錄</div>`}
       </div>
     `;
+  }
+
+  function loanStatusText(status) {
+    return loanStatuses.find(([value]) => value === status)?.[1] || status || "-";
+  }
+
+  function loanStatusClass(status) {
+    return status === "completed" ? "done" : status === "return_pending" ? "returned" : "pending";
+  }
+
+  function loanTouchesDate(item, date) {
+    const target = new Date(`${date}T12:00:00`);
+    if (Number.isNaN(target.getTime())) return true;
+    const dayStart = new Date(`${date}T00:00:00`).getTime();
+    const dayEnd = new Date(`${date}T23:59:59`).getTime();
+    const borrow = new Date(item.borrow_at || item.created_at || "").getTime();
+    const plannedReturn = new Date(item.return_at || item.actual_return_at || item.borrow_at || "").getTime();
+    if (Number.isNaN(borrow)) return String(item.borrow_at || item.return_at || item.actual_return_at || "").includes(date);
+    const end = Number.isNaN(plannedReturn) ? borrow : plannedReturn;
+    return borrow <= dayEnd && end >= dayStart;
   }
 
   function openLoanDetail(id) {
     const item = (state.data.vehicle_loans || []).find((row) => row.id === id);
     if (!item) return;
-    const statusText = loanStatuses.find(([value]) => value === item.status)?.[1] || item.status || "-";
-    const statusClass = item.status === "completed" ? "done" : item.status === "return_pending" ? "returned" : "pending";
+    const statusText = loanStatusText(item.status);
+    const statusClass = loanStatusClass(item.status);
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
@@ -3915,6 +4037,12 @@
         await loadStorageUsage();
       }
     }
+    if (target.dataset.action === "clear-loan-search") {
+      state.loanSearch = "";
+      state.loanDateFilter = "";
+      state.loanStatusFilter = "";
+      render();
+    }
     if (target.dataset.driverFilter) {
       state.driverStatusFilter = target.dataset.driverFilter;
       render();
@@ -4029,6 +4157,13 @@
       state.serviceTypeFilter = String(data.get("type") || "");
       state.serviceMonthFilter = String(data.get("month") || "");
       state.serviceVehicleFilter = String(data.get("vehicle") || "");
+      render();
+    }
+    if (e.target.id === "loanSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.loanSearch = String(data.get("search") || "").trim();
+      state.loanDateFilter = String(data.get("date") || "");
       render();
     }
   });

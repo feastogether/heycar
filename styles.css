@@ -587,10 +587,80 @@ a { text-decoration: none; }
 .feedback-reply { padding: 9px 11px; border-radius: 6px; background: #f8fafc; }
 .feedback-source { padding: 12px; border: 1px solid var(--line); border-radius: 7px; background: #f8fafc; }
 .compact-filter-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.loan-filter-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.loan-filter-panel .compact-filter-bar { margin-bottom: 0; flex-wrap: wrap; }
+.loan-search-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(150px, .35fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
 .service-filter-bar { display: grid; grid-template-columns: minmax(220px, 1.5fr) minmax(180px, 1.1fr) minmax(140px, .8fr) minmax(140px, .8fr) auto; gap: 8px; margin-bottom: 14px; }
 .plate-chip { width: fit-content; padding: 5px 9px; border: 1.5px solid #344054; border-radius: 5px; background: #fff; color: #182033; font-weight: 900; letter-spacing: 1px; white-space: nowrap; }
-.loan-row { grid-template-columns: auto repeat(4, minmax(100px, 1fr)) auto auto; }
-.loan-row > div { display: grid; gap: 2px; }
+.loan-row {
+  grid-template-columns: minmax(120px, .25fr) minmax(0, 1fr) auto;
+  align-items: stretch;
+  gap: 14px;
+  padding: 16px;
+}
+.loan-row-plate {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+}
+.loan-row-main { display: grid; gap: 10px; min-width: 0; }
+.loan-row-facts {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(92px, 1fr));
+  gap: 8px;
+}
+.loan-row-facts div {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  background: #fbfdff;
+}
+.loan-row-facts strong {
+  display: block;
+  margin-top: 3px;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 950;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.loan-row-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #f6f8fb;
+  color: #344054;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+}
+.loan-row-note b {
+  margin-right: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.loan-row > .actions {
+  align-self: center;
+  justify-content: flex-end;
+  min-width: 150px;
+}
 .loan-row small, .access-user-row small { color: var(--muted); font-size: 10px; font-weight: 800; }
 .compact-detail-modal { max-width: 760px; }
 .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -1018,6 +1088,7 @@ textarea { min-height: 100px; resize: vertical; }
   width: 4px;
   background: var(--brand);
   opacity: .9;
+  display: none;
 }
 .feature-card:hover {
   transform: translateY(-3px);
@@ -1476,6 +1547,108 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .calendar-detail-grid dt { color: var(--muted); font-size: 11px; font-weight: 900; }
 .calendar-detail-grid dd { margin: 3px 0 0; color: var(--ink); font-size: 13px; font-weight: 850; }
 .calendar-detail-content { margin: 0; color: var(--ink); font-size: 14px; line-height: 1.6; white-space: pre-line; }
+.my-vehicle-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.my-vehicle-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #fff;
+  box-shadow: 0 10px 26px rgba(24,32,51,.045);
+}
+.my-vehicle-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #edf1f6;
+}
+.my-vehicle-head strong {
+  display: block;
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 950;
+}
+.my-vehicle-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.my-vehicle-info {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.my-vehicle-info div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #edf1f6;
+  border-radius: 9px;
+  background: #fbfdff;
+}
+.my-vehicle-info small,
+.my-vehicle-schedule h3 {
+  display: block;
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+}
+.my-vehicle-info strong,
+.my-vehicle-info a {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 950;
+  text-decoration: none;
+}
+.my-vehicle-schedule {
+  display: grid;
+  gap: 8px;
+}
+.my-vehicle-event {
+  display: grid;
+  grid-template-columns: minmax(130px, .6fr) auto minmax(90px, .5fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 9px;
+  border: 1px solid rgba(24,32,51,.08);
+  background: #f8fafc;
+}
+.my-vehicle-event.maintenance { background: #fff7f7; }
+.my-vehicle-event.repair { background: #fff8ef; }
+.my-vehicle-event.tires { background: #f4f8ff; }
+.my-vehicle-event time {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.my-vehicle-event strong {
+  width: fit-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 950;
+}
+.my-vehicle-event span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 850;
+}
+.my-vehicle-event p {
+  margin: 0;
+  color: #475467;
+  font-size: 13px;
+  white-space: pre-line;
+}
+.mini-empty { padding: 18px; }
 .lux-item-actions {
   display: flex;
   justify-content: flex-end;
@@ -2767,6 +2940,19 @@ tr:last-child td { border-bottom: 0; }
   .airport-weather small { display: block; font-size: 9px; white-space: nowrap; }
   .topbar .ghost-btn { min-height: 32px; padding: 6px 10px; font-size: 13px; }
   .driver-page-head h2 { font-size: 21px; }
+  .my-vehicle-list { grid-template-columns: 1fr; gap: 12px; }
+  .my-vehicle-card { padding: 14px; }
+  .my-vehicle-head { align-items: flex-start; }
+  .my-vehicle-info { grid-template-columns: 1fr; }
+  .my-vehicle-event { grid-template-columns: 1fr; gap: 5px; }
+  .loan-search-row { grid-template-columns: 1fr; }
+  .loan-row {
+    grid-template-columns: 1fr;
+    padding: 13px;
+  }
+  .loan-row-plate { flex-direction: row; align-items: center; justify-content: space-between; }
+  .loan-row-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .loan-row > .actions { min-width: 0; justify-content: stretch; }
   .flight-search { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .flight-source-toggle,
   .flight-toggle { min-height: 40px; }
