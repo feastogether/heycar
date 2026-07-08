@@ -1106,7 +1106,6 @@
         <span class="feature-icon">${iconSvg(featureIcons[view])}</span>
         <span class="feature-copy">
           <strong>${title}</strong>
-          <small>${desc}</small>
         </span>
       </button>
     `;
@@ -2072,19 +2071,36 @@
   function openLoanDetail(id) {
     const item = (state.data.vehicle_loans || []).find((row) => row.id === id);
     if (!item) return;
+    const statusText = loanStatuses.find(([value]) => value === item.status)?.[1] || item.status || "-";
+    const statusClass = item.status === "completed" ? "done" : item.status === "return_pending" ? "returned" : "pending";
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
     modal.innerHTML = `
-      <div class="modal compact-detail-modal">
-        <div class="section-head"><h3>車輛租借詳情</h3><button class="ghost-btn" data-close-modal>關閉</button></div>
-        <div class="detail-grid">
-          <div><small>車牌</small><strong>${escapeHtml(item.plate_no || "-")}</strong></div>
-          <div><small>申請人</small><strong>${escapeHtml(item.requested_by_name || "-")}</strong></div>
-          <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
-          <div><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
-          <div><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
-          <div><small>用途</small><strong>${escapeHtml(item.purpose || "-")}</strong></div>
-          <div class="full"><small>備註</small><p>${escapeHtml(item.notes || "無備註")}</p></div>
+      <div class="modal loan-detail-modal">
+        <div class="loan-detail-hero">
+          <div>
+            <small>車輛租借單</small>
+            <div class="loan-detail-title">
+              <span class="plate-chip">${escapeHtml(item.plate_no || "-")}</span>
+              <span class="status ${statusClass}">${escapeHtml(statusText)}</span>
+            </div>
+          </div>
+          <button class="icon-close-btn" data-close-modal aria-label="關閉">${iconSvg("M6 6l12 12M18 6 6 18")}</button>
+        </div>
+        <div class="loan-detail-body">
+          <section class="loan-detail-summary">
+            <div><small>申請人</small><strong>${escapeHtml(item.requested_by_name || "-")}</strong></div>
+            <div><small>用途</small><strong>${escapeHtml(item.purpose || "-")}</strong></div>
+          </section>
+          <section class="loan-timeline">
+            <div class="loan-time-point active"><span></span><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
+            <div class="loan-time-point"><span></span><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
+            <div class="loan-time-point ${item.actual_return_at ? "done" : ""}"><span></span><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
+          </section>
+          <section class="loan-note-panel">
+            <small>備註</small>
+            <p>${escapeHtml(item.notes || "無備註")}</p>
+          </section>
         </div>
       </div>
     `;
