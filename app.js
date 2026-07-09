@@ -35,6 +35,9 @@
     serviceTypeFilter: "",
     serviceMonthFilter: "",
     serviceVehicleFilter: "",
+    bomSearch: "",
+    bomSupplierFilter: "",
+    bomStatusFilter: "",
     loanStatusFilter: "",
     messageReadFilter: "unread",
     storageFiles: [],
@@ -1916,33 +1919,91 @@
   }
 
   function adminBom() {
-    const parts = state.data.bom_parts || [];
-    const packages = state.data.bom_packages || [];
+    const parts = filteredBomParts();
+    const packages = filteredBomPackages();
+    const suppliers = bomSuppliers();
     return `
-      <div class="section-head"><div><h2>BOM表</h2><small>依保修廠管理零件庫與套餐庫，供車輛履歷自動帶入</small></div><div class="actions"><button class="soft-btn" data-modal="bomPackage">新增套餐</button><button class="primary-btn" data-modal="bomPart">新增零件</button></div></div>
-      <section class="bom-grid">
-        <div class="panel">
-          <div class="subsection-head"><h3>零件庫</h3><small>${parts.length} 筆</small></div>
-          ${table(["供應商", "料號", "名稱", "單價", "操作"], parts.map((item) => [
-            escapeHtml(item.supplier || "-"),
-            escapeHtml(item.part_no || "-"),
-            escapeHtml(item.name || "-"),
-            `$${Number(item.unit_price || 0).toLocaleString()}`,
-            rowActions("bomPart", "bom_parts", item.id)
-          ]))}
+      <div class="section-head">
+        <div><h2>BOM表</h2><small>依保修廠管理零件庫與套餐庫，供車輛履歷自動帶入</small></div>
+        <div class="actions"><button class="soft-btn" data-modal="bomPackage">新增套餐</button><button class="primary-btn" data-modal="bomPart">新增零件</button></div>
+      </div>
+      <form id="bomSearchForm" class="compact-filter-bar bom-filter-bar">
+        <input name="search" value="${escapeHtml(state.bomSearch)}" placeholder="搜尋料號、名稱、套餐、供應商">
+        <select name="supplier">
+          <option value="">全部供應商</option>
+          ${suppliers.map((supplier) => `<option value="${escapeHtml(supplier)}" ${state.bomSupplierFilter === supplier ? "selected" : ""}>${escapeHtml(supplier)}</option>`).join("")}
+        </select>
+        <select name="status">
+          <option value="">全部狀態</option>
+          <option value="active" ${state.bomStatusFilter === "active" ? "selected" : ""}>啟用</option>
+          <option value="inactive" ${state.bomStatusFilter === "inactive" ? "selected" : ""}>停用</option>
+        </select>
+        <button class="primary-btn" type="submit">篩選</button>
+        <button class="ghost-btn" type="button" data-action="clear-bom-search">清除</button>
+      </form>
+      <section class="bom-section panel">
+        <div class="subsection-head"><h3>零件庫</h3><small>${parts.length} / ${(state.data.bom_parts || []).length} 筆</small></div>
+        <div class="bom-list">
+          ${parts.length ? parts.map((item) => bomPartListRow(item)).join("") : `<div class="empty">沒有符合條件的零件</div>`}
         </div>
-        <div class="panel">
-          <div class="subsection-head"><h3>套餐庫</h3><small>${packages.length} 筆</small></div>
-          ${table(["供應商", "套餐號", "套餐內容", "價格", "操作"], packages.map((item) => [
-            escapeHtml(item.supplier || "-"),
-            escapeHtml(item.package_code || "-"),
-            escapeHtml(item.content || "-"),
-            `$${Number(item.price || 0).toLocaleString()}`,
-            rowActions("bomPackage", "bom_packages", item.id)
-          ]))}
+      </section>
+      <section class="bom-section panel">
+        <div class="subsection-head"><h3>套餐庫</h3><small>${packages.length} / ${(state.data.bom_packages || []).length} 筆</small></div>
+        <div class="bom-list">
+          ${packages.length ? packages.map((item) => bomPackageListRow(item)).join("") : `<div class="empty">沒有符合條件的套餐</div>`}
         </div>
       </section>
     `;
+  }
+
+  function bomSuppliers() {
+    return Array.from(new Set([
+      ...(state.data.bom_parts || []).map((item) => item.supplier),
+      ...(state.data.bom_packages || []).map((item) => item.supplier)
+    ].filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), "zh-Hant"));
+  }
+
+  function bomMatchesFilter(item, fields) {
+    const keyword = normalizedText(state.bomSearch);
+    const supplier = state.bomSupplierFilter;
+    const status = state.bomStatusFilter;
+    if (supplier && item.supplier !== supplier) return false;
+    if (status === "active" && item.active === false) return false;
+    if (status === "inactive" && item.active !== false) return false;
+    if (!keyword) return true;
+    return fields.some((field) => normalizedText(item[field]).includes(keyword));
+  }
+
+  function filteredBomParts() {
+    return [...(state.data.bom_parts || [])]
+      .filter((item) => bomMatchesFilter(item, ["supplier", "part_no", "name", "notes"]))
+      .sort((a, b) => String(a.supplier || "").localeCompare(String(b.supplier || ""), "zh-Hant") || String(a.part_no || "").localeCompare(String(b.part_no || ""), "zh-Hant"));
+  }
+
+  function filteredBomPackages() {
+    return [...(state.data.bom_packages || [])]
+      .filter((item) => bomMatchesFilter(item, ["supplier", "package_code", "content", "notes"]))
+      .sort((a, b) => String(a.supplier || "").localeCompare(String(b.supplier || ""), "zh-Hant") || String(a.package_code || "").localeCompare(String(b.package_code || ""), "zh-Hant"));
+  }
+
+  function bomPartListRow(item) {
+    return `<article class="bom-row ${item.active === false ? "is-muted" : ""}">
+      <div class="bom-code">${escapeHtml(item.part_no || "-")}</div>
+      <div class="bom-main"><strong>${escapeHtml(item.name || "-")}</strong><small>${escapeHtml(item.supplier || "未指定供應商")}</small></div>
+      <div class="bom-price">$${Number(item.unit_price || 0).toLocaleString()}</div>
+      <span class="bom-status ${item.active === false ? "off" : "on"}">${item.active === false ? "停用" : "啟用"}</span>
+      ${rowActions("bomPart", "bom_parts", item.id)}
+    </article>`;
+  }
+
+  function bomPackageListRow(item) {
+    return `<article class="bom-row package ${item.active === false ? "is-muted" : ""}">
+      <div class="bom-code">${escapeHtml(item.package_code || "-")}</div>
+      <div class="bom-main"><strong>${escapeHtml(item.content || "-")}</strong><small>${escapeHtml(item.supplier || "未指定供應商")}</small></div>
+      <div class="bom-price">$${Number(item.price || 0).toLocaleString()}</div>
+      <span class="bom-status ${item.active === false ? "off" : "on"}">${item.active === false ? "停用" : "啟用"}</span>
+      ${rowActions("bomPackage", "bom_packages", item.id)}
+    </article>`;
   }
 
 
@@ -3230,8 +3291,8 @@
 
   function servicePartRow(part = {}) {
     return `<div class="service-part-row" data-service-part-row>
-      <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號或套餐號">
-      <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱或套餐內容">
+      <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號或套餐號" title="輸入關鍵字後按 Enter 搜尋 BOM">
+      <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱或套餐內容" title="輸入關鍵字後按 Enter 搜尋 BOM">
       <input data-service-part-field="quantity" type="number" min="0" step="1" value="${escapeHtml(part.quantity ?? "")}" placeholder="數量">
       <input data-service-part-field="unit_price" type="number" min="0" step="1" value="${escapeHtml(part.unit_price ?? "")}" placeholder="單價">
       <input data-service-part-field="amount" type="number" min="0" step="1" value="${escapeHtml(part.amount ?? "")}" placeholder="金額">
@@ -3273,12 +3334,12 @@
     return parts;
   }
 
-  function updateServicePartRow(row, form) {
+  function updateServicePartRow(row, form, options = {}) {
     if (!row) return;
     const field = (name) => row.querySelector(`[data-service-part-field="${name}"]`);
     const partNo = String(field("part_no")?.value || "").trim();
     const supplier = String(form?.querySelector('[name="vendor"]')?.value || "").trim();
-    const match = findBomEntry(partNo, supplier);
+    const match = options.applyBom ? findBomEntry(partNo, supplier) : null;
     if (match) {
       if (field("name")) field("name").value = match.name;
       if (field("quantity") && !Number(field("quantity").value || 0)) field("quantity").value = match.quantity || 1;
@@ -3288,6 +3349,74 @@
     const unitPrice = Number(field("unit_price")?.value || 0);
     const amount = field("amount");
     if (amount && quantity && unitPrice) amount.value = String(quantity * unitPrice);
+  }
+
+  function searchBomParts(query, supplier) {
+    const keyword = normalizedText(query);
+    if (!keyword) return [];
+    const normalizedSupplier = normalizedText(supplier);
+    const rows = (state.data.bom_parts || []).filter((item) => item.active !== false);
+    const supplierRows = normalizedSupplier ? rows.filter((item) => normalizedText(item.supplier) === normalizedSupplier) : rows;
+    const source = supplierRows.length ? supplierRows : rows;
+    return source
+      .filter((item) => normalizedText(item.part_no).includes(keyword) || normalizedText(item.name).includes(keyword))
+      .sort((a, b) => {
+        const aExact = normalizedText(a.part_no) === keyword || normalizedText(a.name) === keyword ? 0 : 1;
+        const bExact = normalizedText(b.part_no) === keyword || normalizedText(b.name) === keyword ? 0 : 1;
+        return aExact - bExact || String(a.part_no || "").localeCompare(String(b.part_no || ""), "zh-Hant");
+      })
+      .slice(0, 30);
+  }
+
+  function applyBomPartToServiceRow(row, part) {
+    const set = (name, value) => {
+      const inputEl = row?.querySelector(`[data-service-part-field="${name}"]`);
+      if (inputEl) inputEl.value = value ?? "";
+    };
+    set("part_no", part.part_no || "");
+    set("name", part.name || "");
+    if (!Number(row?.querySelector('[data-service-part-field="quantity"]')?.value || 0)) set("quantity", 1);
+    set("unit_price", Number(part.unit_price || 0));
+    updateServicePartRow(row, row?.closest("form"));
+    collectServiceParts(row?.closest("form"));
+  }
+
+  async function showServicePartMatchDialog(row, form, query) {
+    const supplier = String(form?.querySelector('[name="vendor"]')?.value || "").trim();
+    const matches = searchBomParts(query, supplier);
+    if (!matches.length) {
+      await showAlert("找不到符合的 BOM 零件，請換一個料號或名稱關鍵字。", "沒有找到零件");
+      return;
+    }
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop part-match-backdrop";
+    modal.innerHTML = `<div class="modal part-match-modal">
+      <div class="loan-detail-hero part-match-hero">
+        <div>
+          <small>BOM 零件搜尋</small>
+          <h3>${escapeHtml(query)}</h3>
+          <p>${supplier ? `已優先比對 ${escapeHtml(supplier)} 的零件庫` : "從全部供應商零件庫搜尋"}</p>
+        </div>
+        <button class="icon-close-btn" data-close-modal aria-label="關閉"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="part-match-list">
+        ${matches.map((part, index) => `<button type="button" class="part-match-row" data-part-match="${index}">
+          <span class="bom-code">${escapeHtml(part.part_no || "-")}</span>
+          <strong>${escapeHtml(part.name || "-")}</strong>
+          <small>${escapeHtml(part.supplier || "未指定供應商")}</small>
+          <b>$${Number(part.unit_price || 0).toLocaleString()}</b>
+        </button>`).join("")}
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener("click", (event) => {
+      const matchButton = event.target.closest("[data-part-match]");
+      if (matchButton) {
+        applyBomPartToServiceRow(row, matches[Number(matchButton.dataset.partMatch)]);
+        modal.remove();
+      }
+      if (event.target === modal || event.target.closest("[data-close-modal]")) modal.remove();
+    });
   }
 
   function findBomEntry(code, supplier) {
@@ -4017,6 +4146,12 @@
       state.vehicleDealerFilter = "";
       render();
     }
+    if (target.dataset.action === "clear-bom-search") {
+      state.bomSearch = "";
+      state.bomSupplierFilter = "";
+      state.bomStatusFilter = "";
+      render();
+    }
     if (target.dataset.action === "clear-driver-search") {
       state.driverSearch = "";
       render();
@@ -4159,6 +4294,14 @@
       state.serviceVehicleFilter = String(data.get("vehicle") || "");
       render();
     }
+    if (e.target.id === "bomSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.bomSearch = String(data.get("search") || "").trim();
+      state.bomSupplierFilter = String(data.get("supplier") || "");
+      state.bomStatusFilter = String(data.get("status") || "");
+      render();
+    }
     if (e.target.id === "loanSearchForm") {
       e.preventDefault();
       const data = new FormData(e.target);
@@ -4168,13 +4311,23 @@
     }
   });
 
+  document.addEventListener("keydown", async (e) => {
+    const serviceField = e.target.closest("[data-service-part-field]");
+    if (!serviceField) return;
+    const fieldName = serviceField.dataset.servicePartField;
+    if (e.key !== "Enter" || !["part_no", "name"].includes(fieldName)) return;
+    e.preventDefault();
+    await showServicePartMatchDialog(serviceField.closest("[data-service-part-row]"), serviceField.closest("form"), serviceField.value);
+  });
+
   document.addEventListener("input", (e) => {
     if (e.target.closest("[data-rich-editor]")) {
       syncRichEditors(e.target.closest("form") || document);
       return;
     }
     if (e.target.closest("[data-service-part-field]")) {
-      updateServicePartRow(e.target.closest("[data-service-part-row]"), e.target.closest("form"));
+      const fieldName = e.target.closest("[data-service-part-field]").dataset.servicePartField;
+      updateServicePartRow(e.target.closest("[data-service-part-row]"), e.target.closest("form"), { applyBom: fieldName === "part_no" });
       collectServiceParts(e.target.closest("form"));
       return;
     }
