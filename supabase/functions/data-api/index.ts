@@ -352,41 +352,96 @@ Deno.serve(async (req) => {
       }
     }
     if (session.session_type === "partner") {
-      if (body.table !== "insurance_requests" || body.action !== "update") {
+      if (body.table !== "insurance_requests" || !["insert", "update"].includes(body.action)) {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       }
+
       const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();
-      const allowed = partner?.partner_type === "broker"
-        ? [
-          "status", "quote_amount", "broker_notes", "broker_reply",
-          "quote_url", "quote_name",
-          "application_url", "application_name",
-          "amendment_stamped_url", "amendment_stamped_name",
-          "policy_url", "policy_name",
-          "receipt_url", "receipt_name",
-          "document_policy_url", "document_policy_name",
-          "document_receipt_url", "document_receipt_name",
-          "amendment_files",
-          "updated_at"
-        ]
-        : ["status", "dealer_reply", "updated_at"];
-      body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
-      if (partner?.partner_type === "dealer" && !["quote_confirmed_issue_application", "vehicle_dept_review"].includes(body.record.status)) {
-        return json({ error: "ACTION_NOT_ALLOWED" }, 403);
-      }
-      if (partner?.partner_type === "broker") {
-        const { data: current } = await db.from("insurance_requests").select("status,request_type").eq("id", body.id).single();
-        const allowedTransitions: Record<string, string[]> = {
-          broker_quoting: ["vehicle_dept_review", "broker_returned"],
-          quote_confirmed_issue_application: ["stamping"],
-          awaiting_policy: ["payment_pending"],
-          receipt_pending: ["completed"],
-          amendment_requested: ["amendment_stamping"],
-          amendment_stamped: ["amendment_completed"],
-          document_requested: ["document_received"]
+      if (!partner) return json({ error: "PARTNER_NOT_FOUND" }, 403);
+
+      if (body.action === "insert") {
+        if (partner.partner_type !== "dealer") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+        const allowedInsert = [
+          "id", "created_at", "vehicle_id", "plate_no", "dealer_partner_id", "request_type", "status",
+          "insurance_type", "passenger_limit", "coverage_spec", "vehicle_body_limit",
+          "deductible", "requested_driver", "driver_change_names", "lienholder",
+          "assigned_insurance_company", "vehicle_dept_notes", "insurance_notes",
+          "document_request_type", "license_files", "created_by_partner_type", "updated_at"
+        ];
+        body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowedInsert.includes(key)));
+        body.record.dealer_partner_id = session.partner_id;
+        body.record.created_by_partner_type = "dealer";
+        const requestType = String(body.record.request_type || "");
+        if (requestType === "document") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+        const initialStatus: Record<string, string> = {
+          quote: "broker_quoting",
+          amendment: "amendment_requested",
+          addition: "addition_quoting"
         };
-        if (body.record.status && !allowedTransitions[current?.status]?.includes(body.record.status)) {
-          return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
+        body.record.status = initialStatus[requestType] || "broker_quoting";
+        if (body.record.vehicle_id) {
+          const { data: vehicle } = await db
+            .from("vehicles")
+            .select("dealer_partner_id,plate_no")
+            .eq("id", body.record.vehicle_id)
+            .single();
+          if (!vehicle || vehicle.dealer_partner_id !== session.partner_id) {
+            return json({ error: "VEHICLE_NOT_ALLOWED" }, 403);
+          }
+          body.record.plate_no = vehicle.plate_no || body.record.plate_no || "";
+        }
+      }
+
+      if (body.action === "update") {
+        const { data: current } = await db
+          .from("insurance_requests")
+          .select("status,request_type,dealer_partner_id")
+          .eq("id", body.id)
+          .single();
+        if (!current) return json({ error: "INSURANCE_REQUEST_NOT_FOUND" }, 404);
+
+        if (partner.partner_type === "dealer") {
+          if (current.dealer_partner_id !== session.partner_id) return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+          const allowed = ["status", "dealer_reply", "updated_at"];
+          body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
+          const allowedTransitions: Record<string, string[]> = {
+            dealer_review: ["stamping", "vehicle_dept_review"],
+            addition_dealer_review: ["addition_stamping"]
+          };
+          if (!body.record.status || !allowedTransitions[current.status]?.includes(body.record.status)) {
+            return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
+          }
+        } else if (partner.partner_type === "broker") {
+          const allowed = [
+            "status", "quote_amount", "broker_notes", "broker_reply",
+            "quote_url", "quote_name",
+            "application_url", "application_name",
+            "amendment_stamped_url", "amendment_stamped_name",
+            "stamped_application_url", "stamped_application_name",
+            "policy_url", "policy_name",
+            "receipt_url", "receipt_name",
+            "document_policy_url", "document_policy_name",
+            "document_receipt_url", "document_receipt_name",
+            "amendment_files",
+            "updated_at"
+          ];
+          body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
+          const allowedTransitions: Record<string, string[]> = {
+            broker_quoting: ["vehicle_dept_review", "broker_returned"],
+            quote_confirmed_issue_application: ["stamping"],
+            awaiting_policy: ["completed", "payment_pending"],
+            receipt_pending: ["completed"],
+            amendment_requested: ["amendment_stamping"],
+            amendment_stamped: ["amendment_return_required", "amendment_return_not_required"],
+            addition_quoting: ["addition_review"],
+            addition_policy_pending: ["addition_completed"],
+            document_requested: ["document_received"]
+          };
+          if (body.record.status && !allowedTransitions[current.status]?.includes(body.record.status)) {
+            return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
+          }
+        } else {
+          return json({ error: "ACTION_NOT_ALLOWED" }, 403);
         }
       }
     }

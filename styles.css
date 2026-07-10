@@ -814,6 +814,51 @@ a { text-decoration: none; }
 .permission-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .permission-chips span { padding: 3px 7px; border-radius: 999px; background: #eef2f6; color: #344054; font-size: 10px; font-weight: 800; }
 .access-user-row { grid-template-columns: minmax(140px, .7fr) minmax(200px, 1fr) auto auto; }
+.access-card-grid,
+.partner-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.access-card,
+.partner-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(24,32,51,.04);
+}
+.access-avatar,
+.partner-logo-tile {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  color: var(--ink);
+  font-size: 18px;
+  font-weight: 950;
+  overflow: hidden;
+}
+.partner-logo-tile img { width: 100%; height: 100%; object-fit: contain; padding: 7px; }
+.access-card-body,
+.partner-card-body { display: grid; gap: 8px; min-width: 0; }
+.access-card-head,
+.partner-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.access-card-head strong,
+.partner-card-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
+.access-card-body small,
+.partner-card-meta { color: var(--muted); font-size: 12px; font-weight: 750; }
+.partner-card-meta { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.partner-card p { margin: 0; color: #475467; font-size: 12px; line-height: 1.5; }
+.access-card .actions,
+.partner-card .actions { justify-content: flex-end; }
 
 .login-wrap {
   min-height: 100vh;
@@ -2587,23 +2632,67 @@ button.calendar-pill:hover { filter: brightness(.96); }
   background: #fff8f7;
   color: var(--ink);
 }
+.insurance-flow-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.insurance-flow-overview > div {
+  min-height: 78px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fff, #fbfcfe);
+  box-shadow: 0 8px 22px rgba(24,32,51,.035);
+}
+.insurance-flow-overview b {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 950;
+}
+.insurance-flow-overview span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.55;
+}
 .insurance-request-list { display: grid; gap: 8px; }
 .insurance-request-row {
-  padding: 11px 13px;
+  padding: 13px 14px;
   border: 1px solid var(--line);
-  border-left: 3px solid var(--brand);
-  border-radius: 7px;
+  border-left: 4px solid var(--brand);
+  border-radius: 10px;
   background: #fff;
+  box-shadow: 0 7px 20px rgba(24,32,51,.035);
 }
 .insurance-request-row.insurance-stage-broker_quoting { border-left-color: #d97706; }
+.insurance-request-row.insurance-stage-vehicle_dept_review,
+.insurance-request-row.insurance-stage-addition_review,
+.insurance-request-row.insurance-stage-amendment_stamping,
+.insurance-request-row.insurance-stage-addition_stamping,
 .insurance-request-row.insurance-stage-awaiting_admin_quote_confirmation,
 .insurance-request-row.insurance-stage-stamping,
 .insurance-request-row.insurance-stage-payment_pending { border-left-color: #dc2626; background: #fffafa; }
+.insurance-request-row.insurance-stage-dealer_review,
+.insurance-request-row.insurance-stage-addition_dealer_review,
+.insurance-request-row.insurance-stage-addition_policy_pending,
+.insurance-request-row.insurance-stage-document_requested,
+.insurance-request-row.insurance-stage-document_received,
 .insurance-request-row.insurance-stage-awaiting_dealer_confirmation,
 .insurance-request-row.insurance-stage-quote_confirmed_issue_application,
 .insurance-request-row.insurance-stage-awaiting_policy,
 .insurance-request-row.insurance-stage-receipt_pending { border-left-color: #2563eb; }
-.insurance-request-row.insurance-stage-completed { border-left-color: #15803d; background: #f8fff9; }
+.insurance-request-row.insurance-stage-amendment_requested,
+.insurance-request-row.insurance-stage-addition_quoting { border-left-color: #b45309; }
+.insurance-request-row.insurance-stage-broker_returned,
+.insurance-request-row.insurance-stage-amendment_return_required,
+.insurance-request-row.insurance-stage-amendment_return_not_required { border-left-color: #7c3aed; background: #fbf8ff; }
+.insurance-request-row.insurance-stage-completed,
+.insurance-request-row.insurance-stage-amendment_completed,
+.insurance-request-row.insurance-stage-addition_completed { border-left-color: #15803d; background: #f8fff9; }
 .insurance-row-main {
   display: grid;
   grid-template-columns: auto minmax(180px, 1fr) auto;
@@ -2633,6 +2722,23 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-size: 11px;
   font-weight: 900;
 }
+.insurance-stage-vehicle_dept_review .insurance-status,
+.insurance-stage-addition_review .insurance-status,
+.insurance-stage-stamping .insurance-status,
+.insurance-stage-addition_stamping .insurance-status,
+.insurance-stage-amendment_stamping .insurance-status { background: #fee2e2; color: #b91c1c; }
+.insurance-stage-dealer_review .insurance-status,
+.insurance-stage-addition_dealer_review .insurance-status,
+.insurance-stage-awaiting_policy .insurance-status,
+.insurance-stage-addition_policy_pending .insurance-status,
+.insurance-stage-document_requested .insurance-status,
+.insurance-stage-document_received .insurance-status { background: #dbeafe; color: #1d4ed8; }
+.insurance-stage-broker_returned .insurance-status,
+.insurance-stage-amendment_return_required .insurance-status,
+.insurance-stage-amendment_return_not_required .insurance-status { background: #ede9fe; color: #6d28d9; }
+.insurance-stage-completed .insurance-status,
+.insurance-stage-amendment_completed .insurance-status,
+.insurance-stage-addition_completed .insurance-status { background: #dcfce7; color: #15803d; }
 .insurance-status.step-8 { background: #dcfce7; color: #15803d; }
 .insurance-row-details {
   display: flex;
@@ -3177,6 +3283,11 @@ tr:last-child td { border-bottom: 0; }
   .attachment-upload-row, .admin-qa-item { grid-template-columns: 1fr; }
   .message-center-row, .feedback-row, .loan-row, .access-user-row { grid-template-columns: 1fr; gap: 8px; }
   .message-center-row > button, .feedback-row .actions, .loan-row .actions, .access-user-row .actions { justify-self: stretch; }
+  .insurance-flow-overview { grid-template-columns: 1fr; }
+  .access-card-grid, .partner-card-grid { grid-template-columns: 1fr; }
+  .insurance-row-main { grid-template-columns: 1fr; align-items: start; }
+  .insurance-card-actions { justify-content: stretch; }
+  .insurance-card-actions > button { flex: 1 1 120px; }
   .compact-filter-bar { flex-wrap: wrap; }
   .service-filter-bar { grid-template-columns: 1fr; }
   .service-record-main, .vehicle-plate-picker, .driver-select-picker { grid-template-columns: 1fr; }

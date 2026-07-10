@@ -84,22 +84,30 @@
   ];
 
   const insuranceStatuses = [
-    ["broker_quoting", "\u4fdd\u7d93\u5831\u50f9\u4e2d"],
-    ["broker_returned", "\u4fdd\u7d93\u9000\u56de\u88dc\u4ef6"],
-    ["vehicle_dept_review", "\u8eca\u8f1b\u90e8\u78ba\u8a8d\u4e2d"],
-    ["dealer_review", "\u5f85\u8eca\u5546\u78ba\u8a8d"],
-    ["quote_confirmed_issue_application", "\u5831\u50f9\u78ba\u8a8d\u8acb\u51fa\u8981\u4fdd\u66f8"],
-    ["stamping", "\u7528\u5370\u4e2d"],
-    ["awaiting_policy", "\u7b49\u5f85\u51fa\u55ae"],
-    ["payment_pending", "\u7b49\u5f85\u4ed8\u6b3e"],
-    ["receipt_pending", "\u7b49\u5f85\u6536\u64da"],
-    ["completed", "\u5b8c\u6210"],
-    ["amendment_requested", "\u6279\u6539\u9700\u6c42"],
-    ["amendment_stamping", "\u6279\u6539\u7528\u5370"],
-    ["amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"],
-    ["amendment_completed", "\u6279\u6539\u7d50\u6848"],
-    ["document_requested", "\u4fdd\u55ae\u6536\u64da\u8acb\u6c42"],
-    ["document_received", "\u6587\u4ef6\u5df2\u56de\u8986"]
+    ["broker_quoting", "保經報價中"],
+    ["broker_returned", "保經退回補件"],
+    ["vehicle_dept_review", "車輛部確認中"],
+    ["dealer_review", "待車商確認"],
+    ["stamping", "車輛部用印中"],
+    ["awaiting_policy", "保經出單中"],
+    ["completed", "完成"],
+    ["amendment_requested", "批改需求"],
+    ["amendment_stamping", "批改用印中"],
+    ["amendment_stamped", "保經確認收件"],
+    ["amendment_return_required", "需寄回"],
+    ["amendment_return_not_required", "不須寄回"],
+    ["amendment_completed", "批改結案"],
+    ["addition_quoting", "批加報價中"],
+    ["addition_review", "批加內容確認"],
+    ["addition_dealer_review", "待車商確認批加"],
+    ["addition_stamping", "批加用印中"],
+    ["addition_policy_pending", "批加保經出單"],
+    ["addition_completed", "批加完成"],
+    ["document_requested", "保單收據補發中"],
+    ["document_received", "文件已回覆"],
+    ["quote_confirmed_issue_application", "報價確認請出要保書"],
+    ["payment_pending", "等待付款"],
+    ["receipt_pending", "等待收據"]
   ];
 
   const labels = {
@@ -1699,28 +1707,42 @@
     return `<span class="insurance-status step-${index}">${escapeHtml(insuranceStatusLabel(status))}</span>`;
   }
 
+  function insuranceRequestTypeLabel(item = {}) {
+    if (item.request_type === "amendment") return "批改申請";
+    if (item.request_type === "addition") return "批加申請";
+    if (item.request_type === "document") return item.document_request_type ? `補發${item.document_request_type}` : "保單/收據補發";
+    return "報價單";
+  }
+
+  function insuranceFinishedStatuses() {
+    return ["completed", "amendment_completed", "addition_completed"];
+  }
+
+  function insurancePrimaryStatuses(requests) {
+    const important = [
+      "broker_quoting", "vehicle_dept_review", "dealer_review", "stamping", "awaiting_policy",
+      "amendment_requested", "amendment_stamping", "amendment_stamped",
+      "addition_quoting", "addition_review", "addition_dealer_review", "addition_stamping", "addition_policy_pending",
+      "document_requested", "document_received", "completed"
+    ];
+    const counts = Object.fromEntries(insuranceStatuses.map(([status]) => [status, requests.filter((item) => item.status === status).length]));
+    return insuranceStatuses.filter(([status]) => counts[status] || state.insuranceStatusFilter === status || important.includes(status));
+  }
+
   function insuranceControlCenter(requests = state.data.insurance_requests || [], editable = false) {
     const counts = Object.fromEntries(insuranceStatuses.map(([status]) => [status, requests.filter((item) => item.status === status).length]));
-    const activeCount = requests.filter((item) => !["completed", "amendment_completed"].includes(item.status)).length;
-    const importantStatuses = new Set([
-      "broker_quoting",
-      "broker_returned",
-      "vehicle_dept_review",
-      "dealer_review",
-      "quote_confirmed_issue_application",
-      "stamping",
-      "awaiting_policy",
-      "payment_pending",
-      "receipt_pending",
-      "completed",
-      "amendment_requested",
-      "document_requested"
-    ]);
-    const filterStatuses = insuranceStatuses.filter(([status]) => counts[status] || state.insuranceStatusFilter === status || importantStatuses.has(status));
+    const activeCount = requests.filter((item) => !insuranceFinishedStatuses().includes(item.status)).length;
+    const filterStatuses = insurancePrimaryStatuses(requests);
     const visibleRequests = requests.filter((item) => state.insuranceStatusFilter
       ? item.status === state.insuranceStatusFilter
-      : !["completed", "amendment_completed"].includes(item.status));
+      : !insuranceFinishedStatuses().includes(item.status));
     return `
+      <div class="insurance-flow-overview">
+        <div><b>報價</b><span>發起報價 → 保經報價 → 車輛部確認 → 車商確認 → 用印 → 保經出單</span></div>
+        <div><b>批改</b><span>發起需求 → 保經收件 → 車輛部用印 → 保經確認 → 車輛部結案</span></div>
+        <div><b>批加</b><span>發起批加 → 保經報價 → 內容確認 → 用印 → 保經提供保單</span></div>
+        <div><b>補發</b><span>車輛部發起 → 保經提供檔案 → 車輛部確認</span></div>
+      </div>
       <div class="insurance-filter-strip">
         <button class="filter-btn ${state.insuranceStatusFilter === "" ? "active" : ""}" data-insurance-filter="">\u9032\u884c\u4e2d<b>${activeCount}</b></button>
         ${filterStatuses.map(([status, label]) => `<button class="filter-btn ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "active" : ""}" data-insurance-filter="${status}">${label}<b>${counts[status] || 0}</b></button>`).join("")}
@@ -1751,8 +1773,8 @@
 
   function insuranceVisibleFiles(item) {
     const isDealer = state.partner?.partner_type === "dealer";
-    const dealerCanSeeQuote = ["dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"].includes(item.status);
-    const dealerCanSeeFinal = ["payment_pending", "receipt_pending", "completed", "document_received"].includes(item.status);
+    const dealerCanSeeQuote = item.request_type === "quote" && ["dealer_review", "stamping", "awaiting_policy", "completed"].includes(item.status);
+    const dealerCanSeeFinal = ["quote", "addition", "document"].includes(item.request_type) && ["completed", "addition_completed", "document_received"].includes(item.status);
     const files = [];
     if (!isDealer || dealerCanSeeQuote) files.push(insuranceFileLink(item, "quote", "\u5831\u50f9\u55ae"));
     if (!isDealer) files.push(jsonFileLinks(item.license_files, "\u99d5\u7167"), jsonFileLinks(item.amendment_files, "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
@@ -1764,26 +1786,40 @@
   function insuranceRequestActions(item, editable) {
     const actions = [];
     if (editable) {
-      actions.push(`<button class="soft-btn" data-modal="insuranceRequest" data-id="${item.id}">\u7de8\u8f2f</button>`);
+      const editModal = item.request_type === "amendment" ? "insuranceAmendmentRequest" : item.request_type === "addition" ? "insuranceAdditionRequest" : item.request_type === "document" ? "insuranceDocumentRequest" : "insuranceRequest";
+      actions.push(`<button class="soft-btn" data-modal="${editModal}" data-id="${item.id}">\u7de8\u8f2f</button>`);
+      actions.push(`<button class="soft-btn" data-modal="insuranceStatusOverride" data-id="${item.id}">調整狀態</button>`);
       actions.push(`<button class="danger-btn" data-delete="insurance_requests:${item.id}">\u522a\u9664</button>`);
       if (item.status === "vehicle_dept_review") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:dealer_review">\u78ba\u8a8d\u7121\u8aa4\u9001\u8eca\u5546</button>`);
+      if (item.status === "addition_review") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:${item.created_by_partner_type === "dealer" ? "addition_dealer_review" : "addition_stamping"}">確認批加內容</button>`);
       if (item.status === "stamping") actions.push(`<button class="primary-btn" data-modal="insuranceStamp" data-id="${item.id}">\u4e0a\u50b3\u7528\u5370\u8981\u4fdd\u66f8</button>`);
+      if (item.status === "addition_stamping") actions.push(`<button class="primary-btn" data-modal="insuranceAdditionStamp" data-id="${item.id}">上傳批加用印檔</button>`);
       if (item.status === "payment_pending") actions.push(`<button class="primary-btn" data-modal="insurancePayment" data-id="${item.id}">\u4ed8\u6b3e\u5b8c\u6210</button>`);
       if (item.status === "amendment_stamping") actions.push(`<button class="primary-btn" data-modal="insuranceAmendmentStamp" data-id="${item.id}">\u4e0a\u50b3\u6279\u6539\u7528\u5370</button>`);
+      if (["amendment_return_required", "amendment_return_not_required"].includes(item.status)) actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:amendment_completed">車輛部結案</button>`);
       if (item.status === "document_received") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:completed">\u5b8c\u6210\u6b78\u6a94</button>`);
     }
     if (state.partner?.partner_type === "broker") {
       if (item.status === "broker_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceQuote" data-id="${item.id}">\u8655\u7406\u5831\u50f9</button>`);
+      if (item.status === "addition_quoting") actions.push(`<button class="primary-btn" data-modal="insuranceAdditionQuote" data-id="${item.id}">處理批加報價</button>`);
       if (item.status === "quote_confirmed_issue_application") actions.push(`<button class="primary-btn" data-modal="insuranceApplication" data-id="${item.id}">\u4e0a\u50b3\u8981\u4fdd\u66f8</button>`);
-      if (item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-modal="insurancePolicy" data-id="${item.id}">\u4e0a\u50b3\u4fdd\u55ae</button>`);
+      if (item.status === "amendment_stamped") {
+        actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:amendment_return_required">確認收件：需寄回</button>`);
+        actions.push(`<button class="soft-btn" data-insurance-status="${item.id}:amendment_return_not_required">確認收件：不須寄回</button>`);
+      }
+      if (item.status === "addition_policy_pending") actions.push(`<button class="primary-btn" data-modal="insuranceAdditionPolicy" data-id="${item.id}">提供批加保單</button>`);
+      if (item.status === "awaiting_policy") actions.push(`<button class="primary-btn" data-modal="insuranceFinalDocs" data-id="${item.id}">提供保單/收據</button>`);
+      if (item.status === "payment_pending") actions.push(`<button class="primary-btn" data-modal="insurancePolicy" data-id="${item.id}">\u4e0a\u50b3\u4fdd\u55ae</button>`);
       if (item.status === "receipt_pending") actions.push(`<button class="primary-btn" data-modal="insuranceReceipt" data-id="${item.id}">\u4e0a\u50b3\u6536\u64da</button>`);
       if (item.status === "amendment_requested") actions.push(`<button class="primary-btn" data-modal="insuranceAmendment" data-id="${item.id}">\u4e0a\u50b3\u6279\u6539\u7533\u8acb\u66f8</button>`);
-      if (item.status === "amendment_stamped") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:amendment_completed">\u6279\u6539\u7d50\u6848</button>`);
       if (item.status === "document_requested") actions.push(`<button class="primary-btn" data-modal="insuranceDocumentReply" data-id="${item.id}">\u4e0a\u50b3\u6587\u4ef6</button>`);
     }
     if (state.partner?.partner_type === "dealer" && item.status === "dealer_review") {
-      actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:quote_confirmed_issue_application">\u78ba\u8a8d\u5831\u50f9</button>`);
+      actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:stamping">\u78ba\u8a8d\u5831\u50f9</button>`);
       actions.push(`<button class="soft-btn" data-insurance-status="${item.id}:vehicle_dept_review">\u66f4\u6539\u9700\u6c42</button>`);
+    }
+    if (state.partner?.partner_type === "dealer" && item.status === "addition_dealer_review") {
+      actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:addition_stamping">確認批加內容</button>`);
     }
     return actions.join("");
   }
@@ -1791,14 +1827,14 @@
   function insuranceRequestRow(item, editable) {
     const partner = (state.data.insurance_partners || []).find((row) => row.id === item.dealer_partner_id);
     const isDealer = state.partner?.partner_type === "dealer";
-    const typeLabel = item.request_type === "amendment" ? "批改申請" : item.request_type === "document" ? "保單收據請求" : (item.insurance_type || "報價請求");
+    const typeLabel = insuranceRequestTypeLabel(item);
     const specParts = [item.coverage_spec, item.assigned_insurance_company].filter(Boolean);
     return `
       <article class="insurance-request-row insurance-stage-${escapeHtml(item.status)} ${isDealer ? "dealer-insurance-row" : ""}">
         <div class="insurance-row-main">
           <strong class="insurance-plate">${escapeHtml(item.plate_no || "未選車牌")}</strong>
           <div class="insurance-row-identity">
-            <b>${escapeHtml(typeLabel)}${specParts.length ? `｜${escapeHtml(specParts.join("｜"))}` : ""}</b>
+            <b>${escapeHtml(typeLabel)}${item.insurance_type ? `｜${escapeHtml(item.insurance_type)}` : ""}${specParts.length ? `｜${escapeHtml(specParts.join("｜"))}` : ""}</b>
             <small>${escapeHtml(partner?.name || "未指定車商")}${item.lienholder ? `｜抵押權人 ${escapeHtml(item.lienholder)}` : ""}</small>
           </div>
           ${insuranceStatusBadge(item.status)}
@@ -1828,9 +1864,15 @@
   }
 
   function renderInsurancePortal() {
-    const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+    const baseRequests = state.partner?.partner_type === "dealer"
+      ? (state.data.insurance_requests || []).filter((item) => item.dealer_partner_id === state.partner.id)
+      : (state.data.insurance_requests || []);
+    const requests = [...baseRequests].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+    const dealerActions = state.partner?.partner_type === "dealer"
+      ? `<button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceAdditionRequest">發起批加</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button>`
+      : "";
     layout(`
-      <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · ${state.partner.partner_type === "broker" ? "保經作業" : "車商案件"}</small></div><button class="ghost-btn" data-action="refresh-insurance">重新整理</button></div>
+      <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · ${state.partner.partner_type === "broker" ? "保經作業" : "車商案件"}</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button>${dealerActions}</div></div>
       ${insuranceControlCenter(requests, false)}
     `);
   }
@@ -1853,20 +1895,38 @@
   function adminInsuranceCenter() {
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
     return `
-      <div class="section-head"><div><h2>保險中心</h2><small>管理報價、批改、保單與收據流程</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceDocumentRequest">保單收據請求</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button></div></div>
+      <div class="section-head"><div><h2>保險中心</h2><small>管理報價、批改、批加、保單與收據補發流程</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceAdditionRequest">發起批加</button><button class="soft-btn" data-modal="insuranceDocumentRequest">保單/收據補發</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button></div></div>
       ${insuranceControlCenter(requests, true)}
     `;
   }
 
 
   function adminInsurancePartners() {
+    const partners = state.data.insurance_partners || [];
     return `
       <div class="section-head"><div><h2>廠商管理</h2><small>設定車商、保經、保修廠與前台登入代碼</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
-      ${table(["單位名稱", "類型", "聯絡人", "電話", "狀態", "操作"], (state.data.insurance_partners || []).map((item) => [
-        escapeHtml(item.name), partnerTypeName(item.partner_type), escapeHtml(item.contact_name || "-"),
-        escapeHtml(item.phone || "-"), isInsuranceCompanyPartner(item) ? `<span class="status done">可選用</span>` : item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
-        rowActions("insurancePartner", "insurance_partners", item.id)
-      ]))}
+      <div class="partner-card-grid">
+        ${partners.length ? partners.map((item) => {
+          const initial = String(item.name || "?").trim().slice(0, 1);
+          const status = isInsuranceCompanyPartner(item) ? "可選用" : item.active === false ? "停用" : "啟用";
+          return `<article class="partner-card">
+            <div class="partner-logo-tile">${item.logo_url ? `<img src="${escapeHtml(item.logo_url)}" alt="${escapeHtml(item.name || "logo")}" onerror="this.closest('.partner-logo-tile').textContent='${escapeHtml(initial)}'">` : `<span>${escapeHtml(initial)}</span>`}</div>
+            <div class="partner-card-body">
+              <div class="partner-card-head">
+                <strong>${escapeHtml(item.name)}</strong>
+                <span class="status ${item.active === false ? "returned" : "done"}">${status}</span>
+              </div>
+              <div class="partner-card-meta">
+                <span>${partnerTypeName(item.partner_type)}</span>
+                <span>${escapeHtml(item.contact_name || "未填聯絡人")}</span>
+                <span>${escapeHtml(item.phone || "未填電話")}</span>
+              </div>
+              ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ""}
+              ${rowActions("insurancePartner", "insurance_partners", item.id)}
+            </div>
+          </article>`;
+        }).join("") : `<div class="empty">尚未建立合作單位</div>`}
+      </div>
     `;
   }
 
@@ -2164,15 +2224,25 @@
 
   function adminUsers() {
     if (!adminCan("super")) return `<div class="empty">僅最高管理員可管理內部帳號。</div>`;
+    const users = state.data.admin_users || [];
     return `
       <div class="section-head"><div><h2>權限管理</h2><small>一般內部帳號無法查看或編輯本頁</small></div><button class="primary-btn" data-modal="adminUser">新增內部帳號</button></div>
-      <div class="access-user-list">
-        ${(state.data.admin_users || []).length ? state.data.admin_users.map((item) => `<article class="access-user-row">
-          <div><strong>${escapeHtml(item.name)}</strong><small>${item.active === false ? "禁止登入" : "允許登入"}</small></div>
-          <div class="permission-chips">${Object.entries(item.permissions || {}).filter(([, enabled]) => enabled).map(([key]) => `<span>${permissionName(key)}</span>`).join("") || "<span>無功能權限</span>"}</div>
-          <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
-          ${rowActions("adminUser", "admin_users", item.id)}
-        </article>`).join("") : `<div class="empty">尚未建立一般內部帳號</div>`}
+      <div class="access-card-grid">
+        ${users.length ? users.map((item) => {
+          const enabled = Object.entries(item.permissions || {}).filter(([, value]) => value);
+          return `<article class="access-card">
+            <div class="access-avatar">${escapeHtml(String(item.name || "?").slice(-2))}</div>
+            <div class="access-card-body">
+              <div class="access-card-head">
+                <strong>${escapeHtml(item.name)}</strong>
+                <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
+              </div>
+              <small>${item.active === false ? "禁止登入" : "允許登入"}</small>
+              <div class="permission-chips">${enabled.map(([key]) => `<span>${permissionName(key)}</span>`).join("") || "<span>無功能權限</span>"}</div>
+              ${rowActions("adminUser", "admin_users", item.id)}
+            </div>
+          </article>`;
+        }).join("") : `<div class="empty">尚未建立一般內部帳號</div>`}
       </div>
     `;
   }
@@ -2575,16 +2645,22 @@
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
       insuranceRequest: ["保險需求", "insurance_requests", insuranceRequestForm],
       insuranceAmendmentRequest: ["批改需求", "insurance_requests", insuranceAmendmentRequestForm],
+      insuranceAdditionRequest: ["批加需求", "insurance_requests", insuranceAdditionRequestForm],
       insuranceAmendment: ["批改檔案", "insurance_requests", insuranceAmendmentForm],
       insuranceQuote: ["保險報價", "insurance_requests", insuranceQuoteForm],
+      insuranceAdditionQuote: ["批加報價", "insurance_requests", insuranceAdditionQuoteForm],
       insuranceApplication: ["要保書", "insurance_requests", insuranceApplicationForm],
       insuranceStamp: ["用印檔", "insurance_requests", insuranceStampForm],
+      insuranceAdditionStamp: ["批加用印", "insurance_requests", insuranceAdditionStampForm],
       insurancePolicy: ["保單", "insurance_requests", insurancePolicyForm],
+      insuranceAdditionPolicy: ["批加保單", "insurance_requests", insuranceAdditionPolicyForm],
+      insuranceFinalDocs: ["保單與收據", "insurance_requests", insuranceFinalDocsForm],
       insuranceReceipt: ["收據", "insurance_requests", insuranceReceiptForm],
       insurancePayment: ["\u4ed8\u6b3e\u5b8c\u6210", "insurance_requests", insurancePaymentForm],
       insuranceAmendmentStamp: ["\u6279\u6539\u7528\u5370", "insurance_requests", insuranceAmendmentStampForm],
       insuranceDocumentRequest: ["\u4fdd\u55ae\u6536\u64da\u8acb\u6c42", "insurance_requests", insuranceDocumentRequestForm],
-      insuranceDocumentReply: ["\u4e0a\u50b3\u4fdd\u55ae\u6536\u64da", "insurance_requests", insuranceDocumentReplyForm]
+      insuranceDocumentReply: ["\u4e0a\u50b3\u4fdd\u55ae\u6536\u64da", "insurance_requests", insuranceDocumentReplyForm],
+      insuranceStatusOverride: ["調整保險狀態", "insurance_requests", insuranceStatusOverrideForm]
     };
     const modalConfig = map[type];
     if (!modalConfig) {
@@ -2760,15 +2836,20 @@
       }
     }
     if (tableName === "insurance_requests") {
-      record.vehicle_id = record.vehicle_id || null;
-      record.dealer_partner_id = record.dealer_partner_id || null;
-      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "awaiting_dealer_confirmation", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
+      if ("vehicle_id" in record) record.vehicle_id = record.vehicle_id || null;
+      if ("dealer_partner_id" in record) record.dealer_partner_id = record.dealer_partner_id || null;
+      if ("created_by_partner_type" in record) record.created_by_partner_type = record.created_by_partner_type || (state.partner?.partner_type || (state.admin ? "admin" : ""));
+      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "awaiting_dealer_confirmation", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
       if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
-      if (!record.request_type && !record.vehicle_id) delete record.vehicle_id;
-      if (!record.request_type && !record.dealer_partner_id) delete record.dealer_partner_id;
+      if (!record.request_type && String(record.status || "").startsWith("addition_")) record.request_type = "addition";
+      if (!record.request_type && String(record.status || "").startsWith("amendment_")) record.request_type = "amendment";
+      if (!record.request_type && String(record.status || "").startsWith("document_")) record.request_type = "document";
+      if (!record.request_type && "vehicle_id" in record && !record.vehicle_id) delete record.vehicle_id;
+      if (!record.request_type && "dealer_partner_id" in record && !record.dealer_partner_id) delete record.dealer_partner_id;
       if (record.request_type === "quote" && record.insurance_type === "批改") record.insurance_type = "";
       if (!record.insurance_type) {
         if (record.request_type === "amendment") record.insurance_type = "批改";
+        else if (record.request_type === "addition") record.insurance_type = "批加申請";
         else if (record.request_type === "document") record.insurance_type = "文件請求";
         else if (record.request_type === "quote") record.insurance_type = "報價請求";
         else delete record.insurance_type;
@@ -3601,11 +3682,27 @@
     </div>`;
   }
 
-  function insuranceRequestForm(item) {
+  function insuranceVehiclesForForm() {
     const vehicles = state.data.vehicles || [];
-    return `<input type="hidden" name="request_type" value="quote"><input type="hidden" name="status" value="broker_quoting"><div class="field full insurance-vehicle-picker"><label>\u8eca\u8f1b</label><input type="search" data-insurance-vehicle-search placeholder="\u8f38\u5165\u8eca\u724c\u5feb\u901f\u7be9\u9078"><select name="vehicle_id" data-insurance-vehicle required><option value="">\u8acb\u9078\u64c7\u8eca\u8f1b</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>`
-      + `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}">`
-      + select("dealer_partner_id", "\u6240\u5c6c\u8eca\u5546", item.dealer_partner_id || "", [["", "\u81ea\u52d5\u5e36\u5165"], ...(state.data.insurance_partners || []).filter((partner) => partner.partner_type === "dealer").map((partner) => [partner.id, partner.name])])
+    if (state.partner?.partner_type === "dealer") return vehicles.filter((vehicle) => vehicle.dealer_partner_id === state.partner.id);
+    return vehicles;
+  }
+
+  function insuranceVehiclePicker(item = {}) {
+    const vehicles = insuranceVehiclesForForm();
+    return `<div class="field full insurance-vehicle-picker"><label>車輛</label><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
+      <input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}">`;
+  }
+
+  function insuranceDealerField(item = {}) {
+    if (state.partner?.partner_type === "dealer") return `<input type="hidden" name="dealer_partner_id" value="${escapeHtml(state.partner.id)}">`;
+    return select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", [["", "自動帶入"], ...(state.data.insurance_partners || []).filter((partner) => partner.partner_type === "dealer").map((partner) => [partner.id, partner.name])]);
+  }
+
+  function insuranceRequestForm(item) {
+    return `<input type="hidden" name="request_type" value="quote"><input type="hidden" name="status" value="${escapeHtml(item.status || "broker_quoting")}"><input type="hidden" name="created_by_partner_type" value="${escapeHtml(item.created_by_partner_type || state.partner?.partner_type || "admin")}">`
+      + insuranceVehiclePicker(item)
+      + insuranceDealerField(item)
       + select("insurance_type", "\u4fdd\u96aa\u7a2e\u985e", item.insurance_type || "\u5f37\u5236\u96aa+\u4efb\u610f\u96aa", [["\u5f37\u5236\u96aa", "\u5f37\u5236\u96aa"], ["\u4efb\u610f\u96aa", "\u4efb\u610f\u96aa"], ["\u5f37\u5236\u96aa+\u4efb\u610f\u96aa", "\u5f37\u5236\u96aa+\u4efb\u610f\u96aa"], ["\u65c5\u5ba2\u96aa", "\u65c5\u5ba2\u96aa"], ["\u5176\u4ed6", "\u5176\u4ed6"]])
       + input("passenger_limit", "\u65c5\u5ba2\u96aa\u984d\u5ea6(\u842c)", item.passenger_limit, "number")
       + select("coverage_spec", "\u898f\u683c", item.coverage_spec || "", [["", "\u9810\u7559\u7a7a\u767d"], ["\u4e59\u5f0f", "\u4e59\u5f0f"], ["\u4e19\u5f0f", "\u4e19\u5f0f"]])
@@ -3618,21 +3715,33 @@
   }
 
   function insuranceAmendmentRequestForm(item) {
-    const vehicles = state.data.vehicles || [];
-    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="insurance_type" value="\u6279\u6539"><input type="hidden" name="status" value="amendment_requested">
-      <div class="field full insurance-vehicle-picker"><label>\u8eca\u8f1b</label><input type="search" data-insurance-vehicle-search placeholder="\u8f38\u5165\u8eca\u724c\u5feb\u901f\u7be9\u9078"><select name="vehicle_id" data-insurance-vehicle required><option value="">\u8acb\u9078\u64c7\u8eca\u8f1b</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
-      <input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><input type="hidden" name="dealer_partner_id" value="${escapeHtml(item.dealer_partner_id || "")}">
+    return `<input type="hidden" name="request_type" value="amendment"><input type="hidden" name="insurance_type" value="\u6279\u6539"><input type="hidden" name="status" value="${escapeHtml(item.status || "amendment_requested")}">
+      <input type="hidden" name="created_by_partner_type" value="${escapeHtml(item.created_by_partner_type || state.partner?.partner_type || "admin")}">
+      ${insuranceVehiclePicker(item)}
+      ${insuranceDealerField(item)}
       ${select("driver_change_action", "\u6279\u6539\u9805\u76ee", item.driver_change_action || "\u65b0\u589e\u99d5\u99db\u4eba", [["\u65b0\u589e\u99d5\u99db\u4eba", "\u65b0\u589e\u99d5\u99db\u4eba"], ["\u79fb\u9664\u99d5\u99db\u4eba", "\u79fb\u9664\u99d5\u99db\u4eba"]])}
       ${input("driver_change_names", "\u99d5\u99db\u59d3\u540d", item.driver_change_names, "text", true)}
       ${multiAttachmentField(item, "license_files", "\u99d5\u7167\u6b63\u53cd\u9762")}
       ${text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes)}`;
   }
 
+  function insuranceAdditionRequestForm(item) {
+    return `<input type="hidden" name="request_type" value="addition"><input type="hidden" name="insurance_type" value="批加申請"><input type="hidden" name="status" value="${escapeHtml(item.status || "addition_quoting")}">
+      <input type="hidden" name="created_by_partner_type" value="${escapeHtml(item.created_by_partner_type || state.partner?.partner_type || "admin")}">
+      ${insuranceVehiclePicker(item)}
+      ${insuranceDealerField(item)}
+      ${input("vehicle_body_limit", "增加車體險額度(萬)", item.vehicle_body_limit, "number")}
+      ${select("coverage_spec", "批加規格", item.coverage_spec || "", [["", "預留空白"], ["乙式", "乙式"], ["丙式", "丙式"]])}
+      ${input("deductible", "自付額(萬)", item.deductible, "number")}
+      ${insuranceCompanyOptions(item.assigned_insurance_company || "", "指定保險公司", "assigned_insurance_company")}
+      ${text("vehicle_dept_notes", "批加備註", item.vehicle_dept_notes || item.insurance_notes)}`;
+  }
+
   function insuranceDocumentRequestForm(item) {
-    const vehicles = state.data.vehicles || [];
-    return `<input type="hidden" name="request_type" value="document"><input type="hidden" name="insurance_type" value="\u6587\u4ef6\u8acb\u6c42"><input type="hidden" name="status" value="document_requested">
-      <div class="field full insurance-vehicle-picker"><label>\u8eca\u8f1b</label><input type="search" data-insurance-vehicle-search placeholder="\u8f38\u5165\u8eca\u724c\u5feb\u901f\u7be9\u9078"><select name="vehicle_id" data-insurance-vehicle required><option value="">\u8acb\u9078\u64c7\u8eca\u8f1b</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
-      <input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><input type="hidden" name="dealer_partner_id" value="${escapeHtml(item.dealer_partner_id || "")}">
+    return `<input type="hidden" name="request_type" value="document"><input type="hidden" name="insurance_type" value="\u6587\u4ef6\u8acb\u6c42"><input type="hidden" name="status" value="${escapeHtml(item.status || "document_requested")}">
+      <input type="hidden" name="created_by_partner_type" value="${escapeHtml(item.created_by_partner_type || "admin")}">
+      ${insuranceVehiclePicker(item)}
+      ${insuranceDealerField(item)}
       ${select("document_request_type", "\u8acb\u6c42\u6587\u4ef6", item.document_request_type || "\u4fdd\u55ae", [["\u4fdd\u55ae", "\u4fdd\u55ae"], ["\u6536\u64da", "\u6536\u64da"], ["\u4fdd\u55ae+\u6536\u64da", "\u4fdd\u55ae+\u6536\u64da"]])}
       ${text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes)}`;
   }
@@ -3646,12 +3755,16 @@
   }
 
   function insuranceQuoteForm(item) {
-    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆", item.broker_reply) + insuranceDocumentField(item, "quote", "報價單", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
+    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆／補件備註", item.broker_reply) + insuranceDocumentField(item, "quote", "報價單", false) + insuranceDocumentField(item, "application", "要保書", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
+  }
+
+  function insuranceAdditionQuoteForm(item) {
+    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆", item.broker_reply) + insuranceDocumentField(item, "application", "批加要保書", true) + `<input type="hidden" name="status" value="addition_review">`;
   }
 
 
   function insuranceRequestSummary(item) {
-    const title = item.request_type === "amendment" ? "批改申請" : item.request_type === "document" ? (item.document_request_type || "保單收據請求") : (item.insurance_type || "保險案件");
+    const title = insuranceRequestTypeLabel(item);
     const details = [
       item.coverage_spec,
       item.passenger_limit ? `旅客險 ${item.passenger_limit} 萬` : "",
@@ -3662,10 +3775,19 @@
     return `<input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"><div class="field full insurance-request-summary"><strong>${escapeHtml(item.plate_no || "未選車牌")}｜${escapeHtml(title)}</strong>${details ? `<span>${escapeHtml(details)}</span>` : ""}${(item.vehicle_dept_notes || item.insurance_notes) ? `<p>${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}</div>`;
   }
 
+  function insuranceStatusOverrideForm(item) {
+    return insuranceRequestSummary(item)
+      + select("status", "直接調整流程狀態", item.status || "broker_quoting", insuranceStatuses)
+      + text("vehicle_dept_notes", "車輛部備註", item.vehicle_dept_notes || item.insurance_notes);
+  }
 
-  function insuranceApplicationForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "application", "\u8981\u4fdd\u66f8", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="stamping">`; }
+
   function insuranceStampForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)", true) + `<input type="hidden" name="status" value="awaiting_policy">`; }
+  function insuranceApplicationForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "application", "\u8981\u4fdd\u66f8", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="stamping">`; }
+  function insuranceAdditionStampForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "stamped_application", "批加要保書(已用印)", true) + `<input type="hidden" name="status" value="addition_policy_pending">`; }
   function insurancePolicyForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "\u4fdd\u55ae", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="payment_pending">`; }
+  function insuranceFinalDocsForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "保單", true) + insuranceDocumentField(item, "receipt", "收據", false) + text("broker_reply", "保經回覆", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
+  function insuranceAdditionPolicyForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "批加保單", true) + text("broker_reply", "保經回覆", item.broker_reply) + `<input type="hidden" name="status" value="addition_completed">`; }
   function insurancePaymentForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "payment_slip", "\u5237\u5361\u55ae", false) + `<input type="hidden" name="status" value="receipt_pending">`; }
   function insuranceReceiptForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "receipt", "\u6536\u64da", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
   function insuranceDocumentReplyForm(item) {
