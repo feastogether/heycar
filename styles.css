@@ -855,6 +855,13 @@ a { text-decoration: none; }
 .partner-card-head strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .access-card-body small,
 .partner-card-meta { color: var(--muted); font-size: 12px; font-weight: 750; }
+.access-summary {
+  margin: 0;
+  color: #475467;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.55;
+}
 .partner-card-meta { display: flex; flex-wrap: wrap; gap: 7px; }
 .partner-card-meta span {
   padding: 5px 8px;
@@ -910,6 +917,25 @@ a { text-decoration: none; }
 .permission-switch-grid span.on i { background: #16a34a; }
 .permission-switch-grid span.on i::after { left: 12px; }
 .permission-switch-grid span.off { opacity: .62; }
+.permission-section {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdff;
+}
+.permission-section h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+.permission-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
 
 .login-wrap {
   min-height: 100vh;
@@ -2267,6 +2293,18 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-status { min-width: 62px; text-align: center; }
 .vehicle-status-fact dd { margin-top: 5px; }
 .vehicle-row-actions .actions { flex-wrap: nowrap; }
+.vehicle-row-actions,
+.vehicle-card-actions {
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 8px;
+}
+.vehicle-row-actions .actions,
+.vehicle-card-actions .actions {
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+}
 .salary-locked-card {
   display: grid;
   gap: 8px;
@@ -2369,8 +2407,59 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-size: 12px;
   font-weight: 800;
 }
-.vehicle-card-actions .actions {
-  justify-content: flex-end;
+.vehicle-card-actions { margin-top: 4px; }
+.partner-portal-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+.partner-sidebar {
+  position: sticky;
+  top: 86px;
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(24,32,51,.045);
+}
+.partner-sidebar-title {
+  padding: 2px 4px 10px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.partner-nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 12px;
+  border-radius: 10px;
+  color: var(--ink);
+  font-weight: 900;
+  text-align: left;
+}
+.partner-nav-btn:hover,
+.partner-nav-btn.active {
+  background: #fff4f3;
+  color: var(--brand-dark);
+}
+.partner-workspace { min-width: 0; }
+.dealer-garage-card .insurance-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.dealer-garage-empty {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
 }
 .service-kpi-grid {
   display: grid;
@@ -3248,6 +3337,15 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-primary { grid-template-columns: 110px minmax(0, 1fr); }
   .vehicle-row-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .vehicle-row-actions { padding-top: 9px; border-top: 1px solid var(--line); }
+  .partner-portal-layout { grid-template-columns: 1fr; gap: 12px; }
+  .partner-sidebar {
+    position: static;
+    display: flex;
+    overflow-x: auto;
+    padding: 10px;
+  }
+  .partner-sidebar-title { display: none; }
+  .partner-nav-btn { width: auto; flex: 0 0 auto; white-space: nowrap; }
   .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .single-driver-picker .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .broadcast-grid { grid-template-columns: 1fr; }

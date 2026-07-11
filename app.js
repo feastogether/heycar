@@ -29,6 +29,7 @@
     vehicleDealerFilter: "",
     vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
     insuranceStatusFilter: "",
+    partnerView: "insurance",
     loanSearch: "",
     loanDateFilter: "",
     serviceSearch: "",
@@ -1884,7 +1885,90 @@
       layout(renderCalendar(false));
       return;
     }
+    if (state.partner?.partner_type === "dealer") {
+      renderDealerPortal();
+      return;
+    }
     renderInsurancePortal();
+  }
+
+  function partnerLayout(content) {
+    const nav = [
+      ["insurance", "保險進度", "🛡️"],
+      ["garage", "車庫管理", "🚐"]
+    ];
+    layout(`
+      <div class="partner-portal-layout">
+        <aside class="partner-sidebar">
+          <div class="partner-sidebar-title">${escapeHtml(state.partner?.name || "合作單位")}</div>
+          ${nav.map(([key, label, icon]) => `<button class="partner-nav-btn ${state.partnerView === key ? "active" : ""}" data-partner-view="${key}"><span>${icon}</span>${label}</button>`).join("")}
+        </aside>
+        <section class="partner-workspace">${content}</section>
+      </div>
+    `);
+  }
+
+  function renderDealerPortal() {
+    const requests = dealerInsuranceRequests();
+    if (!["insurance", "garage"].includes(state.partnerView)) state.partnerView = "insurance";
+    const body = state.partnerView === "garage" ? dealerGarageView(requests) : dealerInsuranceView(requests);
+    partnerLayout(body);
+  }
+
+  function dealerInsuranceRequests() {
+    return [...(state.data.insurance_requests || [])]
+      .filter((item) => item.dealer_partner_id === state.partner.id)
+      .sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
+  }
+
+  function dealerVehicles() {
+    return (state.data.vehicles || []).filter((vehicle) => vehicle.dealer_partner_id === state.partner.id);
+  }
+
+  function dealerInsuranceView(requests) {
+    const dealerActions = `<button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceAdditionRequest">發起批加</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button>`;
+    return `
+      <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · 車商案件</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button>${dealerActions}</div></div>
+      ${insuranceControlCenter(requests, false)}
+    `;
+  }
+
+  function dealerGarageView(requests = dealerInsuranceRequests()) {
+    const vehicles = dealerVehicles();
+    return `
+      <div class="section-head"><div><h2>車庫管理</h2><small>查看所屬車輛、狀態與可檢視保單</small></div><button class="ghost-btn" data-action="refresh-insurance">重新整理</button></div>
+      ${dealerGarageCards(vehicles, requests)}
+    `;
+  }
+
+  function dealerGarageCards(vehicles, requests) {
+    if (!vehicles.length) return `<div class="empty">尚未指定所屬車輛</div>`;
+    return `<div class="vehicle-visual-grid dealer-garage-grid">${vehicles.map((vehicle) => {
+      const drivers = vehicleDrivers(vehicle);
+      const relatedRequests = requests.filter((request) => request.vehicle_id === vehicle.id || request.plate_no === vehicle.plate_no);
+      const latest = relatedRequests[0];
+      const files = relatedRequests.map((request) => [
+        insuranceFileLink(request, "policy", "保單"),
+        insuranceFileLink(request, "receipt", "收據"),
+        insuranceFileLink(request, "document_policy", "補發保單"),
+        insuranceFileLink(request, "document_receipt", "補發收據")
+      ].filter(Boolean).join("")).filter(Boolean).join("");
+      return `<article class="vehicle-visual-card dealer-garage-card">
+        <div class="vehicle-visual-top">
+          <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
+          ${vehicleStatusBadge(vehicle.status)}
+        </div>
+        <div class="vehicle-art">${carIconSvg()}<div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div></div>
+        <div class="vehicle-visual-info">
+          <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
+          <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
+          <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
+          <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
+          <small>保險進度：${latest ? insuranceStatusLabel(latest.status) : "尚未發起"}</small>
+        </div>
+        ${files ? `<div class="insurance-files dealer-garage-files">${files}</div>` : `<small class="dealer-garage-empty">尚無可檢視保單</small>`}
+      </article>`;
+    }).join("")}</div>`;
   }
 
   function renderInsurancePortal() {
@@ -2159,7 +2243,26 @@
   }
   function adminCan(permission) {
     if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
-    return Boolean(state.adminProfile?.permissions?.[permission]);
+    const permissions = state.adminProfile?.permissions || {};
+    if (permissions[permission]) return true;
+    const legacy = {
+      vehicleLoans: "loans",
+      serviceRecords: "service_records",
+      maintenanceNotifications: "service_records",
+      bom: "service_records",
+      insuranceCenter: "insurance",
+      insurancePartners: "insurance",
+      announcements: "messages",
+      personalMessages: "messages",
+      feedbacks: "messages",
+      marquee: "messages",
+      emergencyEvents: "messages",
+      driverHelperArticles: "messages",
+      loginSlogans: "messages",
+      driverLinks: "messages",
+      payments: "finance"
+    };
+    return Boolean(permissions[legacy[permission]]);
   }
 
   const adminNavLabels = {
@@ -2195,6 +2298,14 @@
 
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
 
+  function adminPermissionCatalog() {
+    return adminNavDepartments.flatMap(([department, keys]) =>
+      keys
+        .filter((key) => key !== "adminUsers")
+        .map((key) => [key, adminNavLabels[key] || key, department])
+    );
+  }
+
   function groupedAdminNav(nav) {
     const byKey = Object.fromEntries(nav.map((item) => [item[0], item]));
     return adminNavDepartments.map(([department, keys]) => {
@@ -2212,26 +2323,26 @@
       ["adminUsers", "權限管理", "🔐", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
-      ["vehicleLoans", "車輛租借", "🔑", "loans"],
-      ["serviceRecords", "車輛履歷", "🧾", "service_records"],
-      ["insuranceCenter", "保險中心", "🛡️", "insurance"],
-      ["insurancePartners", "廠商管理", "🏢", "insurance"],
-      ["storage", "儲存空間", "💾"],
-      ["driverLinks", "連結管理", "🔗", "messages"],
-      ["bom", "BOM表", "🧩", "service_records"],
-      ["calendar", "共同行事曆", "📅"],
-      ["maintenanceNotifications", "保養通知", "🔔", "service_records"],
-      ["announcements", "公告管理", "📢", "messages"],
-      ["personalMessages", "個人訊息", "✉️", "messages"],
-      ["payments", "費用管理", "💳", "finance"],
-      ["driverHelperArticles", "司機幫手", "📘", "messages"],
-      ["feedbacks", "意見反饋", "💬", "messages"],
-      ["marquee", "跑馬燈通知", "🚨", "messages"],
-      ["emergencyEvents", "緊急事件", "🆘", "messages"]
+      ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
+      ["serviceRecords", "車輛履歷", "🧾", "serviceRecords"],
+      ["insuranceCenter", "保險中心", "🛡️", "insuranceCenter"],
+      ["insurancePartners", "廠商管理", "🏢", "insurancePartners"],
+      ["storage", "儲存空間", "💾", "storage"],
+      ["driverLinks", "連結管理", "🔗", "driverLinks"],
+      ["bom", "BOM表", "🧩", "bom"],
+      ["calendar", "共同行事曆", "📅", "calendar"],
+      ["maintenanceNotifications", "保養通知", "🔔", "maintenanceNotifications"],
+      ["announcements", "公告管理", "📢", "announcements"],
+      ["personalMessages", "個人訊息", "✉️", "personalMessages"],
+      ["payments", "費用管理", "💳", "payments"],
+      ["driverHelperArticles", "司機幫手", "📘", "driverHelperArticles"],
+      ["feedbacks", "意見反饋", "💬", "feedbacks"],
+      ["marquee", "跑馬燈通知", "🚨", "marquee"],
+      ["emergencyEvents", "緊急事件", "🆘", "emergencyEvents"]
     ].filter(([, , , permission]) => !permission || adminCan(permission));
-    if (adminCan("messages") && !nav.some(([key]) => key === "loginSlogans")) {
+    if (adminCan("loginSlogans") && !nav.some(([key]) => key === "loginSlogans")) {
       const marqueeIndex = nav.findIndex(([key]) => key === "marquee");
-      nav.splice(marqueeIndex >= 0 ? marqueeIndex + 1 : nav.length, 0, ["loginSlogans", "\u6a19\u8a9e\u7ba1\u7406", "\u270d", "messages"]);
+      nav.splice(marqueeIndex >= 0 ? marqueeIndex + 1 : nav.length, 0, ["loginSlogans", "\u6a19\u8a9e\u7ba1\u7406", "\u270d", "loginSlogans"]);
     }
     if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
@@ -2301,12 +2412,13 @@
   function adminUsers() {
     if (!adminCan("super")) return `<div class="empty">僅最高管理員可管理內部帳號。</div>`;
     const users = state.data.admin_users || [];
-    const permissionKeys = [["drivers", "駕駛"], ["vehicles", "車輛"], ["loans", "租借"], ["service_records", "履歷"], ["messages", "訊息"], ["finance", "費用"], ["insurance", "保險"]];
+    const catalog = adminPermissionCatalog();
     return `
       <div class="section-head"><div><h2>權限管理</h2><small>一般內部帳號無法查看或編輯本頁</small></div><button class="primary-btn" data-modal="adminUser">新增內部帳號</button></div>
       <div class="access-card-grid">
         ${users.length ? users.map((item) => {
           const permissions = item.permissions || {};
+          const enabled = catalog.filter(([key]) => adminPermissionEnabled(permissions, key));
           return `<article class="access-card">
             <div class="access-avatar">${escapeHtml(String(item.name || "?").slice(-2))}</div>
             <div class="access-card-body">
@@ -2315,7 +2427,7 @@
                 <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
               </div>
               <small>${item.active === false ? "禁止登入" : "允許登入"}</small>
-              <div class="permission-switch-grid">${permissionKeys.map(([key, label]) => `<span class="${permissions[key] ? "on" : "off"}"><i></i>${label}</span>`).join("")}</div>
+              <p class="access-summary">${enabled.length ? `已開啟 ${enabled.length} 個功能：${enabled.slice(0, 4).map(([, label]) => label).join("、")}${enabled.length > 4 ? "..." : ""}` : "尚未開啟功能權限"}</p>
               ${rowActions("adminUser", "admin_users", item.id)}
             </div>
           </article>`;
@@ -2326,6 +2438,28 @@
 
   function permissionName(key) {
     return ({ drivers: "駕駛", vehicles: "車輛", loans: "租借", service_records: "履歷", messages: "訊息", finance: "費用", insurance: "保險" })[key] || key;
+  }
+
+  function adminPermissionEnabled(permissions, key) {
+    if (permissions?.[key]) return true;
+    const legacy = {
+      vehicleLoans: "loans",
+      serviceRecords: "service_records",
+      maintenanceNotifications: "service_records",
+      bom: "service_records",
+      insuranceCenter: "insurance",
+      insurancePartners: "insurance",
+      announcements: "messages",
+      personalMessages: "messages",
+      feedbacks: "messages",
+      marquee: "messages",
+      emergencyEvents: "messages",
+      driverHelperArticles: "messages",
+      loginSlogans: "messages",
+      driverLinks: "messages",
+      payments: "finance"
+    };
+    return Boolean(permissions?.[legacy[key]]);
   }
 
   function adminVehicleLoans() {
@@ -2942,15 +3076,8 @@
     }
     if (tableName === "admin_users") {
       record.active = record.active === "true";
-      record.permissions = {
-        drivers: record.permission_drivers === "true",
-        vehicles: record.permission_vehicles === "true",
-        loans: record.permission_loans === "true",
-        service_records: record.permission_service_records === "true",
-        messages: record.permission_messages === "true",
-        finance: record.permission_finance === "true",
-        insurance: record.permission_insurance === "true"
-      };
+      const permissionKeys = adminPermissionCatalog().map(([key]) => key);
+      record.permissions = Object.fromEntries(permissionKeys.map((key) => [key, record[`permission_${key}`] === "true"]));
       Object.keys(record).filter((key) => key.startsWith("permission_")).forEach((key) => delete record[key]);
     }
     if (tableName === "vehicle_loans") {
@@ -3494,17 +3621,21 @@
 
   function adminUserForm(item) {
     const permissions = item.permissions || { drivers: true, vehicles: true, loans: true, service_records: true, messages: true, finance: true, insurance: false };
+    const permissionSections = adminNavDepartments.map(([department, keys]) => {
+      const items = keys.filter((key) => key !== "adminUsers").map((key) => [key, adminNavLabels[key] || key]);
+      if (!items.length) return "";
+      return `<div class="permission-section field full">
+        <h4>${escapeHtml(department)}</h4>
+        <div class="permission-form-grid">
+          ${items.map(([key, label]) => checkbox(`permission_${key}`, label, adminPermissionEnabled(permissions, key))).join("")}
+        </div>
+      </div>`;
+    }).join("");
     return input("name", "姓名", item.name, "text", true)
       + input("login_code", item.id ? "更新登入代碼（不修改可留白）" : "登入代碼", "", "password", !item.id)
       + checkbox("active", "允許登入", item.active !== false)
       + `<div class="form-section-title field full">功能權限</div>`
-      + checkbox("permission_drivers", "駕駛管理", permissions.drivers)
-      + checkbox("permission_vehicles", "車輛管理", permissions.vehicles)
-      + checkbox("permission_loans", "車輛租借", permissions.loans)
-      + checkbox("permission_service_records", "車輛履歷與保養通知", permissions.service_records)
-      + checkbox("permission_messages", "公告、訊息與意見反饋", permissions.messages)
-      + checkbox("permission_finance", "費用管理", permissions.finance)
-      + checkbox("permission_insurance", "保險中心", permissions.insurance);
+      + permissionSections;
   }
 
   function vehiclePlatePicker(item, label = "選擇車輛") {
@@ -4422,6 +4553,10 @@
       localStorage.setItem("afide-admin-collapsed", "true");
       render();
       if (state.adminView === "storage" && !state.storageFiles.length) await loadStorageUsage();
+    }
+    if (target.dataset.partnerView) {
+      state.partnerView = target.dataset.partnerView;
+      render();
     }
     if (target.dataset.action === "clear-vehicle-search") {
       state.vehicleSearch = "";
