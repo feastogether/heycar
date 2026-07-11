@@ -30,7 +30,7 @@
     vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
     insuranceStatusFilter: "",
     partnerView: "insurance",
-    partnerCollapsed: localStorage.getItem("afide-partner-collapsed") === "true",
+    partnerCollapsed: true,
     loanSearch: "",
     loanDateFilter: "",
     serviceSearch: "",
@@ -995,6 +995,26 @@
       return;
     }
 
+    if (state.partner) {
+      app.innerHTML = `
+        <div class="app-shell partner-shell">
+          <header class="topbar admin-topbar">
+            <div class="brand compact-brand">
+              <button class="ghost-btn menu-btn" data-action="toggle-partner-sidebar" aria-label="開啟選單">☰</button>
+              <img src="${logoUrl}" alt="heycar logo">
+            </div>
+            <div class="userbox">
+              <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
+              <button class="ghost-btn" data-action="logout">登出</button>
+            </div>
+          </header>
+          <main class="main admin-main">${content}</main>
+        </div>
+      `;
+      loadAirportWeather();
+      return;
+    }
+
     app.innerHTML = `
       <div class="app-shell">
         <header class="topbar">
@@ -1899,13 +1919,20 @@
       ["garage", "車庫管理", "🚐"]
     ];
     layout(`
-      <div class="partner-portal-layout ${state.partnerCollapsed ? "is-collapsed" : ""}">
+      <div class="partner-portal-layout ${state.partnerCollapsed ? "" : "is-menu-open"}">
+        ${state.partnerCollapsed ? "" : `<button class="admin-menu-backdrop" data-action="toggle-partner-sidebar" aria-label="關閉選單"></button>`}
         <aside class="partner-sidebar">
           <div class="partner-sidebar-head">
-            <div class="partner-sidebar-title">${escapeHtml(state.partner?.name || "合作單位")}</div>
-            <button class="partner-sidebar-toggle" data-action="toggle-partner-sidebar" aria-label="${state.partnerCollapsed ? "展開選單" : "收合選單"}">${state.partnerCollapsed ? "›" : "‹"}</button>
+            <strong>功能選單</strong>
+            <button class="ghost-btn icon-btn" data-action="toggle-partner-sidebar" title="關閉選單">×</button>
           </div>
-          ${nav.map(([key, label, icon]) => `<button class="partner-nav-btn ${state.partnerView === key ? "active" : ""}" data-partner-view="${key}" title="${escapeHtml(label)}"><span>${icon}</span><b>${label}</b></button>`).join("")}
+          <div class="partner-sidebar-title">${escapeHtml(state.partner?.name || "合作單位")}</div>
+          <nav class="side-nav">
+            ${nav.map(([key, label, icon]) => `<button class="nav-btn ${state.partnerView === key ? "active" : ""}" data-partner-view="${key}" title="${escapeHtml(label)}"><span class="nav-icon">${icon}</span><span class="nav-label">${label}</span></button>`).join("")}
+          </nav>
+          <div class="admin-sidebar-footer">
+            <button class="nav-btn logout-nav-btn" data-action="logout" title="登出"><span class="nav-icon">↩</span><span class="nav-label">登出</span></button>
+          </div>
         </aside>
         <section class="partner-workspace">${content}</section>
       </div>
@@ -3411,6 +3438,11 @@
     return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "不指定" : "不指定 / 尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
   }
 
+  function insuranceCompanyAdminField(value, label, name = "assigned_insurance_company") {
+    if (state.partner?.partner_type === "dealer") return `<input type="hidden" name="${escapeHtml(name)}" value="">`;
+    return insuranceCompanyOptions(value, label, name);
+  }
+
   function insuranceCompanyPhone(name) {
     if (!name) return "";
     return (state.data.insurance_partners || []).find((item) => isInsuranceCompanyPartner(item) && item.name === name)?.phone || "";
@@ -4008,7 +4040,7 @@
       + input("deductible", "\u81ea\u4ed8\u984d(\u842c)", item.deductible, "number")
       + input("requested_driver", "\u99d5\u99db(\u9078\u586b)", item.requested_driver)
       + select("lienholder", "\u62b5\u62bc\u6b0a\u4eba", item.lienholder || "", [["", "\u7121"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u4e2d\u4fe1", "\u4e2d\u4fe1"], ["\u6c38\u8c50", "\u6c38\u8c50"], ["\u83ef\u5357", "\u83ef\u5357"]])
-      + insuranceCompanyOptions(item.assigned_insurance_company || "", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", "assigned_insurance_company")
+      + insuranceCompanyAdminField(item.assigned_insurance_company || "", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", "assigned_insurance_company")
       + text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes);
   }
 
@@ -4031,7 +4063,7 @@
       ${input("vehicle_body_limit", "增加車體險額度(萬)", item.vehicle_body_limit, "number")}
       ${select("coverage_spec", "批加規格", item.coverage_spec || "", [["", "預留空白"], ["乙式", "乙式"], ["丙式", "丙式"]])}
       ${input("deductible", "自付額(萬)", item.deductible, "number")}
-      ${insuranceCompanyOptions(item.assigned_insurance_company || "", "指定保險公司", "assigned_insurance_company")}
+      ${insuranceCompanyAdminField(item.assigned_insurance_company || "", "指定保險公司", "assigned_insurance_company")}
       ${text("vehicle_dept_notes", "批加備註", item.vehicle_dept_notes || item.insurance_notes)}`;
   }
 
@@ -4560,11 +4592,11 @@
     }
     if (target.dataset.partnerView) {
       state.partnerView = target.dataset.partnerView;
+      state.partnerCollapsed = true;
       render();
     }
     if (target.dataset.action === "toggle-partner-sidebar") {
       state.partnerCollapsed = !state.partnerCollapsed;
-      localStorage.setItem("afide-partner-collapsed", state.partnerCollapsed ? "true" : "false");
       render();
     }
     if (target.dataset.action === "clear-vehicle-search") {
