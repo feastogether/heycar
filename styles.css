@@ -2461,7 +2461,11 @@ button.calendar-pill:hover { filter: brightness(.96); }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.partner-workspace { min-width: 0; }
+.partner-workspace {
+  min-width: 0;
+  width: min(1280px, calc(100% - 48px));
+  margin: 28px auto 60px;
+}
 .dealer-garage-card .insurance-files {
   display: flex;
   flex-wrap: wrap;
@@ -3441,6 +3445,7 @@ tr:last-child td { border-bottom: 0; }
   .brand .partner-brand-logo { max-width: 72px; height: 26px; padding-left: 8px; }
   .brand-title { font-size: 14px; }
   .main { width: calc(100% - 28px); margin-top: 14px; }
+  .partner-workspace { width: calc(100% - 28px); margin: 16px auto 44px; }
   .form-grid { grid-template-columns: 1fr; }
   .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .feature-card { min-height: 96px; padding: 13px; gap: 10px; flex-direction: column; align-items: flex-start; justify-content: center; }
