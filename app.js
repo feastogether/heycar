@@ -1003,6 +1003,7 @@
             <div class="brand compact-brand">
               ${isDealerPartner ? `<button class="ghost-btn menu-btn" data-action="toggle-partner-sidebar" aria-label="開啟選單">☰</button>` : ""}
               <img src="${logoUrl}" alt="heycar logo">
+              ${state.partner?.logo_url ? `<img class="partner-brand-logo" src="${escapeHtml(state.partner.logo_url)}" alt="${escapeHtml(state.partner.name || "partner")} logo" onerror="this.remove()">` : ""}
               <div class="brand-copy">
                 <div class="brand-title">${escapeHtml(state.partner.name || "合作單位")}</div>
                 <div class="brand-subtitle">${state.partner.partner_type === "broker" ? "保經作業" : state.partner.partner_type === "repair_shop" ? "保修廠作業" : "合作單位"}</div>
