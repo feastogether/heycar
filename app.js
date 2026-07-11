@@ -996,12 +996,17 @@
     }
 
     if (state.partner) {
+      const isDealerPartner = state.partner.partner_type === "dealer";
       app.innerHTML = `
         <div class="app-shell partner-shell">
           <header class="topbar admin-topbar">
             <div class="brand compact-brand">
-              <button class="ghost-btn menu-btn" data-action="toggle-partner-sidebar" aria-label="開啟選單">☰</button>
+              ${isDealerPartner ? `<button class="ghost-btn menu-btn" data-action="toggle-partner-sidebar" aria-label="開啟選單">☰</button>` : ""}
               <img src="${logoUrl}" alt="heycar logo">
+              <div class="brand-copy">
+                <div class="brand-title">${escapeHtml(state.partner.name || "合作單位")}</div>
+                <div class="brand-subtitle">${state.partner.partner_type === "broker" ? "保經作業" : state.partner.partner_type === "repair_shop" ? "保修廠作業" : "合作單位"}</div>
+              </div>
             </div>
             <div class="userbox">
               <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
@@ -1903,7 +1908,7 @@
 
   function renderPartnerPortal() {
     if (state.partner?.partner_type === "repair_shop") {
-      layout(renderCalendar(false));
+      layout(`<section class="partner-workspace">${renderCalendar(false)}</section>`);
       return;
     }
     if (state.partner?.partner_type === "dealer") {
@@ -2012,9 +2017,11 @@
       : "";
     const dealerVehicles = state.partner?.partner_type === "dealer" ? dealerVehicleOverview(requests) : "";
     layout(`
+      <section class="partner-workspace">
       <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · ${state.partner.partner_type === "broker" ? "保經作業" : "車商案件"}</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button>${dealerActions}</div></div>
       ${dealerVehicles}
       ${insuranceControlCenter(requests, false)}
+      </section>
     `);
   }
 
