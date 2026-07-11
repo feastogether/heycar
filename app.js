@@ -30,6 +30,7 @@
     vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
     insuranceStatusFilter: "",
     partnerView: "insurance",
+    partnerCollapsed: localStorage.getItem("afide-partner-collapsed") === "true",
     loanSearch: "",
     loanDateFilter: "",
     serviceSearch: "",
@@ -1898,10 +1899,13 @@
       ["garage", "車庫管理", "🚐"]
     ];
     layout(`
-      <div class="partner-portal-layout">
+      <div class="partner-portal-layout ${state.partnerCollapsed ? "is-collapsed" : ""}">
         <aside class="partner-sidebar">
-          <div class="partner-sidebar-title">${escapeHtml(state.partner?.name || "合作單位")}</div>
-          ${nav.map(([key, label, icon]) => `<button class="partner-nav-btn ${state.partnerView === key ? "active" : ""}" data-partner-view="${key}"><span>${icon}</span>${label}</button>`).join("")}
+          <div class="partner-sidebar-head">
+            <div class="partner-sidebar-title">${escapeHtml(state.partner?.name || "合作單位")}</div>
+            <button class="partner-sidebar-toggle" data-action="toggle-partner-sidebar" aria-label="${state.partnerCollapsed ? "展開選單" : "收合選單"}">${state.partnerCollapsed ? "›" : "‹"}</button>
+          </div>
+          ${nav.map(([key, label, icon]) => `<button class="partner-nav-btn ${state.partnerView === key ? "active" : ""}" data-partner-view="${key}" title="${escapeHtml(label)}"><span>${icon}</span><b>${label}</b></button>`).join("")}
         </aside>
         <section class="partner-workspace">${content}</section>
       </div>
@@ -4556,6 +4560,11 @@
     }
     if (target.dataset.partnerView) {
       state.partnerView = target.dataset.partnerView;
+      render();
+    }
+    if (target.dataset.action === "toggle-partner-sidebar") {
+      state.partnerCollapsed = !state.partnerCollapsed;
+      localStorage.setItem("afide-partner-collapsed", state.partnerCollapsed ? "true" : "false");
       render();
     }
     if (target.dataset.action === "clear-vehicle-search") {

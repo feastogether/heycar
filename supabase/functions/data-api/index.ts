@@ -202,6 +202,16 @@ async function loadPartnerData(partnerId: string) {
     .eq("active", true)
     .single();
   if (partnerError || !partner) throw new Error("PARTNER_NOT_FOUND");
+  async function loadSafePartners() {
+    const { data, error } = await db
+      .from("insurance_partners")
+      .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name")
+      .eq("active", true);
+    if (error) throw error;
+    const rows = data || [];
+    if (rows.some((item) => item.id === partner.id)) return rows;
+    return [partner, ...rows];
+  }
   const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
   if (partner.partner_type === "repair_shop") {
     const partnerName = normalizedText(partner.name);
@@ -223,7 +233,7 @@ async function loadPartnerData(partnerId: string) {
     ]);
     const plates = new Set(calendarRows.map((item) => normalizedText(item.plate_no)).filter(Boolean));
     result.vehicles = (vehicles.data || []).filter((item) => vehicleIds.has(item.id) || plates.has(normalizedText(item.plate_no)));
-    result.insurance_partners = [partner];
+    result.insurance_partners = await loadSafePartners();
     return { data: result, partner };
   }
   const requestQuery = partner.partner_type === "dealer"
@@ -239,13 +249,7 @@ async function loadPartnerData(partnerId: string) {
     ? (requests.data || []).filter((item) => item.request_type !== "amendment" || item.status === "completed").map(({ broker_notes: _brokerNotes, ...item }) => item)
     : requests.data || [];
   result.vehicles = vehicles.data || [];
-  if (partner.partner_type === "broker") {
-    const { data: partners, error } = await db.from("insurance_partners").select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name");
-    if (error) throw error;
-    result.insurance_partners = partners || [];
-  } else {
-    result.insurance_partners = [partner];
-  }
+  result.insurance_partners = await loadSafePartners();
   return { data: result, partner };
 }
 

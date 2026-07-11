@@ -2413,6 +2413,10 @@ button.calendar-pill:hover { filter: brightness(.96); }
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 18px;
   align-items: start;
+  transition: grid-template-columns .18s ease;
+}
+.partner-portal-layout.is-collapsed {
+  grid-template-columns: 72px minmax(0, 1fr);
 }
 .partner-sidebar {
   position: sticky;
@@ -2425,12 +2429,39 @@ button.calendar-pill:hover { filter: brightness(.96); }
   background: #fff;
   box-shadow: 0 10px 24px rgba(24,32,51,.045);
 }
-.partner-sidebar-title {
+.partner-sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 2px 4px 10px;
   border-bottom: 1px solid var(--line);
+}
+.partner-sidebar-title {
+  min-width: 0;
+  flex: 1;
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.partner-sidebar-toggle {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+.partner-sidebar-toggle:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
 }
 .partner-nav-btn {
   display: flex;
@@ -2443,10 +2474,43 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-weight: 900;
   text-align: left;
 }
+.partner-nav-btn span {
+  width: 24px;
+  flex: 0 0 24px;
+  text-align: center;
+}
+.partner-nav-btn b {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .partner-nav-btn:hover,
 .partner-nav-btn.active {
   background: #fff4f3;
   color: var(--brand-dark);
+}
+.partner-portal-layout.is-collapsed .partner-sidebar {
+  padding: 12px 8px;
+}
+.partner-portal-layout.is-collapsed .partner-sidebar-head {
+  justify-content: center;
+  padding: 0 0 8px;
+}
+.partner-portal-layout.is-collapsed .partner-sidebar-title,
+.partner-portal-layout.is-collapsed .partner-nav-btn b {
+  display: none;
+}
+.partner-portal-layout.is-collapsed .partner-sidebar-toggle {
+  width: 38px;
+}
+.partner-portal-layout.is-collapsed .partner-nav-btn {
+  justify-content: center;
+  padding: 12px 8px;
+}
+.partner-portal-layout.is-collapsed .partner-nav-btn span {
+  width: auto;
+  flex-basis: auto;
 }
 .partner-workspace { min-width: 0; }
 .dealer-garage-card .insurance-files {
@@ -3338,14 +3402,17 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-row-facts { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .vehicle-row-actions { padding-top: 9px; border-top: 1px solid var(--line); }
   .partner-portal-layout { grid-template-columns: 1fr; gap: 12px; }
+  .partner-portal-layout.is-collapsed { grid-template-columns: 1fr; }
   .partner-sidebar {
     position: static;
     display: flex;
     overflow-x: auto;
     padding: 10px;
   }
+  .partner-sidebar-head { display: none; }
   .partner-sidebar-title { display: none; }
   .partner-nav-btn { width: auto; flex: 0 0 auto; white-space: nowrap; }
+  .partner-portal-layout.is-collapsed .partner-nav-btn b { display: inline; }
   .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .single-driver-picker .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .broadcast-grid { grid-template-columns: 1fr; }
