@@ -44,6 +44,8 @@
     storageUsedBytes: 0,
     storageQuotaBytes: 1024 * 1024 * 1024,
     storageLoading: false,
+    storageSearch: "",
+    storageFolderFilter: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
@@ -875,7 +877,22 @@
       reader.readAsDataURL(file);
     });
     const name = renamedAttachment(file, plateNo, documentLabel);
-    return await storageRequest("upload", { name, type: file.type, plate_no: plateNo, base64 });
+    const vehicle = findVehicleByPlate(plateNo);
+    const dealerName = vehicle?.dealer_partner_id ? partnerName(vehicle.dealer_partner_id) : "";
+    const isInsuranceDocument = /保險|報價|要保|用印|保單|收據|批改|批加|刷卡/.test(String(documentLabel || name));
+    const folder = isInsuranceDocument
+      ? [dealerName || "未指定車商", plateNo || "未指定車牌"].map((part) => safeFolderPart(part)).join("/")
+      : safeFolderPart(plateNo || "general");
+    return await storageRequest("upload", { name, type: file.type, plate_no: plateNo, dealer_name: dealerName, folder, base64 });
+  }
+
+  function safeFolderPart(value) {
+    return String(value || "general").trim().replace(/[\\/:*?"<>|#%{}]+/g, "_").replace(/\s+/g, "_").slice(0, 80) || "general";
+  }
+
+  function findVehicleByPlate(plateNo = "") {
+    const normalized = String(plateNo || "").trim().toUpperCase();
+    return (state.data.vehicles || []).find((vehicle) => String(vehicle.plate_no || "").trim().toUpperCase() === normalized);
   }
 
   async function uploadDriverDocument(file, driverName = "", documentLabel = "", folderKey = "") {
@@ -903,6 +920,19 @@
     const ext = file.name.includes(".") ? file.name.split(".").pop() : "png";
     const name = `${partnerName || "partner"} logo.${ext}`;
     return await supabaseStorageRequest("upload", { name, type: file.type, folder: "partner-logos", base64 });
+  }
+
+  async function uploadVehicleDocument(file, plateNo = "", documentLabel = "車輛文件") {
+    if (file.size > 10 * 1024 * 1024) throw new Error("車輛文件不可超過 10 MB");
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",")[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    const name = renamedAttachment(file, plateNo || "車輛", documentLabel);
+    const folder = `vehicle-documents-${String(plateNo || "unknown").replace(/[^\w.-]+/g, "_")}`;
+    return await supabaseStorageRequest("upload", { name, type: file.type, folder, base64 });
   }
 
   function render() {
@@ -1737,12 +1767,6 @@
       ? item.status === state.insuranceStatusFilter
       : !insuranceFinishedStatuses().includes(item.status));
     return `
-      <div class="insurance-flow-overview">
-        <div><b>報價</b><span>發起報價 → 保經報價 → 車輛部確認 → 車商確認 → 用印 → 保經出單</span></div>
-        <div><b>批改</b><span>發起需求 → 保經收件 → 車輛部用印 → 保經確認 → 車輛部結案</span></div>
-        <div><b>批加</b><span>發起批加 → 保經報價 → 內容確認 → 用印 → 保經提供保單</span></div>
-        <div><b>補發</b><span>車輛部發起 → 保經提供檔案 → 車輛部確認</span></div>
-      </div>
       <div class="insurance-filter-strip">
         <button class="filter-btn ${state.insuranceStatusFilter === "" ? "active" : ""}" data-insurance-filter="">\u9032\u884c\u4e2d<b>${activeCount}</b></button>
         ${filterStatuses.map(([status, label]) => `<button class="filter-btn ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "active" : ""}" data-insurance-filter="${status}">${label}<b>${counts[status] || 0}</b></button>`).join("")}
@@ -1871,8 +1895,10 @@
     const dealerActions = state.partner?.partner_type === "dealer"
       ? `<button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceAdditionRequest">發起批加</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button>`
       : "";
+    const dealerVehicles = state.partner?.partner_type === "dealer" ? dealerVehicleOverview(requests) : "";
     layout(`
       <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · ${state.partner.partner_type === "broker" ? "保經作業" : "車商案件"}</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button>${dealerActions}</div></div>
+      ${dealerVehicles}
       ${insuranceControlCenter(requests, false)}
     `);
   }
@@ -1881,11 +1907,25 @@
     const vehicles = state.data.vehicles || [];
     return `
       <section class="dealer-vehicle-overview">
-        <h3>所屬車輛</h3>
+        <h3>所屬車輛與保單</h3>
         <div class="dealer-vehicle-grid">
           ${vehicles.length ? vehicles.map((vehicle) => {
             const latest = requests.find((request) => request.vehicle_id === vehicle.id || request.plate_no === vehicle.plate_no);
-            return `<div><strong>${escapeHtml(vehicle.plate_no)}</strong>${latest ? insuranceStatusBadge(latest.status) : `<span class="insurance-status">尚未發起</span>`}</div>`;
+            const finalFiles = requests
+              .filter((request) => request.vehicle_id === vehicle.id || request.plate_no === vehicle.plate_no)
+              .map((request) => [
+                insuranceFileLink(request, "policy", "保單"),
+                insuranceFileLink(request, "receipt", "收據"),
+                insuranceFileLink(request, "document_policy", "補發保單"),
+                insuranceFileLink(request, "document_receipt", "補發收據")
+              ].filter(Boolean).join(""))
+              .filter(Boolean)
+              .join("");
+            return `<article class="dealer-vehicle-card">
+              <div><strong>${escapeHtml(vehicle.plate_no)}</strong><span>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "未填車型")}</span></div>
+              ${latest ? insuranceStatusBadge(latest.status) : `<span class="insurance-status">尚未發起</span>`}
+              ${finalFiles ? `<div class="insurance-files">${finalFiles}</div>` : `<small>尚無可檢視保單</small>`}
+            </article>`;
           }).join("") : `<div class="empty">尚未指定所屬車輛</div>`}
         </div>
       </section>
@@ -1957,6 +1997,8 @@
   function adminStorage() {
     const percent = Math.min(100, Math.round(state.storageUsedBytes / Math.max(1, state.storageQuotaBytes) * 100));
     const warning = percent >= 90 ? "danger" : percent >= 75 ? "warning" : "normal";
+    const folders = storageFolders();
+    const files = filteredStorageFiles();
     return `
       <div class="section-head"><div><h2>儲存空間</h2><small>管理 Cloudflare R2 附件與容量</small></div><div class="actions"><button class="danger-btn" data-action="delete-storage-files">刪除選取</button><button class="primary-btn" data-action="refresh-storage">${state.storageLoading ? "讀取中..." : "重新整理"}</button></div></div>
       <section class="storage-usage ${warning}">
@@ -1964,8 +2006,20 @@
         <div class="storage-meter"><span style="width:${percent}%"></span></div>
         ${percent >= 75 ? `<p>${percent >= 90 ? "儲存空間即將用完，請立即清理不需要的附件。" : "儲存空間已超過 75%，建議開始整理附件。"}</p>` : ""}
       </section>
+      <form id="storageFilterForm" class="storage-filter-bar">
+        <input name="search" value="${escapeHtml(state.storageSearch || "")}" placeholder="搜尋車牌、車商、檔名或路徑">
+        <select name="folder">
+          <option value="">全部資料夾</option>
+          ${folders.map((folder) => `<option value="${escapeHtml(folder)}" ${state.storageFolderFilter === folder ? "selected" : ""}>${escapeHtml(folder)}</option>`).join("")}
+        </select>
+        <button class="primary-btn">篩選</button>
+        <button class="ghost-btn" type="button" data-action="clear-storage-filter">清除</button>
+      </form>
+      <div class="storage-folder-list">
+        ${folders.length ? folders.map((folder) => `<button class="${state.storageFolderFilter === folder ? "active" : ""}" data-storage-folder="${escapeHtml(folder)}"><b>${escapeHtml(folder)}</b><span>${storageFolderCount(folder)} 個檔案</span></button>`).join("") : ""}
+      </div>
       <div class="storage-file-list">
-        ${state.storageFiles.length ? state.storageFiles.map((file) => `
+        ${files.length ? files.map((file) => `
           <div class="storage-file-row">
             <label class="storage-file-check" title="選取檔案"><input type="checkbox" data-storage-file value="${escapeHtml(file.path)}"></label>
             <span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span>
@@ -1973,9 +2027,26 @@
             <time>${fmtDate(file.created_at)}</time>
             ${file.url ? `<div class="actions"><button class="ghost-btn" data-preview-file="${escapeHtml(file.url)}" data-preview-name="${escapeHtml(file.name)}" data-preview-type="${escapeHtml(file.content_type || "")}">查看</button><a class="ghost-btn" href="${escapeHtml(file.url)}" download="${escapeHtml(file.name)}">下載</a></div>` : ""}
           </div>
-        `).join("") : `<div class="empty">${state.storageLoading ? "正在讀取儲存空間..." : "目前沒有附件資料，請點重新整理。"}</div>`}
+        `).join("") : `<div class="empty">${state.storageLoading ? "正在讀取儲存空間..." : "目前沒有符合條件的附件資料。"}</div>`}
       </div>
     `;
+  }
+
+  function storageFolders() {
+    return [...new Set((state.storageFiles || []).map((file) => String(file.folder || file.path || "").split("/")[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
+  }
+
+  function storageFolderCount(folder) {
+    return (state.storageFiles || []).filter((file) => String(file.folder || file.path || "").split("/")[0] === folder).length;
+  }
+
+  function filteredStorageFiles() {
+    const keyword = String(state.storageSearch || "").trim().toLowerCase();
+    return (state.storageFiles || []).filter((file) => {
+      const folder = String(file.folder || file.path || "").split("/")[0];
+      const text = [file.name, file.path, file.folder, file.dealer_name, file.plate_no].filter(Boolean).join(" ").toLowerCase();
+      return (!state.storageFolderFilter || folder === state.storageFolderFilter) && (!keyword || text.includes(keyword));
+    });
   }
 
   function adminBom() {
@@ -2071,12 +2142,17 @@
     const modal = document.createElement("div");
     modal.className = "modal-backdrop file-preview-backdrop";
     const encodedUrl = escapeHtml(url);
-    const inferredType = String(type || "") || (/\.(png|jpe?g|webp|gif)$/i.test(name || "") ? "image/unknown" : /\.pdf$/i.test(name || "") ? "application/pdf" : "");
+    const hint = `${type || ""} ${name || ""} ${decodeURIComponent(String(url || ""))}`.toLowerCase();
+    const inferredType = hint.includes("image/") || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(hint)
+      ? "image/unknown"
+      : hint.includes("pdf") || /\.pdf(\?|$)/i.test(hint)
+      ? "application/pdf"
+      : String(type || "");
     const previewTitle = inferredType.startsWith("image/") ? "照片預覽" : inferredType.includes("pdf") ? "PDF 預覽" : "檔案預覽";
     const media = inferredType.startsWith("image/")
       ? `<img class="file-preview-media" src="${encodedUrl}" alt="${escapeHtml(name)}">`
       : inferredType.includes("pdf")
-      ? `<iframe class="file-preview-frame" src="${encodedUrl}" title="${escapeHtml(name)}"></iframe>`
+      ? `<object class="file-preview-frame" data="${encodedUrl}" type="application/pdf"><div class="empty">此瀏覽器無法內嵌 PDF，請使用下載按鈕。</div></object>`
       : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
     modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><a class="primary-btn" href="${encodedUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
     document.body.appendChild(modal);
@@ -2225,11 +2301,12 @@
   function adminUsers() {
     if (!adminCan("super")) return `<div class="empty">僅最高管理員可管理內部帳號。</div>`;
     const users = state.data.admin_users || [];
+    const permissionKeys = [["drivers", "駕駛"], ["vehicles", "車輛"], ["loans", "租借"], ["service_records", "履歷"], ["messages", "訊息"], ["finance", "費用"], ["insurance", "保險"]];
     return `
       <div class="section-head"><div><h2>權限管理</h2><small>一般內部帳號無法查看或編輯本頁</small></div><button class="primary-btn" data-modal="adminUser">新增內部帳號</button></div>
       <div class="access-card-grid">
         ${users.length ? users.map((item) => {
-          const enabled = Object.entries(item.permissions || {}).filter(([, value]) => value);
+          const permissions = item.permissions || {};
           return `<article class="access-card">
             <div class="access-avatar">${escapeHtml(String(item.name || "?").slice(-2))}</div>
             <div class="access-card-body">
@@ -2238,7 +2315,7 @@
                 <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
               </div>
               <small>${item.active === false ? "禁止登入" : "允許登入"}</small>
-              <div class="permission-chips">${enabled.map(([key]) => `<span>${permissionName(key)}</span>`).join("") || "<span>無功能權限</span>"}</div>
+              <div class="permission-switch-grid">${permissionKeys.map(([key, label]) => `<span class="${permissions[key] ? "on" : "off"}"><i></i>${label}</span>`).join("")}</div>
               ${rowActions("adminUser", "admin_users", item.id)}
             </div>
           </article>`;
@@ -2492,7 +2569,7 @@
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
           <div><dt>道路救援</dt><dd>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</dd></div>
         </dl>
-        <div class="vehicle-row-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-row-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>
     `).join("")}</div>`;
   }
@@ -2525,7 +2602,7 @@
           <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
         </div>
-        <div class="vehicle-card-actions">${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-card-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>`;
     }).join("")}</div>`;
   }
@@ -2537,6 +2614,82 @@
 
   function vehicleAssignedDriverLabel(vehicle) {
     return vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
+  }
+
+  function parseVehicleFiles(vehicle = {}) {
+    if (Array.isArray(vehicle.vehicle_files)) return vehicle.vehicle_files;
+    try { return JSON.parse(vehicle.vehicle_files || "[]"); } catch { return []; }
+  }
+
+  function vehicleInsuranceFiles(vehicle = {}) {
+    return (state.data.insurance_requests || [])
+      .filter((item) => item.vehicle_id === vehicle.id || (vehicle.plate_no && item.plate_no === vehicle.plate_no))
+      .flatMap((item) => [
+        item.quote_url ? { url: item.quote_url, name: item.quote_name || `${vehicle.plate_no} 報價單`, type: "", group: "保險報價" } : null,
+        item.policy_url ? { url: item.policy_url, name: item.policy_name || `${vehicle.plate_no} 保單`, type: "", group: "保單" } : null,
+        item.receipt_url ? { url: item.receipt_url, name: item.receipt_name || `${vehicle.plate_no} 收據`, type: "", group: "收據" } : null,
+        item.document_policy_url ? { url: item.document_policy_url, name: item.document_policy_name || `${vehicle.plate_no} 補發保單`, type: "", group: "補發保單" } : null,
+        item.document_receipt_url ? { url: item.document_receipt_url, name: item.document_receipt_name || `${vehicle.plate_no} 補發收據`, type: "", group: "補發收據" } : null
+      ].filter(Boolean));
+  }
+
+  function vehicleFolderForm(vehicle = {}) {
+    const customFiles = parseVehicleFiles(vehicle);
+    const insuranceFiles = vehicleInsuranceFiles(vehicle);
+    return `<input type="hidden" name="plate_no" value="${escapeHtml(vehicle.plate_no || "")}">
+      <input type="hidden" name="vehicle_files" value="${escapeHtml(JSON.stringify(customFiles))}" data-vehicle-files-json>
+      <section class="vehicle-folder-panel field full">
+        <div class="vehicle-folder-head">
+          <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
+          <div><strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "車輛資料夾")}</strong><small>行照與此車保險文件集中管理</small></div>
+        </div>
+        <div class="vehicle-folder-grid">
+          <article>
+            <small>車輛行照</small>
+            ${vehicle.registration_doc_url ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(vehicle.registration_doc_url)}" data-preview-name="${escapeHtml(vehicle.registration_doc_name || `${vehicle.plate_no || "車輛"} 行照`)}" data-preview-type="">查看行照</button>` : `<p>尚未上傳行照</p>`}
+          </article>
+          <article>
+            <small>道路救援</small>
+            <strong>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</strong>
+          </article>
+          <article>
+            <small>油品</small>
+            <strong>${escapeHtml(vehicle.fuel_type || "-")}</strong>
+          </article>
+        </div>
+        <div class="vehicle-folder-section">
+          <h4>保險資料</h4>
+          <div class="vehicle-file-list">${insuranceFiles.length ? insuranceFiles.map(vehicleFileChip).join("") : `<span class="muted-chip">尚無保單或收據</span>`}</div>
+        </div>
+        <div class="vehicle-folder-section">
+          <h4>自訂車輛文件</h4>
+          <div class="vehicle-file-list" data-vehicle-file-list>${customFiles.length ? customFiles.map((file, index) => vehicleFileChip(file, index, true)).join("") : `<span class="muted-chip">尚未新增文件</span>`}</div>
+          <div class="attachment-upload-row">
+            <input type="file" data-vehicle-document-upload data-document-label="車輛文件">
+            <span data-attachment-status>可新增行照以外的車輛文件</span>
+          </div>
+        </div>
+      </section>`;
+  }
+
+  function vehicleFileChip(file, index = -1, removable = false) {
+    return `<span class="vehicle-file-chip">
+      <button type="button" data-preview-file="${escapeHtml(file.url || "")}" data-preview-name="${escapeHtml(file.name || "車輛文件")}" data-preview-type="${escapeHtml(file.type || "")}">${escapeHtml(file.group ? `${file.group}｜${file.name || "檔案"}` : file.name || "檔案")}</button>
+      ${removable ? `<button type="button" data-vehicle-file-remove="${index}">刪除</button>` : ""}
+    </span>`;
+  }
+
+  function vehicleRegistrationField(v = {}) {
+    return `<div class="field full attachment-field">
+      <label>車輛行照</label>
+      <input type="hidden" name="registration_doc_url" value="${escapeHtml(v.registration_doc_url || "")}" data-attachment-url data-registration-doc-url>
+      <input type="hidden" name="registration_doc_name" value="${escapeHtml(v.registration_doc_name || "")}" data-attachment-name data-registration-doc-name>
+      <div class="attachment-upload-row">
+        <input type="file" accept="image/*,application/pdf" data-attachment-upload data-vehicle-registration-upload data-document-label="行照">
+        <span data-attachment-status>${v.registration_doc_url ? `已上傳：${escapeHtml(v.registration_doc_name || "行照")}` : "支援圖片或 PDF，會存放於 Supabase 車輛文件"}</span>
+        ${v.registration_doc_url ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(v.registration_doc_url)}" data-preview-name="${escapeHtml(v.registration_doc_name || `${v.plate_no || "車輛"} 行照`)}" data-preview-type="">查看</button>` : ""}
+      </div>
+    </div>`;
   }
 
   function driverAvatarBubble(driver) {
@@ -2624,6 +2777,7 @@
       adminUser: ["內部帳號", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
       vehicle: ["車輛", "vehicles", vehicleForm],
+      vehicleFolder: ["車輛資料夾", "vehicles", vehicleFolderForm],
       vehicleLoan: ["借車登記", "vehicle_loans", vehicleLoanForm],
       vehicleReturn: ["登記還車", "vehicle_loans", vehicleReturnForm],
       serviceRecord: ["車輛履歷", "vehicle_service_records", serviceRecordForm],
@@ -2701,14 +2855,18 @@
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
       if (tableName === "vehicles") {
-        const driverIds = formData.getAll("assigned_driver_ids").filter(Boolean);
+        if (e.currentTarget.querySelector('[name="assigned_driver_ids"]')) {
+          const driverIds = formData.getAll("assigned_driver_ids").filter(Boolean);
+          record.current_driver_id = driverIds[0] || null;
+          record.assigned_driver_names = driverIds.length
+            ? driverIds.map((driverId) => driverName(driverId)).join("/")
+            : "";
+        }
         delete record.assigned_driver_ids;
-        record.current_driver_id = driverIds[0] || null;
-        record.assigned_driver_names = driverIds.length
-          ? driverIds.map((driverId) => driverName(driverId)).join("/")
-          : "";
-        record.registration_doc_url = record.attachment_url || record.registration_doc_url || "";
-        record.registration_doc_name = record.attachment_name || record.registration_doc_name || "";
+        if ("attachment_url" in record || "registration_doc_url" in record) {
+          record.registration_doc_url = record.attachment_url || record.registration_doc_url || "";
+          record.registration_doc_name = record.attachment_name || record.registration_doc_name || "";
+        }
         delete record.attachment_url;
         delete record.attachment_name;
       }
@@ -2764,11 +2922,18 @@
       });
     }
     if (tableName === "vehicles") {
-      record.current_driver_id = record.current_driver_id || null;
-      record.dealer_partner_id = record.dealer_partner_id || null;
+      if ("current_driver_id" in record) record.current_driver_id = record.current_driver_id || null;
+      if ("dealer_partner_id" in record) record.dealer_partner_id = record.dealer_partner_id || null;
+      if (typeof record.vehicle_files === "string") {
+        try { record.vehicle_files = JSON.parse(record.vehicle_files || "[]"); } catch { record.vehicle_files = []; }
+      }
       blankToNull(record, ["compulsory_insurance_expiry", "voluntary_insurance_expiry", "next_inspection_date"]);
-      record.insurance_company = record.compulsory_insurance_company || record.voluntary_insurance_company || record.insurance_company || "";
-      record.roadside_assistance_phone = insuranceCompanyPhone(record.voluntary_insurance_company) || record.roadside_assistance_phone || "";
+      if ("compulsory_insurance_company" in record || "voluntary_insurance_company" in record || "insurance_company" in record) {
+        record.insurance_company = record.compulsory_insurance_company || record.voluntary_insurance_company || record.insurance_company || "";
+      }
+      if ("voluntary_insurance_company" in record || "roadside_assistance_phone" in record) {
+        record.roadside_assistance_phone = insuranceCompanyPhone(record.voluntary_insurance_company) || record.roadside_assistance_phone || "";
+      }
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
     if (tableName === "driver_helper_articles") {
@@ -3112,7 +3277,7 @@
       .filter((item) => isInsuranceCompanyPartner(item))
       .map((item) => ({ name: item.name, phone: item.phone || item.contact_phone || "" }));
     const hasCurrent = value && !companies.some((company) => company.name === value);
-    return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "請選擇保險公司" : "尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
+    return `<div class="field"><label>${escapeHtml(label)}</label><select name="${escapeHtml(name)}" data-insurance-company-select><option value="">${companies.length ? "不指定" : "不指定 / 尚未建立保險公司"}</option>${hasCurrent ? `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}（舊資料）</option>` : ""}${companies.map((company) => `<option value="${escapeHtml(company.name)}" data-phone="${escapeHtml(company.phone)}" ${value === company.name ? "selected" : ""}>${escapeHtml(company.name)}</option>`).join("")}</select></div>`;
   }
 
   function insuranceCompanyPhone(name) {
@@ -3321,9 +3486,7 @@
       ${input("next_inspection_date", "下次定檢日", formDate(v.next_inspection_date), "date")}
       ${input("roadside_assistance_phone", "道路救援電話", insuranceCompanyPhone(v.voluntary_insurance_company || v.insurance_company) || v.roadside_assistance_phone, "tel")}
       <div class="form-section-title field full">車輛文件</div>
-      ${attachmentField({ attachment_url: v.registration_doc_url, attachment_name: v.registration_doc_name }, "行照")}
-      <input type="hidden" name="registration_doc_url" value="${escapeHtml(v.registration_doc_url || "")}" data-registration-doc-url>
-      <input type="hidden" name="registration_doc_name" value="${escapeHtml(v.registration_doc_name || "")}" data-registration-doc-name>
+      ${vehicleRegistrationField(v)}
       ${text("notes", "備註", v.notes)}
     `;
   }
@@ -4285,6 +4448,15 @@
     if (target.dataset.action === "refresh-storage") {
       await loadStorageUsage();
     }
+    if (target.dataset.action === "clear-storage-filter") {
+      state.storageSearch = "";
+      state.storageFolderFilter = "";
+      render();
+    }
+    if (target.dataset.storageFolder !== undefined) {
+      state.storageFolderFilter = target.dataset.storageFolder;
+      render();
+    }
     if (target.dataset.action === "delete-storage-files") {
       const paths = Array.from(document.querySelectorAll("[data-storage-file]:checked")).map((input) => input.value);
       if (!paths.length) {
@@ -4319,6 +4491,17 @@
     if (target.dataset.driverLogin) {
       await update("drivers", target.dataset.driverLogin, { login_enabled: target.checked });
       render();
+    }
+    if (target.dataset.vehicleFileRemove !== undefined) {
+      const list = target.closest(".vehicle-folder-section")?.querySelector("[data-vehicle-file-list]");
+      const form = target.closest("form");
+      const hidden = form?.querySelector("[data-vehicle-files-json]");
+      let files = [];
+      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
+      files.splice(Number(target.dataset.vehicleFileRemove), 1);
+      if (hidden) hidden.value = JSON.stringify(files);
+      if (list) list.innerHTML = files.length ? files.map((file, index) => vehicleFileChip(file, index, true)).join("") : `<span class="muted-chip">尚未新增文件</span>`;
+      return;
     }
     if (target.dataset.page) {
       state.page = Number(target.dataset.page);
@@ -4405,6 +4588,13 @@
       state.vehicleRegionFilter = String(data.get("region") || "");
       state.vehicleFuelFilter = String(data.get("fuel") || "");
       state.vehicleDealerFilter = String(data.get("dealer") || "");
+      render();
+    }
+    if (e.target.id === "storageFilterForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.storageSearch = String(data.get("search") || "").trim();
+      state.storageFolderFilter = String(data.get("folder") || "");
       render();
     }
     if (e.target.id === "serviceSearchForm") {
@@ -4575,6 +4765,33 @@
       }
       return;
     }
+    const vehicleDocumentInput = e.target.closest("[data-vehicle-document-upload]");
+    if (vehicleDocumentInput?.files?.[0]) {
+      const file = vehicleDocumentInput.files[0];
+      const form = vehicleDocumentInput.closest("form");
+      const field = vehicleDocumentInput.closest(".vehicle-folder-section");
+      const hidden = form?.querySelector("[data-vehicle-files-json]");
+      const list = form?.querySelector("[data-vehicle-file-list]");
+      const status = field?.querySelector("[data-attachment-status]");
+      let files = [];
+      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
+      try {
+        vehicleDocumentInput.disabled = true;
+        if (status) status.textContent = "車輛文件上傳中...";
+        const plateNo = form?.querySelector('[name="plate_no"]')?.value || "";
+        const uploaded = await uploadVehicleDocument(file, plateNo, vehicleDocumentInput.dataset.documentLabel || "車輛文件");
+        files.push({ url: uploaded.url || uploaded, name: uploaded.name || file.name, type: file.type, group: "車輛文件" });
+        if (hidden) hidden.value = JSON.stringify(files);
+        if (status) status.textContent = `已新增 ${files.length} 個車輛文件`;
+        if (list) list.innerHTML = files.map((item, index) => vehicleFileChip(item, index, true)).join("");
+      } catch (error) {
+        if (status) status.textContent = "上傳失敗";
+        await showAlert(error.message || error, "上傳失敗");
+      } finally {
+        vehicleDocumentInput.disabled = false;
+      }
+      return;
+    }
     if (attachmentInput?.files?.[0]) {
       const file = attachmentInput.files[0];
       const field = attachmentInput.closest(".attachment-field");
@@ -4587,10 +4804,13 @@
         const driverFolderKey = form?.querySelector('[name="phone"]')?.value || form?.querySelector('[name="id"]')?.value || ownerLabel;
         const isDriverDocument = Boolean(attachmentInput.dataset.driverDocument);
         const isPartnerLogo = attachmentInput.dataset.partnerLogoUpload !== undefined;
+        const isVehicleRegistration = attachmentInput.dataset.vehicleRegistrationUpload !== undefined;
         const uploaded = isPartnerLogo
           ? await uploadPartnerLogo(file, ownerLabel)
           : isDriverDocument
           ? await uploadDriverDocument(file, ownerLabel, attachmentInput.dataset.documentLabel || "", driverFolderKey)
+          : isVehicleRegistration
+          ? await uploadVehicleDocument(file, ownerLabel, "行照")
           : await uploadAttachment(file, ownerLabel, attachmentInput.dataset.documentLabel || "");
         const url = typeof uploaded === "string" ? uploaded : uploaded.url;
         const name = typeof uploaded === "string" ? file.name : uploaded.name;

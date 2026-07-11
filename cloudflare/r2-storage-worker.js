@@ -59,6 +59,9 @@ async function listAll(bucket, origin, signingSecret) {
       files.push({
         path: item.key,
         name: item.customMetadata?.originalName || item.key.split("/").pop()?.replace(/^[0-9a-f-]{36}-/, ""),
+        folder: item.key.split("/")[0] || "general",
+        dealer_name: item.customMetadata?.dealerName || "",
+        plate_no: item.customMetadata?.plateNo || "",
         size: item.size,
         created_at: item.uploaded,
         content_type: item.httpMetadata?.contentType || "application/octet-stream",
@@ -108,10 +111,19 @@ export default {
         if (!bytes.length || bytes.length > 10 * 1024 * 1024) return json({ error: "INVALID_FILE_SIZE" }, 400);
         const name = safePart(body.name, "attachment", 180);
         const plate = safePart(body.plate_no, "general", 40);
-        const path = `${plate}/${crypto.randomUUID()}-${name}`;
+        const folder = String(body.folder || plate || "general")
+          .split("/")
+          .map((part) => safePart(part, "general", 80))
+          .filter(Boolean)
+          .join("/") || "general";
+        const path = `${folder}/${crypto.randomUUID()}-${name}`;
         await env.ATTACHMENTS.put(path, bytes, {
           httpMetadata: { contentType: String(body.type || "application/octet-stream") },
-          customMetadata: { originalName: name }
+          customMetadata: {
+            originalName: name,
+            dealerName: safePart(body.dealer_name, "", 80),
+            plateNo: plate
+          }
         });
         const signature = await signPath(env.FILE_SIGNING_SECRET, path);
         return json({ path, name, url: `${url.origin}/files/${encodeURIComponent(path)}?sig=${signature}` });
