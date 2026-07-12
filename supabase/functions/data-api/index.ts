@@ -16,6 +16,7 @@ const tables = [
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
+const lineChannelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN") || "";
 const db = createClient(
   Deno.env.get("SUPABASE_URL") || "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
@@ -294,6 +295,105 @@ async function loadPartnerData(partnerId: string) {
   return { data: result, partner };
 }
 
+function compactText(value: unknown, fallback = "") {
+  return String(value || fallback).replace(/\s+/g, " ").trim();
+}
+
+function lineMessageFor(table: string, record: Record<string, unknown>) {
+  const url = "https://heycar.airvan.workers.dev";
+  if (table === "announcements") {
+    return `【公告】${compactText(record.title, "新公告")}\n${compactText(record.content).slice(0, 240)}\n${url}`;
+  }
+  if (table === "personal_messages") {
+    return `【私人訊息】${compactText(record.title, "新訊息")}\n${compactText(record.content).slice(0, 240)}\n${url}`;
+  }
+  if (table === "maintenance_notifications") {
+    return `【保養維修通知】${compactText(record.service_date)} ${compactText(record.service_time)}\n車輛：${compactText(record.plate_no || record.vehicle_plate || "")}\n廠商：${compactText(record.vendor, "-")}\n${compactText(record.content).slice(0, 220)}\n${url}`;
+  }
+  if (table === "payment_notices") {
+    if (compactText(record.fee_type) === "薪資") {
+      return `【薪資通知】你有新的薪資單，請登入系統並完成身分驗證後查看。\n${url}`;
+    }
+    return `【費用通知】${compactText(record.fee_type, "費用")}\n金額：${compactText(record.amount, "0")}\n日期：${compactText(record.due_date, "-")}\n${compactText(record.content).slice(0, 220)}\n${url}`;
+  }
+  return "";
+}
+
+async function pushLineText(lineUserId: string, text: string) {
+  if (!lineChannelAccessToken) return { ok: false, skipped: true, error: "LINE_CHANNEL_ACCESS_TOKEN_NOT_SET" };
+  const res = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${lineChannelAccessToken}`
+    },
+    body: JSON.stringify({
+      to: lineUserId,
+      messages: [{ type: "text", text: text.slice(0, 4900) }]
+    })
+  });
+  if (!res.ok) return { ok: false, status: res.status, error: await res.text() };
+  return { ok: true };
+}
+
+async function targetDriversForLinePush(table: string, record: Record<string, unknown>) {
+  if (["personal_messages", "maintenance_notifications", "payment_notices"].includes(table)) {
+    if (!record.driver_id) return [];
+    const { data, error } = await db
+      .from("drivers")
+      .select("id,name,line_user_id,line_display_name,line_bound_at")
+      .eq("id", record.driver_id);
+    if (error) throw error;
+    return data || [];
+  }
+  if (table === "announcements") {
+    const target = compactText(record.target_fleet, "全部車商");
+    const [{ data, error }, partners] = await Promise.all([
+      db
+      .from("drivers")
+      .select("id,name,fleet_name,dealer_partner_id,line_user_id,line_display_name,line_bound_at"),
+      db.from("insurance_partners").select("id,name")
+    ]);
+    if (error) throw error;
+    if (partners.error) throw partners.error;
+    const partnerNames = new Map((partners.data || []).map((item) => [item.id, item.name]));
+    return (data || []).filter((driver) => {
+      const dealerName = compactText(partnerNames.get(driver.dealer_partner_id));
+      return !target || target === "全部車商" || target === "全部車隊" || target === driver.fleet_name || target === dealerName;
+    });
+  }
+  return [];
+}
+
+async function pushLineForRecord(table: string, record: Record<string, unknown>) {
+  if (table === "maintenance_notifications" && record.vehicle_id && !record.plate_no) {
+    const { data: vehicle } = await db
+      .from("vehicles")
+      .select("plate_no")
+      .eq("id", record.vehicle_id)
+      .maybeSingle();
+    if (vehicle?.plate_no) record.plate_no = vehicle.plate_no;
+  }
+  const text = lineMessageFor(table, record);
+  if (!text) return { ok: true, sent: 0, skipped: 0, results: [] };
+  const drivers = await targetDriversForLinePush(table, record);
+  const boundDrivers = drivers.filter((driver) => compactText(driver.line_user_id));
+  const results = [];
+  for (const driver of boundDrivers) {
+    results.push({
+      driver_id: driver.id,
+      driver_name: driver.name,
+      ...(await pushLineText(String(driver.line_user_id), text))
+    });
+  }
+  return {
+    ok: results.every((item) => item.ok),
+    sent: results.filter((item) => item.ok).length,
+    skipped: drivers.length - boundDrivers.length,
+    results
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
@@ -388,6 +488,26 @@ Deno.serve(async (req) => {
       if (session.session_type === "admin") return json(await signStorageUrls(await loadAdminData(session)));
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
       return json(await signStorageUrls(await loadDriverData(session.driver_id)));
+    }
+    if (body.action === "push_line_message") {
+      if (session.session_type !== "admin" || !(await adminCan(session, "messages"))) {
+        return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      }
+      const driverId = compactText(body.driver_id);
+      if (driverId) {
+        const { data: driver, error } = await db
+          .from("drivers")
+          .select("id,name,line_user_id")
+          .eq("id", driverId)
+          .single();
+        if (error) throw error;
+        if (!driver?.line_user_id) return json({ error: "DRIVER_LINE_NOT_BOUND" }, 400);
+        return json(await pushLineText(driver.line_user_id, compactText(body.message, "這是一則 LINE 推播測試訊息。")));
+      }
+      if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
+      const { data: record, error } = await db.from(body.table).select("*").eq("id", body.id).single();
+      if (error) throw error;
+      return json(await pushLineForRecord(body.table, record || {}));
     }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
 
@@ -531,6 +651,9 @@ Deno.serve(async (req) => {
     }
 
     if (body.action === "insert") {
+      body.record = body.record || {};
+      const linePushEnabled = body.record?.line_push_enabled !== false && body.record?.line_push_enabled !== "false";
+      delete body.record.line_push_enabled;
       if (body.table === "insurance_partners") {
         if (!body.record.login_code) return json({ error: "PARTNER_CODE_REQUIRED" }, 400);
         body.record.login_code_hash = await hashCode(body.record.login_code);
@@ -543,9 +666,20 @@ Deno.serve(async (req) => {
       }
       const { data, error } = await db.from(body.table).insert(body.record).select().single();
       if (error) throw error;
+      let line_push = null;
+      if (linePushEnabled && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(body.table)) {
+        try {
+          line_push = await pushLineForRecord(body.table, data || {});
+        } catch (pushError) {
+          line_push = {
+            ok: false,
+            error: pushError instanceof Error ? pushError.message : String(pushError)
+          };
+        }
+      }
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      return json(await signStorageUrls({ data }));
+      return json(await signStorageUrls({ data, line_push }));
     }
     if (body.action === "update") {
       if (body.table === "insurance_partners") {

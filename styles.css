@@ -2161,7 +2161,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .driver-row-facts {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
   margin: 0;
 }
@@ -2189,6 +2189,41 @@ button.calendar-pill:hover { filter: brightness(.96); }
   justify-content: flex-end;
   gap: 6px;
   white-space: nowrap;
+}
+.line-bind-badge {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.line-bind-badge.bound {
+  background: #dcfce7;
+  color: #15803d;
+}
+.line-bind-badge.unbound {
+  background: #f1f5f9;
+  color: #64748b;
+}
+.line-push-field {
+  padding: 12px 14px;
+  border: 1px solid rgba(31, 122, 140, .18);
+  border-radius: 8px;
+  background: #f8fbfd;
+}
+.line-push-field small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 .driver-filter-bar {
   display: flex;

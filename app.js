@@ -62,6 +62,7 @@
     lineReady: false,
     lineAutoLoginTried: false,
     lineBindingMessage: "",
+    lastLinePushResult: null,
     unlockedSalaryPayments: new Set()
   };
 
@@ -425,10 +426,13 @@
   async function insert(table, record) {
     const item = { id: uid(), created_at: now(), ...record };
     if (hasApi && state.apiSession) {
-      const { data } = await apiRequest("insert", { table, record: item });
+      const result = await apiRequest("insert", { table, record: item });
+      const { data } = result;
+      state.lastLinePushResult = result.line_push || null;
       state.data[table].unshift(data);
       return data;
     }
+    state.lastLinePushResult = null;
     state.data[table] = state.data[table] || [];
     state.data[table].unshift(item);
     localSave();
@@ -492,6 +496,16 @@
 
   function showPrompt(message, defaultValue = "", title = "請輸入") {
     return showAppDialog({ title, message, kind: "prompt", input: true, defaultValue, showCancel: true, confirmText: "套用", cancelText: "取消" });
+  }
+
+  function linePushSummary(result) {
+    if (!result) return "";
+    if (result.skipped && result.error === "LINE_CHANNEL_ACCESS_TOKEN_NOT_SET") return "LINE 推播尚未設定 Channel Access Token，資料已儲存但沒有送出 LINE。";
+    if (result.error === "LINE_CHANNEL_ACCESS_TOKEN_NOT_SET") return "LINE 推播尚未設定 Channel Access Token，資料已儲存但沒有送出 LINE。";
+    if (Array.isArray(result.results) && result.results.some((item) => item.error === "LINE_CHANNEL_ACCESS_TOKEN_NOT_SET")) return "LINE 推播尚未設定 Channel Access Token，資料已儲存但沒有送出 LINE。";
+    if (result.sent || result.skipped) return `LINE 推播完成：已送出 ${result.sent || 0} 位，未綁定略過 ${result.skipped || 0} 位。`;
+    if (result.ok) return "LINE 推播已送出。";
+    return `LINE 推播未完成：${result.error || "請確認 LINE 設定與好友狀態"}`;
   }
 
   async function remove(table, id) {
@@ -617,6 +631,7 @@
           <div><dt>服務時段</dt><dd>${escapeHtml(driver.service_shift || driver.dispatch_time || "-")}</dd></div>
           <div><dt>所屬車商</dt><dd>${escapeHtml(driverDealerName(driver))}</dd></div>
           <div><dt>目前車輛</dt><dd>${escapeHtml(assignedVehicleNames(driver))}</dd></div>
+          <div><dt>LINE 綁定</dt><dd>${driverLineStatus(driver)}</dd></div>
           <div><dt>年資</dt><dd>${escapeHtml(yearsFrom(driver.onboard_date))}</dd></div>
           <div><dt>審驗日期</dt><dd>${expiryDateBadge(driver.license_review_date || driver.license_expiry, 30)}</dd></div>
         </dl>
@@ -625,6 +640,7 @@
             <input type="checkbox" data-driver-login="${driver.id}" ${driver.login_enabled === false ? "" : "checked"}>
             <span></span><b>${driver.login_enabled === false ? "禁止登入" : "允許登入"}</b>
           </label>
+          ${driver.line_user_id ? `<button class="soft-btn" data-line-test="${driver.id}">測試 LINE</button>` : ""}
           <button class="primary-btn" data-modal="driver" data-id="${driver.id}">查看與編輯</button>
           <button class="danger-btn" data-delete="drivers:${driver.id}">刪除</button>
         </div>
@@ -667,6 +683,13 @@
 
   function driverDealerName(driver) {
     return partnerName(driver.dealer_partner_id) || driver.fleet_name || "-";
+  }
+
+  function driverLineStatus(driver) {
+    if (!driver.line_user_id) return `<span class="line-bind-badge unbound">未綁定</span>`;
+    const name = driver.line_display_name ? `LINE：${escapeHtml(driver.line_display_name)}` : "已綁定 LINE";
+    const at = driver.line_bound_at ? ` · ${fmtDate(driver.line_bound_at)}` : "";
+    return `<span class="line-bind-badge bound">${name}${escapeHtml(at)}</span>`;
   }
 
   function assignedVehiclesForDriver(driver) {
@@ -3121,8 +3144,12 @@
           ? await update(tableName, id, normalizeRecord(tableName, record))
           : await insert(tableName, normalizeRecord(tableName, record));
         if (tableName === "calendar_events") await syncCalendarNotification(saved);
+        const pushMessage = !id && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(tableName)
+          ? linePushSummary(state.lastLinePushResult)
+          : "";
         modal.remove();
         render();
+        if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
       } catch (err) {
         await showAlert(err.message || err, "儲存失敗");
       }
@@ -3307,6 +3334,13 @@
 
   function checkbox(name, label, checked = true) {
     return `<div class="field"><label class="check-field"><input type="hidden" name="${name}" value="false"><input name="${name}" type="checkbox" value="true" ${checked ? "checked" : ""}>${label}</label></div>`;
+  }
+
+  function linePushCheckbox() {
+    return `<div class="field full line-push-field">
+      <label class="check-field"><input type="hidden" name="line_push_enabled" value="false"><input name="line_push_enabled" type="checkbox" value="true" checked>同步 LINE 推播給已綁定司機</label>
+      <small>未綁定 LINE 的司機仍會在系統內看到通知；薪資單只推播提醒，不會推送薪資內容。</small>
+    </div>`;
   }
 
   function exportExcel(kind) {
@@ -3997,20 +4031,20 @@
   }
 
   function announcementForm(a) {
-    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車商", a.target_fleet, true) + text("content", "公告內容", a.content) + attachmentField(a);
+    return input("title", "標題", a.title, "text", true) + fleetOptions("target_fleet", "通知車商", a.target_fleet, true) + text("content", "公告內容", a.content) + attachmentField(a) + (!a.id ? linePushCheckbox() : "");
   }
 
   function maintenanceNotificationForm(n) {
     return driverOptions(n.driver_id) + vehicleOptions(n.vehicle_id) + input("service_date", "保養日期", formDate(n.service_date) || today(), "date", true) +
       input("service_time", "保養時間", n.service_time, "time") + repairShopOptions(n.vendor, "維修／保養廠商") +
       select("status", "狀態", n.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
-      text("content", "保養維修內容", n.content);
+      text("content", "保養維修內容", n.content) + (!n.id ? linePushCheckbox() : "");
   }
 
   function personalMessageForm(m) {
     return driverSearchSelect(m.driver_id, "指定駕駛") + input("title", "標題", m.title, "text", true) +
       select("status", "狀態", m.status || "pending", [["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]) +
-      text("content", "訊息內容", m.content);
+      text("content", "訊息內容", m.content) + (!m.id ? linePushCheckbox() : "");
   }
 
 
@@ -4018,7 +4052,7 @@
     return driverSearchSelect(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
       input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限與發放日期", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
-      text("content", "繳費內容", p.content) + attachmentField(p);
+      text("content", "繳費內容", p.content) + attachmentField(p) + (!p.id ? linePushCheckbox() : "");
   }
 
   function calendarEventForm(item) {
@@ -4739,6 +4773,18 @@
     if (target.dataset.driverLogin) {
       await update("drivers", target.dataset.driverLogin, { login_enabled: target.checked });
       render();
+    }
+    if (target.dataset.lineTest) {
+      try {
+        const result = await apiRequest("push_line_message", {
+          driver_id: target.dataset.lineTest,
+          message: "Heycar 亞菲得 LINE 推播測試成功。"
+        });
+        await showAlert(linePushSummary(result), "LINE 測試推播");
+      } catch (error) {
+        await showAlert(error.message === "DRIVER_LINE_NOT_BOUND" ? "此司機尚未綁定 LINE。" : error.message || error, "LINE 測試失敗");
+      }
+      return;
     }
     if (target.dataset.vehicleFileRemove !== undefined) {
       const list = target.closest(".vehicle-folder-section")?.querySelector("[data-vehicle-file-list]");
