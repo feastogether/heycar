@@ -58,6 +58,10 @@
     apiSession: "",
     loginLoading: false,
     loginSlogansLoaded: false,
+    lineProfile: null,
+    lineReady: false,
+    lineAutoLoginTried: false,
+    lineBindingMessage: "",
     unlockedSalaryPayments: new Set()
   };
 
@@ -272,6 +276,70 @@
       throw new Error(result.error === "SESSION_EXPIRED" ? "登入已逾時，請重新登入。" : (result.error || "資料服務暫時無法連線，請稍後再試。"));
     }
     return result;
+  }
+
+  function lineProfilePayload() {
+    if (!state.lineProfile?.userId) return null;
+    return {
+      line_user_id: state.lineProfile.userId,
+      line_display_name: state.lineProfile.displayName || "",
+      line_picture_url: state.lineProfile.pictureUrl || ""
+    };
+  }
+
+  async function bindLineProfileIfAvailable() {
+    const payload = lineProfilePayload();
+    if (!payload || !state.apiSession || !state.user) return;
+    try {
+      const result = await apiRequest("bind_line_driver", payload);
+      if (result.user) {
+        state.user = result.user;
+        state.lineBindingMessage = "LINE 帳號已綁定，下次從 LINE 開啟可自動登入。";
+      }
+    } catch (error) {
+      if (error.message === "LINE_ALREADY_BOUND") {
+        state.lineBindingMessage = "此 LINE 帳號已綁定其他司機。";
+      } else {
+        console.warn("LINE binding failed", error);
+      }
+    }
+  }
+
+  async function initLiffAutoLogin() {
+    if (state.lineAutoLoginTried || state.apiSession || !cfg.LIFF_ID || !window.liff) return;
+    if (typeof window.liff.isInClient === "function" && !window.liff.isInClient()) return;
+    state.lineAutoLoginTried = true;
+    state.loginLoading = true;
+    state.error = "";
+    renderLogin();
+    try {
+      await window.liff.init({ liffId: cfg.LIFF_ID });
+      state.lineReady = true;
+      if (!window.liff.isLoggedIn()) {
+        if (window.liff.isInClient()) window.liff.login({ redirectUri: location.href });
+        return;
+      }
+      const profile = await window.liff.getProfile();
+      state.lineProfile = profile;
+      const result = await apiRequest("login_line_driver", lineProfilePayload());
+      state.apiSession = result.token;
+      state.mode = "driver";
+      state.admin = false;
+      state.adminProfile = null;
+      state.partner = null;
+      state.user = result.user || null;
+      saveSession("driver", state.user, result.token, null);
+      await loadAll();
+    } catch (error) {
+      if (["LINE_NOT_BOUND", "LINE_USER_REQUIRED"].includes(error.message)) {
+        state.lineBindingMessage = "首次使用 LINE 開啟時，請輸入手機號碼登入一次完成綁定。";
+      } else {
+        console.warn("LIFF auto login failed", error);
+      }
+    } finally {
+      state.loginLoading = false;
+      render();
+    }
   }
 
   async function loadPublicLoginSlogans() {
@@ -1093,6 +1161,7 @@
                 <div class="login-progress"><span></span></div>
               </div>
             ` : ""}
+            ${state.lineBindingMessage ? `<div class="login-line-note">${escapeHtml(state.lineBindingMessage)}</div>` : ""}
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
           </div>
         </section>
@@ -4184,6 +4253,7 @@
         state.adminProfile = result.admin_profile || null;
         state.user = result.user || null;
         state.partner = result.partner || null;
+        if (loginType === "driver") await bindLineProfileIfAvailable();
         saveSession(loginType, state.partner || state.user, result.token, state.adminProfile);
         await loadAll();
         state.view = "home";
@@ -5076,17 +5146,22 @@
   });
 
   restoreSession();
-  loadAll().then(() => {
-    render();
-  }).catch((err) => {
-    state.error = String(err.message || err).includes("登入已逾時") || String(err.message || err).includes("SESSION_EXPIRED") ? "" : (err.message || String(err));
-    state.user = null;
-    state.partner = null;
-    state.admin = false;
-    state.apiSession = "";
-    state.data = hasApi ? emptyData() : localLoad();
-    clearSession();
-    render();
-  });
+  (async function boot() {
+    try {
+      await loadAll();
+      render();
+      if (!state.apiSession) await initLiffAutoLogin();
+    } catch (err) {
+      state.error = String(err.message || err).includes("登入已逾時") || String(err.message || err).includes("SESSION_EXPIRED") ? "" : (err.message || String(err));
+      state.user = null;
+      state.partner = null;
+      state.admin = false;
+      state.apiSession = "";
+      state.data = hasApi ? emptyData() : localLoad();
+      clearSession();
+      render();
+      await initLiffAutoLogin();
+    }
+  })();
 })();
 

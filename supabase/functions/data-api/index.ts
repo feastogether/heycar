@@ -305,6 +305,19 @@ Deno.serve(async (req) => {
       if (!driver) return json({ error: "DRIVER_LOGIN_FAILED" }, 401);
       return json(await signStorageUrls({ ...(await createSession("driver", driver.id)), user: driver }));
     }
+    if (body.action === "login_line_driver") {
+      const lineUserId = String(body.line_user_id || "").trim();
+      if (!lineUserId) return json({ error: "LINE_USER_REQUIRED" }, 400);
+      const { data: driver, error } = await db
+        .from("drivers")
+        .select("*")
+        .eq("line_user_id", lineUserId)
+        .eq("login_enabled", true)
+        .maybeSingle();
+      if (error) throw error;
+      if (!driver) return json({ error: "LINE_NOT_BOUND" }, 404);
+      return json(await signStorageUrls({ ...(await createSession("driver", driver.id)), user: driver }));
+    }
     if (body.action === "login_admin") {
       const loginCode = normalizeLoginCode(body.code);
       if (adminCode && loginCode === normalizeLoginCode(adminCode)) {
@@ -345,6 +358,32 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action === "bind_line_driver") {
+      if (session.session_type !== "driver" || !session.driver_id) return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      const lineUserId = String(body.line_user_id || "").trim();
+      if (!lineUserId) return json({ error: "LINE_USER_REQUIRED" }, 400);
+      const { data: existing, error: existingError } = await db
+        .from("drivers")
+        .select("id")
+        .eq("line_user_id", lineUserId)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (existing && existing.id !== session.driver_id) return json({ error: "LINE_ALREADY_BOUND" }, 409);
+      const { data, error } = await db
+        .from("drivers")
+        .update({
+          line_user_id: lineUserId,
+          line_display_name: String(body.line_display_name || "").slice(0, 120),
+          line_picture_url: String(body.line_picture_url || "").slice(0, 500),
+          line_bound_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", session.driver_id)
+        .select("*")
+        .single();
+      if (error) throw error;
+      return json(await signStorageUrls({ user: data }));
+    }
     if (body.action === "load") {
       if (session.session_type === "admin") return json(await signStorageUrls(await loadAdminData(session)));
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
