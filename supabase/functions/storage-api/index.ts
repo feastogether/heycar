@@ -14,6 +14,7 @@ const db = createClient(
 );
 const bucket = "attachments";
 const quotaBytes = Number(Deno.env.get("STORAGE_QUOTA_BYTES") || 1024 * 1024 * 1024);
+const signedUrlTtlSeconds = 60 * 60;
 
 const extensionOf = (name: string) => {
   const match = name.match(/\.([A-Za-z0-9]{1,8})$/);
@@ -29,6 +30,28 @@ const safeStorageSegment = (value: unknown, fallback: string, max = 120) => {
     .slice(0, max);
   return cleaned || fallback;
 };
+
+const storagePathFromUrl = (value: unknown) => {
+  const raw = String(value || "");
+  if (!raw) return "";
+  if (!/^https?:\/\//i.test(raw)) return raw.replace(/^\/+/, "");
+  try {
+    const url = new URL(raw);
+    const publicMarker = `/storage/v1/object/public/${bucket}/`;
+    const signedMarker = `/storage/v1/object/sign/${bucket}/`;
+    const marker = url.pathname.includes(publicMarker) ? publicMarker : url.pathname.includes(signedMarker) ? signedMarker : "";
+    if (!marker) return "";
+    return decodeURIComponent(url.pathname.slice(url.pathname.indexOf(marker) + marker.length));
+  } catch {
+    return "";
+  }
+};
+
+async function signedUrlForPath(path: string) {
+  const { data, error } = await db.storage.from(bucket).createSignedUrl(path, signedUrlTtlSeconds);
+  if (error) throw error;
+  return data.signedUrl;
+}
 
 async function getSession(req: Request) {
   const token = req.headers.get("x-afide-session") || "";
@@ -84,8 +107,14 @@ Deno.serve(async (req) => {
         upsert: false
       });
       if (error) throw error;
-      const url = db.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+      const url = await signedUrlForPath(path);
       return json({ path, name: originalName, url });
+    }
+
+    if (body.action === "sign") {
+      const path = storagePathFromUrl(body.path || body.url);
+      if (!path) return json({ error: "INVALID_STORAGE_PATH" }, 400);
+      return json({ path, url: await signedUrlForPath(path) });
     }
 
     if (session.session_type !== "admin") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
@@ -93,7 +122,11 @@ Deno.serve(async (req) => {
     if (body.action === "list") {
       const files = await listFiles();
       const usedBytes = files.reduce((total, item) => total + Number(item.size || 0), 0);
-      return json({ files, used_bytes: usedBytes, quota_bytes: quotaBytes });
+      const signedFiles = await Promise.all(files.map(async (file) => ({
+        ...file,
+        url: await signedUrlForPath(String(file.path || ""))
+      })));
+      return json({ files: signedFiles, used_bytes: usedBytes, quota_bytes: quotaBytes });
     }
 
     if (body.action === "delete") {

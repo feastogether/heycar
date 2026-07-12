@@ -8,8 +8,7 @@
     ? "/api/storage"
     : cfg.STORAGE_API_URL || `${cfg.SUPABASE_URL}/functions/v1/storage-api`;
   const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
-  const hasSupabase = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
-  const db = hasSupabase ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
+  const hasApi = Boolean(dataApiUrl);
   const app = document.getElementById("app");
 
   const state = {
@@ -260,7 +259,6 @@
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(cfg.SUPABASE_ANON_KEY ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` } : {}),
         ...(state.apiSession ? { "x-afide-session": state.apiSession } : {})
       },
       body: JSON.stringify({ action, ...payload })
@@ -277,7 +275,7 @@
   }
 
   async function loadPublicLoginSlogans() {
-    if (!hasSupabase || state.loginSlogansLoaded) return;
+    if (!hasApi || state.loginSlogansLoaded) return;
     state.loginSlogansLoaded = true;
     try {
       const result = await apiRequest("public_login_slogans");
@@ -304,7 +302,6 @@
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(cfg.SUPABASE_ANON_KEY ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` } : {}),
         ...(state.apiSession ? { "x-afide-session": state.apiSession } : {})
       },
       body: JSON.stringify({ action, ...payload })
@@ -342,7 +339,7 @@
 
   async function loadAll() {
     state.error = "";
-    if (hasSupabase && state.apiSession) {
+    if (hasApi && state.apiSession) {
       const result = await apiRequest("load");
       state.data = result.data || emptyData();
       if (result.user) state.user = result.user;
@@ -350,7 +347,7 @@
       if (result.admin_profile) state.adminProfile = result.admin_profile;
       return;
     }
-    if (!hasSupabase) {
+    if (!hasApi) {
       state.data = localLoad();
       return;
     }
@@ -359,7 +356,7 @@
 
   async function insert(table, record) {
     const item = { id: uid(), created_at: now(), ...record };
-    if (hasSupabase && state.apiSession) {
+    if (hasApi && state.apiSession) {
       const { data } = await apiRequest("insert", { table, record: item });
       state.data[table].unshift(data);
       return data;
@@ -372,7 +369,7 @@
 
   async function update(table, id, patch) {
     const item = { ...patch, updated_at: now() };
-    if (hasSupabase && state.apiSession) {
+    if (hasApi && state.apiSession) {
       const { data } = await apiRequest("update", { table, id, record: item });
       state.data[table] = state.data[table].map((row) => row.id === id ? data : row);
       return data;
@@ -431,7 +428,7 @@
 
   async function remove(table, id) {
     if (!await showConfirm("確定要刪除這筆資料嗎？")) return;
-    if (hasSupabase && state.apiSession) await apiRequest("delete", { table, id });
+    if (hasApi && state.apiSession) await apiRequest("delete", { table, id });
     state.data[table] = state.data[table].filter((row) => row.id !== id);
     localSave();
     render();
@@ -864,7 +861,7 @@
 
   async function uploadAttachment(file, plateNo = "", documentLabel = "") {
     if (file.size > 10 * 1024 * 1024) throw new Error("附件不可超過 10 MB");
-    if (!hasSupabase) {
+    if (!hasApi) {
       return await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
@@ -4162,7 +4159,7 @@
     try {
       clearSession();
       state.apiSession = "";
-      if (hasSupabase) {
+      if (hasApi) {
         const attempts = [
           ["driver", "login_driver", { phone: loginValue }],
           ["admin", "login_admin", { code: loginValue }],
@@ -4283,10 +4280,7 @@
       endpoint.searchParams.set("direction", direction);
       endpoint.searchParams.set("date", date || today());
       endpoint.searchParams.set("source", source);
-      const requestHeaders = cfg.SUPABASE_ANON_KEY
-        ? { apikey: cfg.SUPABASE_ANON_KEY, Authorization: `Bearer ${cfg.SUPABASE_ANON_KEY}` }
-        : {};
-      const response = await fetch(endpoint, { cache: "no-store", headers: requestHeaders });
+      const response = await fetch(endpoint, { cache: "no-store" });
       const payload = await response.json();
       if (response.status === 404) throw new Error("航班服務尚未部署到 Supabase");
       if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
@@ -5090,7 +5084,7 @@
     state.partner = null;
     state.admin = false;
     state.apiSession = "";
-    state.data = hasSupabase ? emptyData() : localLoad();
+    state.data = hasApi ? emptyData() : localLoad();
     clearSession();
     render();
   });

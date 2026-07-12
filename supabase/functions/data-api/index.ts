@@ -20,9 +20,50 @@ const db = createClient(
   Deno.env.get("SUPABASE_URL") || "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
 );
+const storageBucket = "attachments";
+const signedStorageUrlTtlSeconds = 60 * 60;
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: cors });
+
+const storagePathFromUrl = (value: unknown) => {
+  const raw = String(value || "");
+  if (!raw || !/^https?:\/\//i.test(raw)) return "";
+  try {
+    const url = new URL(raw);
+    const publicMarker = `/storage/v1/object/public/${storageBucket}/`;
+    const signedMarker = `/storage/v1/object/sign/${storageBucket}/`;
+    const marker = url.pathname.includes(publicMarker) ? publicMarker : url.pathname.includes(signedMarker) ? signedMarker : "";
+    if (!marker) return "";
+    return decodeURIComponent(url.pathname.slice(url.pathname.indexOf(marker) + marker.length));
+  } catch {
+    return "";
+  }
+};
+
+async function signStorageUrl(value: unknown) {
+  const path = storagePathFromUrl(value);
+  if (!path) return value;
+  const { data, error } = await db.storage.from(storageBucket).createSignedUrl(path, signedStorageUrlTtlSeconds);
+  if (error) return value;
+  return data.signedUrl;
+}
+
+async function signStorageUrls(value: unknown): Promise<unknown> {
+  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) return await Promise.all(value.map((item) => signStorageUrls(item)));
+  const output: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if ((key === "url" || key.endsWith("_url")) && typeof item === "string") {
+      output[key] = await signStorageUrl(item);
+    } else if (item && typeof item === "object") {
+      output[key] = await signStorageUrls(item);
+    } else {
+      output[key] = item;
+    }
+  }
+  return output;
+}
 
 const phoneDigits = (value: unknown) => String(value || "").replace(/\D/g, "");
 const normalizeLoginCode = (value: unknown) => String(value || "")
@@ -262,7 +303,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       const driver = (data || []).find((item) => phoneMatches(item.phone, body.phone));
       if (!driver) return json({ error: "DRIVER_LOGIN_FAILED" }, 401);
-      return json({ ...(await createSession("driver", driver.id)), user: driver });
+      return json(await signStorageUrls({ ...(await createSession("driver", driver.id)), user: driver }));
     }
     if (body.action === "login_admin") {
       const loginCode = normalizeLoginCode(body.code);
@@ -274,10 +315,10 @@ Deno.serve(async (req) => {
         .select("id,name,active,permissions").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
       if (!adminUser) return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
-      return json({
+      return json(await signStorageUrls({
         ...(await createSession("admin", adminUser.id, { name: adminUser.name })),
         admin_profile: { ...adminUser, is_super_admin: false }
-      });
+      }));
     }
     if (body.action === "login_partner") {
       const codeHash = await hashCode(normalizeLoginCode(body.code));
@@ -289,7 +330,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) throw error;
       if (!partner) return json({ error: "PARTNER_LOGIN_FAILED" }, 401);
-      return json({ ...(await createSession("partner", partner.id)), partner });
+      return json(await signStorageUrls({ ...(await createSession("partner", partner.id)), partner }));
     }
     if (body.action === "public_login_slogans") {
       const { data, error } = await db
@@ -305,9 +346,9 @@ Deno.serve(async (req) => {
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
     if (body.action === "load") {
-      if (session.session_type === "admin") return json(await loadAdminData(session));
-      if (session.session_type === "partner") return json(await loadPartnerData(session.partner_id));
-      return json(await loadDriverData(session.driver_id));
+      if (session.session_type === "admin") return json(await signStorageUrls(await loadAdminData(session)));
+      if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
+      return json(await signStorageUrls(await loadDriverData(session.driver_id)));
     }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
 
@@ -465,7 +506,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      return json({ data });
+      return json(await signStorageUrls({ data }));
     }
     if (body.action === "update") {
       if (body.table === "insurance_partners") {
@@ -486,7 +527,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      return json({ data });
+      return json(await signStorageUrls({ data }));
     }
     if (body.action === "delete" && session.session_type === "admin") {
       const { error } = await db.from(body.table).delete().eq("id", body.id);
