@@ -811,6 +811,51 @@ a { text-decoration: none; }
 .driver-select-picker { display: grid; grid-template-columns: .8fr 1.2fr; gap: 8px; }
 .vehicle-plate-picker label,
 .driver-select-picker label { grid-column: 1 / -1; }
+.vehicle-picker-combo { position: relative; min-width: 0; }
+.vehicle-picker-combo input { width: 100%; }
+.vehicle-picker-suggestions {
+  position: absolute;
+  z-index: 260;
+  inset-inline: 0;
+  top: calc(100% + 6px);
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 8px;
+  background: rgba(255,255,255,.98);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 45px rgba(24,32,51,.16);
+}
+.vehicle-picker-suggestions[hidden] { display: none; }
+.vehicle-picker-option {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  align-items: center;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: var(--ink);
+  background: #f8fafc;
+}
+.vehicle-picker-option:hover,
+.vehicle-picker-option:focus-visible { background: #eef4f8; outline: none; }
+.vehicle-picker-option strong {
+  font-family: "Courier New", monospace;
+  letter-spacing: .04em;
+  font-size: 15px;
+}
+.vehicle-picker-option small {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-weight: 700;
+}
 .permission-chips { display: flex; flex-wrap: wrap; gap: 5px; }
 .permission-chips span { padding: 3px 7px; border-radius: 999px; background: #eef2f6; color: #344054; font-size: 10px; font-weight: 800; }
 .access-user-row { grid-template-columns: minmax(140px, .7fr) minmax(200px, 1fr) auto auto; }

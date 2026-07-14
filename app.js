@@ -3783,7 +3783,7 @@
   }
 
   function vehiclePlatePicker(item, label = "選擇車輛") {
-    return `<div class="field full vehicle-plate-picker"><label>${label}</label><input type="search" data-vehicle-picker-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-vehicle-plate-select required><option value="">請選擇車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select><input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"></div>`;
+    return `<div class="field full vehicle-plate-picker"><label>${label}</label><div class="vehicle-picker-combo"><input type="search" data-vehicle-picker-search placeholder="輸入車牌快速篩選" autocomplete="off"><div class="vehicle-picker-suggestions" data-vehicle-picker-suggestions hidden></div></div><select name="vehicle_id" data-vehicle-plate-select required><option value="">請選擇車輛</option>${(state.data.vehicles || []).map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select><input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}"></div>`;
   }
 
   function repairShopNameOptions(value, name = "supplier", label = "供應商／保修廠") {
@@ -4128,7 +4128,7 @@
 
   function insuranceVehiclePicker(item = {}) {
     const vehicles = insuranceVehiclesForForm();
-    return `<div class="field full insurance-vehicle-picker"><label>車輛</label><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選"><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
+    return `<div class="field full insurance-vehicle-picker"><label>車輛</label><div class="vehicle-picker-combo"><input type="search" data-insurance-vehicle-search placeholder="輸入車牌快速篩選" autocomplete="off"><div class="vehicle-picker-suggestions" data-vehicle-picker-suggestions hidden></div></div><select name="vehicle_id" data-insurance-vehicle required><option value="">請選擇車輛</option>${vehicles.map((vehicle) => `<option value="${vehicle.id}" data-plate="${escapeHtml(vehicle.plate_no || "")}" data-dealer="${escapeHtml(vehicle.dealer_partner_id || "")}" ${item.vehicle_id === vehicle.id ? "selected" : ""}>${escapeHtml(vehicleName(vehicle.id))}</option>`).join("")}</select></div>
       <input type="hidden" name="plate_no" value="${escapeHtml(item.plate_no || "")}">`;
   }
 
@@ -4528,6 +4528,10 @@
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
     const helperDetail = e.target.closest("[data-helper-detail]");
     if (!target && !cellDate && !helperDetail) return;
+    if (target?.dataset.vehiclePickerOption) {
+      applyVehiclePickerSelection(vehiclePickerRoot(target), target.dataset.vehicleId);
+      return;
+    }
     if (target?.dataset.richCommand) {
       document.execCommand(target.dataset.richCommand, false, null);
       syncRichEditors(target.closest("form") || document);
@@ -4918,6 +4922,16 @@
   });
 
   document.addEventListener("keydown", async (e) => {
+    const vehicleSearch = e.target.closest("[data-vehicle-picker-search], [data-insurance-vehicle-search]");
+    if (vehicleSearch && e.key === "Enter") {
+      const root = vehiclePickerRoot(vehicleSearch);
+      const firstOption = root?.querySelector("[data-vehicle-picker-option]");
+      if (firstOption) {
+        e.preventDefault();
+        applyVehiclePickerSelection(root, firstOption.dataset.vehicleId);
+      }
+      return;
+    }
     const serviceField = e.target.closest("[data-service-part-field]");
     if (!serviceField) return;
     const fieldName = serviceField.dataset.servicePartField;
@@ -4925,6 +4939,69 @@
     e.preventDefault();
     await showServicePartMatchDialog(serviceField.closest("[data-service-part-row]"), serviceField.closest("form"), serviceField.value);
   });
+
+  function vehiclePickerRoot(element) {
+    return element?.closest(".vehicle-plate-picker, .insurance-vehicle-picker");
+  }
+
+  function vehiclePickerSelect(root) {
+    return root?.querySelector("[data-vehicle-plate-select], [data-insurance-vehicle]");
+  }
+
+  function vehiclePickerSearch(root) {
+    return root?.querySelector("[data-vehicle-picker-search], [data-insurance-vehicle-search]");
+  }
+
+  function vehiclePickerSuggestions(root) {
+    return root?.querySelector("[data-vehicle-picker-suggestions]");
+  }
+
+  function vehicleFromOption(option) {
+    return (state.data.vehicles || []).find((vehicle) => String(vehicle.id) === String(option?.value)) || {};
+  }
+
+  function renderVehiclePickerSuggestions(input) {
+    const root = vehiclePickerRoot(input);
+    const selectBox = vehiclePickerSelect(root);
+    const suggestions = vehiclePickerSuggestions(root);
+    if (!root || !selectBox || !suggestions) return;
+    const query = String(input.value || "").trim().toUpperCase();
+    const options = Array.from(selectBox.options || []).slice(1);
+    options.forEach((option) => {
+      option.hidden = Boolean(query && !String(option.textContent || "").toUpperCase().includes(query));
+    });
+    if (!query) {
+      suggestions.hidden = true;
+      suggestions.innerHTML = "";
+      return;
+    }
+    const matches = options
+      .filter((option) => !option.hidden)
+      .slice(0, 8);
+    suggestions.hidden = !matches.length;
+    suggestions.innerHTML = matches.length ? matches.map((option) => {
+      const vehicle = vehicleFromOption(option);
+      return `<button type="button" class="vehicle-picker-option" data-vehicle-picker-option data-vehicle-id="${escapeHtml(option.value)}">
+        <strong>${escapeHtml(option.dataset.plate || vehicle.plate_no || option.textContent || "")}</strong>
+        <small>${escapeHtml([vehicle.brand, vehicle.model, vehicle.assigned_driver_names].filter(Boolean).join(" · ") || option.textContent || "")}</small>
+      </button>`;
+    }).join("") : "";
+  }
+
+  function applyVehiclePickerSelection(root, vehicleId) {
+    const selectBox = vehiclePickerSelect(root);
+    if (!selectBox || !vehicleId) return;
+    selectBox.value = vehicleId;
+    selectBox.dispatchEvent(new Event("change", { bubbles: true }));
+    const option = selectBox.selectedOptions[0];
+    const input = vehiclePickerSearch(root);
+    if (input) input.value = option?.dataset.plate || "";
+    const suggestions = vehiclePickerSuggestions(root);
+    if (suggestions) {
+      suggestions.hidden = true;
+      suggestions.innerHTML = "";
+    }
+  }
 
   document.addEventListener("input", (e) => {
     if (e.target.closest("[data-rich-editor]")) {
@@ -4939,12 +5016,7 @@
     }
     const vehiclePickerSearch = e.target.closest("[data-vehicle-picker-search]");
     if (vehiclePickerSearch) {
-      const selectBox = vehiclePickerSearch.closest(".vehicle-plate-picker")?.querySelector("[data-vehicle-plate-select]");
-      const query = String(vehiclePickerSearch.value || "").trim().toUpperCase();
-      Array.from(selectBox?.options || []).forEach((option, index) => {
-        if (!index) return;
-        option.hidden = Boolean(query && !String(option.textContent || "").toUpperCase().includes(query));
-      });
+      renderVehiclePickerSuggestions(vehiclePickerSearch);
       return;
     }
     const driverSelectSearch = e.target.closest("[data-driver-select-search]");
@@ -4959,12 +5031,7 @@
     }
     const search = e.target.closest("[data-insurance-vehicle-search]");
     if (!search) return;
-    const selectBox = search.closest(".insurance-vehicle-picker")?.querySelector("[data-insurance-vehicle]");
-    const query = String(search.value || "").trim().toLowerCase();
-    Array.from(selectBox?.options || []).forEach((option, index) => {
-      if (!index) return;
-      option.hidden = Boolean(query && !String(option.textContent || "").toLowerCase().includes(query));
-    });
+    renderVehiclePickerSuggestions(search);
   });
 
   document.addEventListener("change", async (e) => {
@@ -4983,9 +5050,12 @@
     const vehiclePlateSelect = e.target.closest("[data-vehicle-plate-select]");
     if (vehiclePlateSelect) {
       const form = vehiclePlateSelect.closest("form");
+      const root = vehiclePickerRoot(vehiclePlateSelect);
       const option = vehiclePlateSelect.selectedOptions[0];
       const plateInput = form?.querySelector('[name="plate_no"]');
       if (plateInput) plateInput.value = option?.dataset.plate || "";
+      const searchInput = vehiclePickerSearch(root);
+      if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
       return;
     }
     const serviceVendorSelect = e.target.closest('select[name="vendor"]');
@@ -4999,8 +5069,11 @@
     if (insuranceVehicle) {
       const option = insuranceVehicle.selectedOptions[0];
       const form = insuranceVehicle.closest("form");
+      const root = vehiclePickerRoot(insuranceVehicle);
       if (option?.dataset.plate) form.querySelector('[name="plate_no"]').value = option.dataset.plate;
       if (option?.dataset.dealer) form.querySelector('[name="dealer_partner_id"]').value = option.dataset.dealer;
+      const searchInput = vehiclePickerSearch(root);
+      if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
       return;
     }
     const loginToggle = e.target.closest("[data-driver-login]");

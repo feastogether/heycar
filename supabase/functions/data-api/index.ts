@@ -124,16 +124,26 @@ async function loadDriverData(driverId: string) {
   const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
   result.drivers = [driver];
   const fleet = driver.fleet_name || "";
+  let dealerName = "";
+  if (driver.dealer_partner_id) {
+    const { data: dealer } = await db
+      .from("insurance_partners")
+      .select("name")
+      .eq("id", driver.dealer_partner_id)
+      .maybeSingle();
+    dealerName = String(dealer?.name || "");
+  }
+  const driverTargets = Array.from(new Set(["全部車商", "全部車隊", "全部", fleet, dealerName].filter(Boolean)));
   const onboardAt = driver.onboard_date ? new Date(`${driver.onboard_date}T00:00:00+08:00`).getTime() : 0;
   const canSeeLinks = Boolean(onboardAt && Date.now() < onboardAt + 4 * 24 * 60 * 60 * 1000);
   const queries = await Promise.all([
     db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region,assigned_driver_names,fuel_type,registration_doc_url,registration_doc_name,vehicle_files,roadside_assistance_phone,compulsory_insurance_company,voluntary_insurance_company,insurance_company,dealer_partner_id,compulsory_insurance_expiry,voluntary_insurance_expiry,next_inspection_date"),
-    db.from("announcements").select("*").in("target_fleet", ["全部車隊", fleet]),
+    db.from("announcements").select("*").in("target_fleet", driverTargets),
     db.from("announcement_reads").select("*").eq("driver_id", driverId),
     db.from("maintenance_notifications").select("*").eq("driver_id", driverId),
     db.from("personal_messages").select("*").eq("driver_id", driverId),
     db.from("payment_notices").select("*").eq("driver_id", driverId),
-    db.from("calendar_events").select("*").eq("fleet_name", fleet),
+    db.from("calendar_events").select("*").in("fleet_name", driverTargets),
     db.from("marquee_messages").select("*").eq("active", true),
     db.from("emergency_events").select("*").eq("active", true),
     db.from("feedbacks").select("*").eq("driver_id", driverId),
@@ -151,8 +161,8 @@ async function loadDriverData(driverId: string) {
     const name = names[index];
     if (name === "driver_links") {
       result[name] = (query.data || []).filter((item: Record<string, unknown>) => {
-        const targetFleets = Array.isArray(item.target_fleets) ? item.target_fleets : ["全部車隊"];
-        return targetFleets.includes("全部車隊") || targetFleets.includes(fleet);
+        const targetFleets = Array.isArray(item.target_fleets) ? item.target_fleets : ["全部車商"];
+        return targetFleets.some((target) => driverTargets.includes(String(target)));
       });
       return;
     }
@@ -532,15 +542,17 @@ Deno.serve(async (req) => {
         return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
       }
       const permission = tablePermission[body.table];
-      if (permission && !(await adminCan(session, permission))) {
+      const isVehicleLoanSelfAction = body.table === "vehicle_loans" && ["insert", "update"].includes(String(body.action || ""));
+      if (permission && !isVehicleLoanSelfAction && !(await adminCan(session, permission))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       }
-      if (body.table === "vehicle_loans" && !session.is_super_admin) {
+      if (body.table === "vehicle_loans") {
         if (body.action === "insert") {
-          body.record.requested_by_admin_id = session.admin_user_id;
+          body.record.requested_by_admin_id = session.admin_user_id || null;
           body.record.requested_by_name = session.admin_name || "同仁";
           body.record.status = "pending_approval";
-        } else if (body.action === "update") {
+          body.record.requested_by_name = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
+        } else if (!session.is_super_admin && body.action === "update") {
           const { data: loan } = await db.from("vehicle_loans").select("*").eq("id", body.id).single();
           if (!loan || loan.requested_by_admin_id !== session.admin_user_id || loan.status !== "approved") {
             return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
@@ -550,7 +562,7 @@ Deno.serve(async (req) => {
             actual_return_at: body.record.actual_return_at || new Date().toISOString(),
             updated_at: new Date().toISOString()
           };
-        } else {
+        } else if (!session.is_super_admin) {
           return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
         }
       }
