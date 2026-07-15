@@ -2178,7 +2178,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .driver-management-row {
   display: grid;
-  grid-template-columns: minmax(190px, .9fr) minmax(0, 3fr) auto;
+  grid-template-columns: 220px minmax(0, 1fr) 330px;
   align-items: center;
   gap: 10px;
   padding: 9px 4px;
@@ -2245,6 +2245,13 @@ button.calendar-pill:hover { filter: brightness(.96); }
   justify-content: flex-end;
   gap: 6px;
   white-space: nowrap;
+  min-width: 0;
+}
+.driver-row-actions .soft-btn,
+.driver-row-actions .primary-btn,
+.driver-row-actions .danger-btn {
+  min-width: 0;
+  padding-inline: 12px;
 }
 .line-bind-badge {
   display: inline-flex;
