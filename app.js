@@ -4528,7 +4528,7 @@
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
     const helperDetail = e.target.closest("[data-helper-detail]");
     if (!target && !cellDate && !helperDetail) return;
-    if (target?.dataset.vehiclePickerOption) {
+    if (target?.dataset.vehiclePickerOption !== undefined) {
       applyVehiclePickerSelection(vehiclePickerRoot(target), target.dataset.vehicleId);
       return;
     }

@@ -179,6 +179,15 @@ async function loadAdminData(session: Record<string, unknown>) {
       result[table] = [];
       continue;
     }
+    if (table === "vehicle_loans" && !session.is_super_admin) {
+      const { data, error } = await db
+        .from("vehicle_loans")
+        .select("*")
+        .eq("requested_by_admin_id", session.admin_user_id);
+      if (error) throw error;
+      result[table] = data || [];
+      continue;
+    }
     if (permission && !(await adminCan(session, permission))) {
       if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "service_records")))) {
         const { data, error } = await db
