@@ -27,6 +27,7 @@
     vehicleFuelFilter: "",
     vehicleDealerFilter: "",
     vehicleViewMode: localStorage.getItem("afide-vehicle-view-mode") || "list",
+    vehicleTypeSearch: "",
     insuranceStatusFilter: "",
     partnerView: "insurance",
     partnerCollapsed: true,
@@ -87,6 +88,7 @@
     "driver_links",
     "driver_helper_articles",
     "login_slogans",
+    "vehicle_types",
     "bom_parts",
     "bom_packages"
   ];
@@ -188,7 +190,11 @@
     vehicle_service_records: [],
     feedbacks: [],
     driver_links: [],
-    driver_helper_articles: []
+    driver_helper_articles: [],
+    login_slogans: [],
+    vehicle_types: [],
+    bom_parts: [],
+    bom_packages: []
   };
 
   function uid() {
@@ -687,9 +693,8 @@
 
   function driverLineStatus(driver) {
     if (!driver.line_user_id) return `<span class="line-bind-badge unbound">未綁定</span>`;
-    const name = driver.line_display_name ? `LINE：${escapeHtml(driver.line_display_name)}` : "已綁定 LINE";
-    const at = driver.line_bound_at ? ` · ${fmtDate(driver.line_bound_at)}` : "";
-    return `<span class="line-bind-badge bound">${name}${escapeHtml(at)}</span>`;
+    const title = driver.line_display_name ? `LINE：${escapeHtml(driver.line_display_name)}` : "已綁定 LINE";
+    return `<span class="line-bind-badge bound" title="${title}">已綁定</span>`;
   }
 
   function assignedVehiclesForDriver(driver) {
@@ -2084,7 +2089,7 @@
           <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
           ${vehicleStatusBadge(vehicle.status)}
         </div>
-        <div class="vehicle-art">${carIconSvg()}<div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div></div>
+        ${vehicleVisualArt(vehicle, drivers)}
         <div class="vehicle-visual-info">
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
           <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
@@ -2375,6 +2380,7 @@
     if (permissions[permission]) return true;
     const legacy = {
       vehicleLoans: "loans",
+      vehicleTypes: "vehicles",
       serviceRecords: "service_records",
       maintenanceNotifications: "service_records",
       bom: "service_records",
@@ -2413,14 +2419,15 @@
     driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
     loginSlogans: "\u6a19\u8a9e\u7ba1\u7406",
     driverLinks: "連結管理",
-    bom: "BOM表"
+    bom: "BOM表",
+    vehicleTypes: "車種管理"
   };
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["drivers", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
-    ["車輛事業", ["vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
+    ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "driverLinks", "bom", "storage"]]
   ];
 
@@ -2450,6 +2457,7 @@
     const nav = [
       ["adminUsers", "權限管理", "🔐", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
+      ["vehicleTypes", "車種管理", "🚘", "vehicles"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
       ["serviceRecords", "車輛履歷", "🧾", "serviceRecords"],
@@ -2476,6 +2484,7 @@
     const body = {
       adminUsers,
       drivers: adminDrivers,
+      vehicleTypes: adminVehicleTypes,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
       serviceRecords: adminServiceRecords,
@@ -2572,6 +2581,7 @@
     if (permissions?.[key]) return true;
     const legacy = {
       vehicleLoans: "loans",
+      vehicleTypes: "vehicles",
       serviceRecords: "service_records",
       maintenanceNotifications: "service_records",
       bom: "service_records",
@@ -2792,6 +2802,46 @@
     `;
   }
 
+  function adminVehicleTypes() {
+    const keyword = String(state.vehicleTypeSearch || "").trim().toUpperCase();
+    const items = [...(state.data.vehicle_types || [])]
+      .filter((item) => !keyword || [item.brand, item.model, item.fuel_type, item.purchase_dealer, item.sales_person].join(" ").toUpperCase().includes(keyword))
+      .sort((a, b) => [a.brand, a.model].filter(Boolean).join(" ").localeCompare([b.brand, b.model].filter(Boolean).join(" "), "zh-Hant"));
+    return `
+      <div class="vehicle-toolbar vehicle-type-toolbar">
+        <div><h2>車種管理</h2><small>建立車款資料後，車輛圖像模式會自動套用照片</small></div>
+        <form id="vehicleTypeSearchForm" class="vehicle-type-search">
+          <input name="search" value="${escapeHtml(state.vehicleTypeSearch || "")}" placeholder="搜尋廠牌、車款、油品或經銷商">
+          <button class="primary-btn" type="submit">搜尋</button>
+          ${state.vehicleTypeSearch ? `<button class="ghost-btn" type="button" data-action="clear-vehicle-type-search">清除</button>` : ""}
+        </form>
+        <div class="actions"><button class="primary-btn" data-modal="vehicleType">新增車種</button></div>
+      </div>
+      <div class="vehicle-type-grid">
+        ${items.length ? items.map(vehicleTypeCard).join("") : `<div class="empty">目前沒有車種資料</div>`}
+      </div>
+    `;
+  }
+
+  function vehicleTypeCard(item) {
+    return `<article class="vehicle-type-card">
+      <div class="vehicle-type-photo-box">
+        ${item.photo_url ? `<img src="${escapeHtml(item.photo_url)}" alt="${escapeHtml([item.brand, item.model].filter(Boolean).join(" "))}">` : carIconSvg()}
+      </div>
+      <div class="vehicle-type-body">
+        <strong>${escapeHtml([item.brand, item.model].filter(Boolean).join(" ") || "未命名車種")}</strong>
+        <div class="vehicle-type-meta">
+          <span>排氣量 <b>${escapeHtml(item.displacement || "-")}</b></span>
+          <span>油品 <b>${escapeHtml(item.fuel_type || "-")}</b></span>
+          <span>經銷商 <b>${escapeHtml(item.purchase_dealer || "-")}</b></span>
+          <span>購入價格 <b>${Number(item.purchase_price || 0) ? `$${Number(item.purchase_price || 0).toLocaleString()}` : "-"}</b></span>
+        </div>
+        ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ""}
+      </div>
+      <div class="vehicle-type-actions">${rowActions("vehicleType", "vehicle_types", item.id)}</div>
+    </article>`;
+  }
+
   function canShowTaskDetail(table, item) {
     return !(table === "payment_notices" && item.fee_type === "薪資") || state.unlockedSalaryPayments.has(item.id);
   }
@@ -2857,7 +2907,7 @@
           <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
           ${vehicleStatusBadge(vehicle.status)}
         </div>
-        <div class="vehicle-art">${carIconSvg()}<div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div></div>
+        ${vehicleVisualArt(vehicle, drivers)}
         <div class="vehicle-visual-info">
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
           <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
@@ -2876,6 +2926,27 @@
 
   function vehicleAssignedDriverLabel(vehicle) {
     return vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
+  }
+
+  function vehicleTypeForVehicle(vehicle = {}) {
+    const brand = normalizedText(vehicle.brand);
+    const model = normalizedText(vehicle.model);
+    if (!brand && !model) return null;
+    const types = state.data.vehicle_types || [];
+    return types.find((item) => normalizedText(item.brand) === brand && normalizedText(item.model) === model)
+      || types.find((item) => model && normalizedText(item.model) === model)
+      || types.find((item) => brand && normalizedText(item.brand) === brand);
+  }
+
+  function vehicleVisualArt(vehicle, drivers = []) {
+    const type = vehicleTypeForVehicle(vehicle);
+    const photo = type?.photo_url
+      ? `<img class="vehicle-type-photo" src="${escapeHtml(type.photo_url)}" alt="${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "車種照片")}">`
+      : carIconSvg();
+    return `<div class="vehicle-art ${type?.photo_url ? "has-photo" : ""}">
+      ${photo}
+      <div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div>
+    </div>`;
   }
 
   function parseVehicleFiles(vehicle = {}) {
@@ -3038,6 +3109,7 @@
     const map = {
       adminUser: ["內部帳號", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
+      vehicleType: ["車種", "vehicle_types", vehicleTypeForm],
       vehicle: ["車輛", "vehicles", vehicleForm],
       vehicleFolder: ["車輛資料夾", "vehicles", vehicleFolderForm],
       vehicleLoan: ["借車登記", "vehicle_loans", vehicleLoanForm],
@@ -3200,6 +3272,13 @@
       if ("voluntary_insurance_company" in record || "roadside_assistance_phone" in record) {
         record.roadside_assistance_phone = insuranceCompanyPhone(record.voluntary_insurance_company) || record.roadside_assistance_phone || "";
       }
+    }
+    if (tableName === "vehicle_types") {
+      record.brand = String(record.brand || "").trim();
+      record.model = String(record.model || "").trim();
+      record.fuel_type = record.fuel_type || "";
+      record.displacement = record.displacement === "" || record.displacement == null ? null : Number(record.displacement) || null;
+      record.purchase_price = record.purchase_price === "" || record.purchase_price == null ? null : Number(record.purchase_price) || null;
     }
     if (tableName === "insurance_partners") record.active = record.active === "true";
     if (tableName === "driver_helper_articles") {
@@ -3730,6 +3809,36 @@
         `).join("") : `<div class="empty">目前沒有緊急事件處理流程</div>`}
       </div>
     `;
+  }
+
+  function vehicleTypeForm(item = {}) {
+    return `
+      <div class="form-section-title field full">車種基本資料</div>
+      ${input("brand", "廠牌", item.brand, "text", true)}
+      ${input("model", "車款", item.model, "text", true)}
+      ${input("displacement", "排氣量", item.displacement, "number")}
+      ${select("fuel_type", "油品", item.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
+      ${vehicleTypePhotoField(item)}
+      <div class="form-section-title field full">採購與經銷資訊</div>
+      ${input("purchase_dealer", "購入經銷商", item.purchase_dealer)}
+      ${input("dealer_phone", "經銷商電話", item.dealer_phone, "tel")}
+      ${input("sales_person", "銷售人員", item.sales_person)}
+      ${input("purchase_price", "購入價格", item.purchase_price, "number")}
+      ${text("notes", "備註", item.notes)}
+    `;
+  }
+
+  function vehicleTypePhotoField(item = {}) {
+    return `<div class="field full attachment-field vehicle-type-photo-field">
+      <label>車種照片</label>
+      <input type="hidden" name="photo_url" value="${escapeHtml(item.photo_url || "")}" data-attachment-url>
+      <input type="hidden" name="photo_name" value="${escapeHtml(item.photo_name || "")}" data-attachment-name>
+      <div class="attachment-upload-row vehicle-type-photo-upload">
+        ${item.photo_url ? `<img class="vehicle-type-form-preview" src="${escapeHtml(item.photo_url)}" alt="車種照片" onerror="this.remove()">` : `<span class="vehicle-type-form-empty">${carIconSvg()}</span>`}
+        <input type="file" accept="image/*" data-attachment-upload data-document-label="車種照片">
+        <span data-attachment-status>${item.photo_url ? `已上傳：${escapeHtml(item.photo_name || "車種照片")}` : "建議使用車身側面或官方車型照片"}</span>
+      </div>
+    </div>`;
   }
 
   function vehicleForm(v) {
@@ -4717,6 +4826,10 @@
       state.vehicleDealerFilter = "";
       render();
     }
+    if (target.dataset.action === "clear-vehicle-type-search") {
+      state.vehicleTypeSearch = "";
+      render();
+    }
     if (target.dataset.action === "clear-bom-search") {
       state.bomSearch = "";
       state.bomSupplierFilter = "";
@@ -4886,6 +4999,12 @@
       state.vehicleRegionFilter = String(data.get("region") || "");
       state.vehicleFuelFilter = String(data.get("fuel") || "");
       state.vehicleDealerFilter = String(data.get("dealer") || "");
+      render();
+    }
+    if (e.target.id === "vehicleTypeSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.vehicleTypeSearch = String(data.get("search") || "").trim();
       render();
     }
     if (e.target.id === "storageFilterForm") {
@@ -5167,7 +5286,10 @@
         attachmentInput.disabled = true;
         if (status) status.textContent = "檔案上傳中...";
         const form = field?.closest("form");
-        const ownerLabel = form?.querySelector('[name="plate_no"]')?.value || form?.querySelector('[name="name"]')?.value || "";
+        const ownerLabel = form?.querySelector('[name="plate_no"]')?.value
+          || form?.querySelector('[name="name"]')?.value
+          || [form?.querySelector('[name="brand"]')?.value, form?.querySelector('[name="model"]')?.value].filter(Boolean).join(" ")
+          || "";
         const driverFolderKey = form?.querySelector('[name="phone"]')?.value || form?.querySelector('[name="id"]')?.value || ownerLabel;
         const isDriverDocument = Boolean(attachmentInput.dataset.driverDocument);
         const isPartnerLogo = attachmentInput.dataset.partnerLogoUpload !== undefined;

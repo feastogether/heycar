@@ -81,16 +81,22 @@ a { text-decoration: none; }
 .status.returned { background: #fee2e2; color: #b91c1c; }
 .expiry-badge {
   display: inline-grid;
+  place-items: center;
   gap: 2px;
-  min-width: 112px;
-  padding: 6px 10px;
+  width: min(100%, 108px);
+  min-width: 0;
+  max-width: 100%;
+  padding: 6px 8px;
   border-radius: 8px;
   font-weight: 900;
   line-height: 1.15;
+  text-align: center;
+  white-space: normal;
 }
 .expiry-badge small {
   font-size: 11px;
   font-weight: 800;
+  line-height: 1.15;
 }
 .expiry-badge.normal { color: var(--ink); background: #f8fafc; }
 .expiry-badge.urgent,
@@ -2214,6 +2220,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
   min-width: 0;
   padding: 6px 7px;
   border-left: 2px solid #e6ebf1;
+  overflow: hidden;
 }
 .driver-row-facts dt {
   color: var(--muted);
@@ -2225,9 +2232,13 @@ button.calendar-pill:hover { filter: brightness(.96); }
   color: var(--ink);
   font-size: 12px;
   font-weight: 800;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.driver-row-facts dd .expiry-badge {
+  display: grid;
 }
 .driver-row-actions {
   display: flex;
@@ -2238,9 +2249,11 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .line-bind-badge {
   display: inline-flex;
   align-items: center;
-  max-width: 100%;
+  justify-content: center;
+  max-width: min(100%, 96px);
+  width: 72px;
   min-height: 24px;
-  padding: 4px 9px;
+  padding: 4px 8px;
   border-radius: 999px;
   font-size: 11px;
   font-weight: 900;
@@ -2248,6 +2261,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  vertical-align: middle;
 }
 .line-bind-badge.bound {
   background: #dcfce7;
@@ -2356,6 +2370,114 @@ button.calendar-pill:hover { filter: brightness(.96); }
   background: var(--ink);
   color: #fff;
 }
+.vehicle-type-toolbar {
+  grid-template-columns: minmax(190px, auto) minmax(320px, 1fr) auto;
+}
+.vehicle-type-search {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto auto;
+  gap: 8px;
+}
+.vehicle-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.vehicle-type-card {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(24,32,51,.04);
+}
+.vehicle-type-photo-box {
+  height: 116px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #f5f8fb;
+  overflow: hidden;
+}
+.vehicle-type-photo-box img,
+.vehicle-type-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.vehicle-art .vehicle-type-photo {
+  height: 132px;
+}
+.vehicle-type-photo-box svg {
+  width: 92%;
+  height: auto;
+}
+.vehicle-type-body {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+.vehicle-type-body strong {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 950;
+}
+.vehicle-type-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.vehicle-type-meta span {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.vehicle-type-meta b {
+  color: var(--ink);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vehicle-type-body p {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.vehicle-type-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+.vehicle-type-photo-upload {
+  align-items: center;
+}
+.vehicle-type-form-preview,
+.vehicle-type-form-empty {
+  width: 120px;
+  height: 76px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  object-fit: cover;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+.vehicle-type-form-empty {
+  display: grid;
+  place-items: center;
+}
+.vehicle-type-form-empty svg {
+  width: 104px;
+  height: auto;
+}
 .vehicle-management-list { display: grid; border-top: 1px solid var(--line); }
 .vehicle-management-row {
   display: grid;
@@ -2452,6 +2574,17 @@ button.calendar-pill:hover { filter: brightness(.96); }
   background: linear-gradient(180deg, #f8fbff, #edf3f9);
   overflow: hidden;
 }
+.vehicle-art.has-photo {
+  padding: 0;
+  background: #eef3f8;
+}
+.vehicle-art.has-photo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15,23,42,0) 50%, rgba(15,23,42,.22));
+  pointer-events: none;
+}
 .vehicle-art svg {
   width: min(92%, 280px);
   height: auto;
@@ -2502,6 +2635,11 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .partner-portal-layout {
   width: 100%;
   min-height: calc(100vh - 65px);
+}
+.vehicle-driver-avatars .driver-avatar-bubble {
+  width: 40px;
+  height: 40px;
+  font-size: 14px;
 }
 .partner-sidebar {
   display: grid;

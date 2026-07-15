@@ -12,7 +12,7 @@ const tables = [
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
-  "driver_helper_articles", "login_slogans", "bom_parts", "bom_packages"
+  "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -235,6 +235,7 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
 const tablePermission: Record<string, string> = {
   drivers: "drivers",
   vehicles: "vehicles",
+  vehicle_types: "vehicles",
   vehicle_loans: "loans",
   vehicle_service_records: "service_records",
   maintenance_records: "service_records",
@@ -276,14 +277,16 @@ async function loadPartnerData(partnerId: string) {
   const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
   if (partner.partner_type === "repair_shop") {
     const partnerName = normalizedText(partner.name);
-    const [calendarEvents, maintenanceNotifications, vehicles] = await Promise.all([
+    const [calendarEvents, maintenanceNotifications, vehicles, vehicleTypes] = await Promise.all([
       db.from("calendar_events").select("*"),
       db.from("maintenance_notifications").select("*"),
-      db.from("vehicles").select("*")
+      db.from("vehicles").select("*"),
+      db.from("vehicle_types").select("*")
     ]);
     if (calendarEvents.error) throw calendarEvents.error;
     if (maintenanceNotifications.error) throw maintenanceNotifications.error;
     if (vehicles.error) throw vehicles.error;
+    if (vehicleTypes.error) throw vehicleTypes.error;
     result.calendar_events = (calendarEvents.data || []).filter((item) => normalizedText(item.vendor) === partnerName);
     result.maintenance_notifications = (maintenanceNotifications.data || []).filter((item) => normalizedText(item.vendor) === partnerName);
     const calendarRows = result.calendar_events as Record<string, unknown>[];
@@ -294,6 +297,7 @@ async function loadPartnerData(partnerId: string) {
     ]);
     const plates = new Set(calendarRows.map((item) => normalizedText(item.plate_no)).filter(Boolean));
     result.vehicles = (vehicles.data || []).filter((item) => vehicleIds.has(item.id) || plates.has(normalizedText(item.plate_no)));
+    result.vehicle_types = vehicleTypes.data || [];
     result.insurance_partners = await loadSafePartners();
     return { data: result, partner };
   }
@@ -303,13 +307,15 @@ async function loadPartnerData(partnerId: string) {
   const vehicleQuery = partner.partner_type === "dealer"
     ? db.from("vehicles").select("*").eq("dealer_partner_id", partnerId)
     : db.from("vehicles").select("*");
-  const [requests, vehicles] = await Promise.all([requestQuery, vehicleQuery]);
+  const [requests, vehicles, vehicleTypes] = await Promise.all([requestQuery, vehicleQuery, db.from("vehicle_types").select("*")]);
   if (requests.error) throw requests.error;
   if (vehicles.error) throw vehicles.error;
+  if (vehicleTypes.error) throw vehicleTypes.error;
   result.insurance_requests = partner.partner_type === "dealer"
     ? (requests.data || []).filter((item) => item.request_type !== "amendment" || item.status === "completed").map(({ broker_notes: _brokerNotes, ...item }) => item)
     : requests.data || [];
   result.vehicles = vehicles.data || [];
+  result.vehicle_types = vehicleTypes.data || [];
   result.insurance_partners = await loadSafePartners();
   return { data: result, partner };
 }
