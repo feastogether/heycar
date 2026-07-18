@@ -680,6 +680,11 @@
     return (state.data.insurance_partners || []).find((item) => item.id === id)?.name || "";
   }
 
+  function partnerById(id) {
+    if (!id) return null;
+    return (state.data.insurance_partners || []).find((item) => item.id === id) || null;
+  }
+
   function partnerTypeName(type) {
     return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠", insurance_company: "保險公司" })[type] || type || "-";
   }
@@ -2938,7 +2943,19 @@
   }
 
   function vehicleAssignedDriverLabel(vehicle) {
-    return vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
+    const driverLabel = vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
+    return driverLabel || partnerName(vehicle.dealer_partner_id) || "";
+  }
+
+  function vehicleFallbackPartnerAvatar(vehicle) {
+    const partner = partnerById(vehicle.dealer_partner_id);
+    if (!partner) return `<span class="driver-avatar-bubble empty-avatar" title="未指定">未</span>`;
+    const title = escapeHtml(partner.name || "所屬車商");
+    const initial = escapeHtml(String(partner.name || "?").slice(0, 1));
+    const logo = partner.logo_url
+      ? `<img src="${escapeHtml(partner.logo_url)}" alt="${title}" onerror="this.remove();this.closest('.driver-avatar-bubble').textContent='${initial}'">`
+      : initial;
+    return `<span class="driver-avatar-bubble partner-avatar-bubble" title="${title}">${logo}</span>`;
   }
 
   function vehicleTypeForVehicle(vehicle = {}) {
@@ -2958,7 +2975,7 @@
       : carIconSvg();
     return `<div class="vehicle-art ${type?.photo_url ? "has-photo" : ""}">
       ${photo}
-      <div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : `<span class="driver-avatar-bubble empty-avatar">未</span>`}</div>
+      <div class="vehicle-driver-avatars">${drivers.length ? drivers.slice(0, 4).map(driverAvatarBubble).join("") : vehicleFallbackPartnerAvatar(vehicle)}</div>
     </div>`;
   }
 
@@ -3830,7 +3847,7 @@
       ${input("brand", "廠牌", item.brand, "text", true)}
       ${input("model", "車款", item.model, "text", true)}
       ${input("displacement", "排氣量", item.displacement, "number")}
-      ${select("fuel_type", "油品", item.fuel_type || "", [["", "未設定"], ["92", "92"], ["92無鉛汽油", "92無鉛汽油"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"], ["電車", "電車"]])}
+      ${select("fuel_type", "油品", item.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"], ["電車", "電車"]])}
       ${vehicleTypePhotoField(item)}
       <div class="form-section-title field full">採購與經銷資訊</div>
       ${input("purchase_dealer", "購入經銷商", item.purchase_dealer)}
@@ -3864,7 +3881,7 @@
       ${input("plate_no", "車號", v.plate_no, "text", true)}
       ${input("brand", "車輛品牌", v.brand)}
       ${input("model", "車輛款式", v.model)}
-      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["92無鉛汽油", "92無鉛汽油"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"], ["電車", "電車"]])}
+      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"], ["電車", "電車"]])}
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
       ${select("lease_status", "租賃狀態", v.lease_status || "自有", vehicleLeaseStatuses.map((s) => [s, s]))}
       ${input("vehicle_region", "區域", v.vehicle_region)}

@@ -2627,6 +2627,17 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .empty-avatar {
   background: #94a3b8;
 }
+.partner-avatar-bubble {
+  background: #fff;
+  color: var(--ink);
+  border-color: #dbe3ee;
+  box-shadow: 0 3px 8px rgba(24, 32, 51, .12);
+}
+.partner-avatar-bubble img {
+  object-fit: contain;
+  padding: 3px;
+  background: #fff;
+}
 .vehicle-visual-info {
   display: grid;
   gap: 4px;
