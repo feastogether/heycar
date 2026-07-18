@@ -130,6 +130,7 @@
   };
 
   const vehicleStatuses = ["正常", "待修", "維修中", "閒置", "備用車", "公務車"];
+  const vehicleLeaseStatuses = ["自有", "租購", "月租", "短租", "長租", "集團", "特殊"];
   const fleets = ["亞菲得車隊", "亞緻車隊", "合作車隊"];
   const loanStatuses = [["", "進行中"], ["pending_approval", "待審核"], ["approved", "已核准借用中"], ["return_pending", "待確認還車"], ["completed", "已結案"]];
 
@@ -723,6 +724,17 @@
           ? "returned"
           : "read";
     return `<span class="status vehicle-status ${statusClass}">${escapeHtml(status || "未設定")}</span>`;
+  }
+
+  function leaseStatusBadge(status) {
+    const statusClass = ["自有", "集團"].includes(status)
+      ? "done"
+      : ["月租", "短租", "長租"].includes(status)
+        ? "pending"
+        : status === "特殊"
+          ? "returned"
+          : "read";
+    return `<span class="status vehicle-status lease-status ${statusClass}">${escapeHtml(status || "未設定")}</span>`;
   }
 
   function escapeHtml(value) {
@@ -2378,25 +2390,25 @@
     if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
     const permissions = state.adminProfile?.permissions || {};
     if (permissions[permission]) return true;
-    const legacy = {
-      vehicleLoans: "loans",
-      vehicleTypes: "vehicles",
-      serviceRecords: "service_records",
-      maintenanceNotifications: "service_records",
-      bom: "service_records",
-      insuranceCenter: "insurance",
-      insurancePartners: "insurance",
-      announcements: "messages",
-      personalMessages: "messages",
-      feedbacks: "messages",
-      marquee: "messages",
-      emergencyEvents: "messages",
-      driverHelperArticles: "messages",
-      loginSlogans: "messages",
-      driverLinks: "messages",
-      payments: "finance"
+    const aliases = {
+      vehicleLoans: ["loans"],
+      vehicleTypes: ["vehicles"],
+      serviceRecords: ["service_records"],
+      maintenanceNotifications: ["service_records"],
+      bom: ["service_records"],
+      insuranceCenter: ["insurance"],
+      insurancePartners: ["insurance"],
+      announcements: ["messages"],
+      personalMessages: ["messages"],
+      feedbacks: ["messages"],
+      marquee: ["messages"],
+      emergencyEvents: ["messages"],
+      driverHelperArticles: ["messages"],
+      loginSlogans: ["messages"],
+      driverLinks: ["messages"],
+      payments: ["finance"]
     };
-    return Boolean(permissions[legacy[permission]]);
+    return Boolean((aliases[permission] || []).some((key) => permissions[key]));
   }
 
   const adminNavLabels = {
@@ -2457,7 +2469,7 @@
     const nav = [
       ["adminUsers", "權限管理", "🔐", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
-      ["vehicleTypes", "車種管理", "🚘", "vehicles"],
+      ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
       ["serviceRecords", "車輛履歷", "🧾", "serviceRecords"],
@@ -2772,7 +2784,7 @@
     const search = state.vehicleSearch.trim().toUpperCase();
     const vehicles = [...state.data.vehicles]
       .filter((vehicle) => {
-        const searchable = [vehicle.plate_no, vehicle.brand, vehicle.model, vehicle.assigned_driver_names].join(" ").toUpperCase();
+        const searchable = [vehicle.plate_no, vehicle.brand, vehicle.model, vehicle.assigned_driver_names, vehicle.status, vehicle.lease_status].join(" ").toUpperCase();
         return (!search || searchable.includes(search))
           && (!state.vehicleStatusFilter || vehicle.status === state.vehicleStatusFilter)
           && (!state.vehicleRegionFilter || vehicle.vehicle_region === state.vehicleRegionFilter)
@@ -2875,6 +2887,7 @@
           <div><dt>目前使用人</dt><dd>${escapeHtml(vehicleAssignedDriverLabel(vehicle))}</dd></div>
           <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
           <div class="vehicle-status-fact"><dt>目前狀態</dt><dd>${vehicleStatusBadge(vehicle.status)}</dd></div>
+          <div class="vehicle-status-fact"><dt>租賃狀態</dt><dd>${leaseStatusBadge(vehicle.lease_status)}</dd></div>
           <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
           <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
           <div><dt>下次定檢</dt><dd>${expiryDateBadge(vehicle.next_inspection_date, 30)}</dd></div>
@@ -2905,13 +2918,13 @@
       return `<article class="vehicle-visual-card">
         <div class="vehicle-visual-top">
           <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
-          ${vehicleStatusBadge(vehicle.status)}
+          <span class="vehicle-status-pair">${vehicleStatusBadge(vehicle.status)}${leaseStatusBadge(vehicle.lease_status)}</span>
         </div>
         ${vehicleVisualArt(vehicle, drivers)}
         <div class="vehicle-visual-info">
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
           <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
-          <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
+          <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 租賃：${escapeHtml(vehicle.lease_status || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
         </div>
         <div class="vehicle-card-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${rowActions("vehicle", "vehicles", vehicle.id)}</div>
@@ -3426,7 +3439,7 @@
     const serviceRows = filteredServiceRecords();
     const configs = {
       drivers: ["駕駛管理", state.data.drivers || [], [["姓名", "name"], ["電話", "phone"], ["狀態", "driver_status"], ["服務區域", "service_area"], ["服務時段", "service_shift"], ["到職日期", "onboard_date"], ["駕照到期日", "license_expiry"], ["備註", "notes"]]],
-      vehicles: ["車輛管理", state.data.vehicles || [], [["車牌", "plate_no"], ["品牌", "brand"], ["車款", "model"], ["目前使用人", "assigned_driver_names"], ["油品", "fuel_type"], ["狀態", "status"], ["強制險", "compulsory_insurance_expiry"], ["任意險", "voluntary_insurance_expiry"], ["保險公司", "insurance_company"]]],
+      vehicles: ["車輛管理", state.data.vehicles || [], [["車牌", "plate_no"], ["品牌", "brand"], ["車款", "model"], ["目前使用人", "assigned_driver_names"], ["油品", "fuel_type"], ["狀態", "status"], ["租賃狀態", "lease_status"], ["強制險", "compulsory_insurance_expiry"], ["任意險", "voluntary_insurance_expiry"], ["保險公司", "insurance_company"]]],
       insurance: ["保險管理", state.data.insurance_requests || [], [["車牌", "plate_no"], ["保險種類", "insurance_type"], ["規格", "coverage_spec"], ["旅客險額度", "passenger_limit"], ["自付額", "deductible"], ["抵押權人", "lienholder"], ["指定保險公司", "assigned_insurance_company"], ["狀態", "status"], ["保險備註", "insurance_notes"], ["保經備註", "broker_notes"]]],
       serviceRecords: ["車輛履歷", serviceRows, [["車牌", "plate_no"], ["履歷類型", "record_type"], ["作業日期", "service_date"], ["里程", "odometer"], ["保修廠", "vendor"], ["處置／保養內容", "work_performed"], ["實際維修／保養內容", "actual_work_performed"], ["零組件明細", "__parts"], ["工資", "labor_cost"], ["零件費", "parts_cost"], ["其他費用", "other_cost"], ["總成本", "total_cost"], ["下次建議日期", "next_service_date"], ["下次建議里程", "next_service_odometer"], ["備註", "notes"]]]
     };
@@ -3853,6 +3866,7 @@
       ${input("model", "車輛款式", v.model)}
       ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
+      ${select("lease_status", "租賃狀態", v.lease_status || "自有", vehicleLeaseStatuses.map((s) => [s, s]))}
       ${input("vehicle_region", "區域", v.vehicle_region)}
       ${select("dealer_partner_id", "所屬車商", v.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}

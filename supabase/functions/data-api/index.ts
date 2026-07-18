@@ -189,7 +189,7 @@ async function loadAdminData(session: Record<string, unknown>) {
       continue;
     }
     if (permission && !(await adminCan(session, permission))) {
-      if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "service_records")))) {
+      if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "serviceRecords")))) {
         const { data, error } = await db
           .from("insurance_partners")
           .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name");
@@ -229,31 +229,52 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
   if (session.is_super_admin) return true;
   if (!session.admin_user_id) return false;
   const { data } = await db.from("admin_users").select("active,permissions").eq("id", session.admin_user_id).single();
-  return Boolean(data?.active && data.permissions?.[permission]);
+  if (!data?.active) return false;
+  const permissions = (data.permissions || {}) as Record<string, boolean>;
+  if (permissions[permission]) return true;
+  const aliases: Record<string, string[]> = {
+    vehicleLoans: ["loans"],
+    vehicleTypes: ["vehicles"],
+    serviceRecords: ["service_records"],
+    maintenanceNotifications: ["service_records"],
+    bom: ["service_records"],
+    insuranceCenter: ["insurance"],
+    insurancePartners: ["insurance"],
+    announcements: ["messages"],
+    personalMessages: ["messages"],
+    feedbacks: ["messages"],
+    marquee: ["messages"],
+    emergencyEvents: ["messages"],
+    driverHelperArticles: ["messages"],
+    loginSlogans: ["messages"],
+    driverLinks: ["messages"],
+    payments: ["finance"]
+  };
+  return Boolean((aliases[permission] || []).some((key) => permissions[key]));
 }
 
 const tablePermission: Record<string, string> = {
   drivers: "drivers",
   vehicles: "vehicles",
-  vehicle_types: "vehicles",
-  vehicle_loans: "loans",
-  vehicle_service_records: "service_records",
-  maintenance_records: "service_records",
-  maintenance_notifications: "service_records",
-  announcements: "messages",
-  announcement_reads: "messages",
-  personal_messages: "messages",
-  marquee_messages: "messages",
-  emergency_events: "messages",
-  feedbacks: "messages",
-  payment_notices: "finance",
-  insurance_partners: "insurance",
-  insurance_requests: "insurance",
-  driver_links: "messages",
-  driver_helper_articles: "messages",
-  login_slogans: "messages",
-  bom_parts: "service_records",
-  bom_packages: "service_records"
+  vehicle_types: "vehicleTypes",
+  vehicle_loans: "vehicleLoans",
+  vehicle_service_records: "serviceRecords",
+  maintenance_records: "serviceRecords",
+  maintenance_notifications: "maintenanceNotifications",
+  announcements: "announcements",
+  announcement_reads: "announcements",
+  personal_messages: "personalMessages",
+  marquee_messages: "marquee",
+  emergency_events: "emergencyEvents",
+  feedbacks: "feedbacks",
+  payment_notices: "payments",
+  insurance_partners: "insurancePartners",
+  insurance_requests: "insuranceCenter",
+  driver_links: "driverLinks",
+  driver_helper_articles: "driverHelperArticles",
+  login_slogans: "loginSlogans",
+  bom_parts: "bom",
+  bom_packages: "bom"
 };
 
 async function loadPartnerData(partnerId: string) {
@@ -515,7 +536,7 @@ Deno.serve(async (req) => {
       return json(await signStorageUrls(await loadDriverData(session.driver_id)));
     }
     if (body.action === "push_line_message") {
-      if (session.session_type !== "admin" || !(await adminCan(session, "messages"))) {
+      if (session.session_type !== "admin" || !(await adminCan(session, "personalMessages"))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       }
       const driverId = compactText(body.driver_id);

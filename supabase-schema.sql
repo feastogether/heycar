@@ -20,6 +20,7 @@ create table if not exists public.vehicles (
   year text,
   fleet_name text not null default '亞菲得車隊',
   status text not null default '正常',
+  lease_status text default '自有',
   current_driver_id uuid references public.drivers(id) on delete set null,
   insurance_expiry date,
   insurance_company text,
@@ -138,6 +139,7 @@ alter table public.drivers add column if not exists login_enabled boolean not nu
 alter table public.vehicles add column if not exists fleet_name text not null default '亞菲得車隊';
 alter table public.vehicles add column if not exists compulsory_insurance_expiry date;
 alter table public.vehicles add column if not exists voluntary_insurance_expiry date;
+alter table public.vehicles add column if not exists lease_status text default '自有';
 alter table public.vehicles add column if not exists vehicle_region text;
 alter table public.vehicles add column if not exists assigned_driver_names text;
 alter table public.vehicles add column if not exists insurance_expiry date;
