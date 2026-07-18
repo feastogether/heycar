@@ -3830,7 +3830,7 @@
       ${input("brand", "廠牌", item.brand, "text", true)}
       ${input("model", "車款", item.model, "text", true)}
       ${input("displacement", "排氣量", item.displacement, "number")}
-      ${select("fuel_type", "油品", item.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
+      ${select("fuel_type", "油品", item.fuel_type || "", [["", "未設定"], ["92", "92"], ["92無鉛汽油", "92無鉛汽油"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"], ["電車", "電車"]])}
       ${vehicleTypePhotoField(item)}
       <div class="form-section-title field full">採購與經銷資訊</div>
       ${input("purchase_dealer", "購入經銷商", item.purchase_dealer)}
@@ -3864,7 +3864,7 @@
       ${input("plate_no", "車號", v.plate_no, "text", true)}
       ${input("brand", "車輛品牌", v.brand)}
       ${input("model", "車輛款式", v.model)}
-      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"]])}
+      ${select("fuel_type", "油品", v.fuel_type || "", [["", "未設定"], ["92", "92"], ["92無鉛汽油", "92無鉛汽油"], ["95", "95"], ["98", "98"], ["柴油", "柴油"], ["電能", "電能"], ["電車", "電車"]])}
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
       ${select("lease_status", "租賃狀態", v.lease_status || "自有", vehicleLeaseStatuses.map((s) => [s, s]))}
       ${input("vehicle_region", "區域", v.vehicle_region)}
