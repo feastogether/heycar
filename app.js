@@ -4,6 +4,7 @@
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const dataApiUrl = cfg.DATA_API_URL || `${cfg.SUPABASE_URL}/functions/v1/data-api`;
+  const lineChannelId = cfg.LINE_CHANNEL_ID || cfg.LINE_LOGIN_CHANNEL_ID || (cfg.LIFF_ID ? String(cfg.LIFF_ID).split("-")[0] : "");
   const storageApiUrl = location.hostname === "heycar.airvan.workers.dev"
     ? "/api/storage"
     : cfg.STORAGE_API_URL || `${cfg.SUPABASE_URL}/functions/v1/storage-api`;
@@ -289,6 +290,8 @@
   function lineProfilePayload() {
     if (!state.lineProfile?.userId) return null;
     return {
+      id_token: window.liff?.getIDToken ? window.liff.getIDToken() : "",
+      client_id: lineChannelId,
       line_user_id: state.lineProfile.userId,
       line_display_name: state.lineProfile.displayName || "",
       line_picture_url: state.lineProfile.pictureUrl || ""
@@ -3372,7 +3375,7 @@
       if ("vehicle_id" in record) record.vehicle_id = record.vehicle_id || null;
       if ("dealer_partner_id" in record) record.dealer_partner_id = record.dealer_partner_id || null;
       if ("created_by_partner_type" in record) record.created_by_partner_type = record.created_by_partner_type || (state.partner?.partner_type || (state.admin ? "admin" : ""));
-      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "awaiting_dealer_confirmation", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
+      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
       if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
       if (!record.request_type && String(record.status || "").startsWith("addition_")) record.request_type = "addition";
       if (!record.request_type && String(record.status || "").startsWith("amendment_")) record.request_type = "amendment";
@@ -3408,13 +3411,11 @@
       record.driver_id = record.driver_id || null;
       record.event_time = record.event_time || null;
     }
-    if (tableName === "marquee_messages") record.active = record.active === "true";
+    if (["marquee_messages", "emergency_events", "driver_links"].includes(tableName)) record.active = record.active === "true";
     if (tableName === "login_slogans") {
       record.active = record.active === "true";
       record.sort_order = Number(record.sort_order || 0);
     }
-    if (tableName === "emergency_events") record.active = record.active === "true";
-    if (tableName === "driver_links") record.active = record.active === "true";
     if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
     if (tableName === "maintenance_records") {
       record.cost = Number(record.cost || 0);

@@ -3087,7 +3087,6 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .insurance-request-row.insurance-stage-addition_policy_pending,
 .insurance-request-row.insurance-stage-document_requested,
 .insurance-request-row.insurance-stage-document_received,
-.insurance-request-row.insurance-stage-awaiting_dealer_confirmation,
 .insurance-request-row.insurance-stage-quote_confirmed_issue_application,
 .insurance-request-row.insurance-stage-awaiting_policy,
 .insurance-request-row.insurance-stage-receipt_pending { border-left-color: #2563eb; }

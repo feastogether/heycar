@@ -1,9 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const cors = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-afide-session",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Vary": "Origin",
   "Content-Type": "application/json"
 };
 
@@ -17,6 +18,7 @@ const tables = [
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
 const lineChannelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN") || "";
+const lineLoginChannelId = Deno.env.get("LINE_LOGIN_CHANNEL_ID") || Deno.env.get("LINE_CHANNEL_ID") || "";
 const db = createClient(
   Deno.env.get("SUPABASE_URL") || "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
@@ -77,6 +79,34 @@ const phoneMatches = (left: unknown, right: unknown) => {
   return Boolean(a && b && (a === b || a.slice(-9) === b.slice(-9)));
 };
 const normalizedText = (value: unknown) => String(value || "").trim().replace(/\s+/g, "").toUpperCase();
+
+const lineAuthError = (message: string, status: number) => {
+  const error = new Error(message) as Error & { status?: number };
+  error.status = status;
+  return error;
+};
+
+async function verifyLineIdentity(body: Record<string, unknown>) {
+  const idToken = compactText(body.id_token || body.line_id_token);
+  if (!idToken) throw lineAuthError("LINE_ID_TOKEN_REQUIRED", 400);
+  const clientId = compactText(lineLoginChannelId || body.client_id || body.channel_id);
+  if (!clientId) throw lineAuthError("LINE_CHANNEL_ID_REQUIRED", 400);
+
+  const response = await fetch("https://api.line.me/oauth2/v2.1/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ id_token: idToken, client_id: clientId })
+  });
+  if (!response.ok) throw lineAuthError("LINE_ID_TOKEN_INVALID", 401);
+  const payload = await response.json();
+  const userId = compactText(payload.sub);
+  if (!userId) throw lineAuthError("LINE_ID_TOKEN_INVALID", 401);
+  return {
+    userId,
+    displayName: compactText(payload.name || body.line_display_name).slice(0, 120),
+    pictureUrl: compactText(payload.picture || body.line_picture_url).slice(0, 500)
+  };
+}
 
 const hashCode = async (value: unknown) => {
   const bytes = new TextEncoder().encode(normalizeLoginCode(value));
@@ -277,6 +307,50 @@ const tablePermission: Record<string, string> = {
   bom_packages: "bom"
 };
 
+function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
+  const output: Record<string, unknown> = { ...item };
+  const requestType = compactText(output.request_type);
+  const status = compactText(output.status);
+  const dealerCanSeeQuote = requestType === "quote" && [
+    "dealer_review", "stamping", "quote_confirmed_issue_application",
+    "awaiting_policy", "payment_pending", "receipt_pending", "completed"
+  ].includes(status);
+  const dealerCanSeePolicy = (
+    (requestType === "quote" && ["payment_pending", "receipt_pending", "completed"].includes(status)) ||
+    (requestType === "addition" && status === "addition_completed") ||
+    (requestType === "document" && ["document_received", "completed"].includes(status))
+  );
+  const dealerCanSeeReceipt = (
+    (requestType === "quote" && ["receipt_pending", "completed"].includes(status)) ||
+    (requestType === "document" && ["document_received", "completed"].includes(status))
+  );
+
+  const hide = (...keys: string[]) => keys.forEach((key) => delete output[key]);
+  hide(
+    "broker_notes", "broker_reply", "vehicle_dept_notes", "insurance_notes",
+    "application_url", "application_name",
+    "stamped_application_url", "stamped_application_name",
+    "amendment_stamped_url", "amendment_stamped_name",
+    "payment_slip_url", "payment_slip_name",
+    "license_files", "amendment_files"
+  );
+  if (!dealerCanSeeQuote) hide("quote_url", "quote_name");
+  if (!dealerCanSeePolicy) hide("policy_url", "policy_name", "document_policy_url", "document_policy_name");
+  if (!dealerCanSeeReceipt) hide("receipt_url", "receipt_name", "document_receipt_url", "document_receipt_name");
+  return output;
+}
+
+async function partnerTypeForSession(session: Record<string, unknown>) {
+  if (session.session_type !== "partner" || !session.partner_id) return "";
+  const { data, error } = await db
+    .from("insurance_partners")
+    .select("partner_type")
+    .eq("id", session.partner_id)
+    .maybeSingle();
+  if (error) throw error;
+  return compactText(data?.partner_type);
+}
+
 async function loadPartnerData(partnerId: string) {
   const { data: partner, error: partnerError } = await db
     .from("insurance_partners")
@@ -333,7 +407,9 @@ async function loadPartnerData(partnerId: string) {
   if (vehicles.error) throw vehicles.error;
   if (vehicleTypes.error) throw vehicleTypes.error;
   result.insurance_requests = partner.partner_type === "dealer"
-    ? (requests.data || []).filter((item) => item.request_type !== "amendment" || item.status === "completed").map(({ broker_notes: _brokerNotes, ...item }) => item)
+    ? (requests.data || [])
+      .filter((item) => item.request_type !== "amendment" || item.status === "completed")
+      .map((item) => sanitizeDealerInsuranceRequest(item))
     : requests.data || [];
   result.vehicles = vehicles.data || [];
   result.vehicle_types = vehicleTypes.data || [];
@@ -452,12 +528,17 @@ Deno.serve(async (req) => {
       return json(await signStorageUrls({ ...(await createSession("driver", driver.id)), user: driver }));
     }
     if (body.action === "login_line_driver") {
-      const lineUserId = String(body.line_user_id || "").trim();
-      if (!lineUserId) return json({ error: "LINE_USER_REQUIRED" }, 400);
+      let lineIdentity;
+      try {
+        lineIdentity = await verifyLineIdentity(body);
+      } catch (error) {
+        const lineError = error as Error & { status?: number };
+        return json({ error: lineError.message || "LINE_ID_TOKEN_INVALID" }, lineError.status || 401);
+      }
       const { data: driver, error } = await db
         .from("drivers")
         .select("*")
-        .eq("line_user_id", lineUserId)
+        .eq("line_user_id", lineIdentity.userId)
         .eq("login_enabled", true)
         .maybeSingle();
       if (error) throw error;
@@ -506,21 +587,26 @@ Deno.serve(async (req) => {
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
     if (body.action === "bind_line_driver") {
       if (session.session_type !== "driver" || !session.driver_id) return json({ error: "ACTION_NOT_ALLOWED" }, 403);
-      const lineUserId = String(body.line_user_id || "").trim();
-      if (!lineUserId) return json({ error: "LINE_USER_REQUIRED" }, 400);
+      let lineIdentity;
+      try {
+        lineIdentity = await verifyLineIdentity(body);
+      } catch (error) {
+        const lineError = error as Error & { status?: number };
+        return json({ error: lineError.message || "LINE_ID_TOKEN_INVALID" }, lineError.status || 401);
+      }
       const { data: existing, error: existingError } = await db
         .from("drivers")
         .select("id")
-        .eq("line_user_id", lineUserId)
+        .eq("line_user_id", lineIdentity.userId)
         .maybeSingle();
       if (existingError) throw existingError;
       if (existing && existing.id !== session.driver_id) return json({ error: "LINE_ALREADY_BOUND" }, 409);
       const { data, error } = await db
         .from("drivers")
         .update({
-          line_user_id: lineUserId,
-          line_display_name: String(body.line_display_name || "").slice(0, 120),
-          line_picture_url: String(body.line_picture_url || "").slice(0, 500),
+          line_user_id: lineIdentity.userId,
+          line_display_name: lineIdentity.displayName,
+          line_picture_url: lineIdentity.pictureUrl,
           line_bound_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -727,7 +813,10 @@ Deno.serve(async (req) => {
       }
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      return json(await signStorageUrls({ data, line_push }));
+      const responseData = session.session_type === "partner" && body.table === "insurance_requests" && (await partnerTypeForSession(session)) === "dealer"
+        ? sanitizeDealerInsuranceRequest(data)
+        : data;
+      return json(await signStorageUrls({ data: responseData, line_push }));
     }
     if (body.action === "update") {
       if (body.table === "insurance_partners") {
@@ -748,7 +837,10 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      return json(await signStorageUrls({ data }));
+      const responseData = session.session_type === "partner" && body.table === "insurance_requests" && (await partnerTypeForSession(session)) === "dealer"
+        ? sanitizeDealerInsuranceRequest(data)
+        : data;
+      return json(await signStorageUrls({ data: responseData }));
     }
     if (body.action === "delete" && session.session_type === "admin") {
       const { error } = await db.from(body.table).delete().eq("id", body.id);

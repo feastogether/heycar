@@ -1,7 +1,8 @@
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
   "Access-Control-Allow-Headers": "content-type, x-afide-session",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS"
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Vary": "Origin"
 };
 
 const json = (body, status = 200) => new Response(JSON.stringify(body), {
