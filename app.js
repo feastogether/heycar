@@ -584,7 +584,8 @@
   }
 
   function driverVehicle(driverId) {
-    return state.data.vehicles.find((vehicle) => vehicle.current_driver_id === driverId) || {};
+    const driver = (state.data.drivers || []).find((item) => item.id === driverId);
+    return state.data.vehicles.find((vehicle) => vehicleMatchesDriver(vehicle, driver || { id: driverId })) || {};
   }
 
   function driverManagementCards() {
@@ -660,7 +661,7 @@
 
   function driverSearchText(driver) {
     const assignedVehicles = (state.data.vehicles || [])
-      .filter((vehicle) => vehicle.current_driver_id === driver.id || String(vehicle.assigned_driver_names || "").includes(driver.name || ""))
+      .filter((vehicle) => vehicleMatchesDriver(vehicle, driver))
       .map((vehicle) => `${vehicle.plate_no || ""} ${vehicle.brand || ""} ${vehicle.model || ""} ${vehicle.vehicle_region || ""}`)
       .join(" ");
     return [
@@ -707,10 +708,7 @@
   }
 
   function assignedVehiclesForDriver(driver) {
-    return (state.data.vehicles || []).filter((vehicle) =>
-      vehicle.current_driver_id === driver.id ||
-      String(vehicle.assigned_driver_names || "").split("/").map((name) => name.trim()).includes(driver.name || "")
-    );
+    return (state.data.vehicles || []).filter((vehicle) => vehicleMatchesDriver(vehicle, driver));
   }
 
   function assignedVehicleNames(driver) {
@@ -1347,16 +1345,25 @@
 
   function driverAssignedVehicles() {
     if (!state.user) return [];
-    return (state.data.vehicles || []).filter((vehicle) => {
-      const assignedIds = parseAssignedDriverIds(vehicle);
-      const assignedNames = String(vehicle.assigned_driver_names || "")
-        .split("/")
-        .map((name) => name.trim())
-        .filter(Boolean);
-      return vehicle.current_driver_id === state.user.id
-        || assignedIds.includes(state.user.id)
-        || assignedNames.includes(state.user.name || "");
-    });
+    return (state.data.vehicles || []).filter((vehicle) => vehicleMatchesDriver(vehicle, state.user));
+  }
+
+  function vehicleMatchesDriver(vehicle = {}, driver = {}) {
+    const activeHistory = vehicleActiveDriverRecords(vehicle);
+    if (activeHistory.length) {
+      return activeHistory.some((item) =>
+        (item.driver_id && String(item.driver_id) === String(driver.id))
+        || (item.driver_name && item.driver_name === driver.name)
+      );
+    }
+    const assignedIds = parseAssignedDriverIds(vehicle);
+    const assignedNames = String(vehicle.assigned_driver_names || "")
+      .split("/")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    return vehicle.current_driver_id === driver.id
+      || assignedIds.includes(driver.id)
+      || assignedNames.includes(driver.name || "");
   }
 
   function parseAssignedDriverIds(vehicle = {}) {
@@ -1851,19 +1858,24 @@
     modal.className = "modal-backdrop";
     modal.innerHTML = `
       <div class="modal calendar-detail-modal">
-        <div class="section-head"><h3>${fmtDate(date)} 行程</h3><button class="ghost-btn" data-close-modal>關閉</button></div>
-        <div class="calendar-day-detail">
-          ${items.length ? items.map((item) => `
-            <article class="calendar-detail-item ${escapeHtml(item.event_type || "other")}">
-              <div class="calendar-detail-title"><strong>${escapeHtml(item.plate_no || "-")}</strong><span>${calendarTypeName(item.event_type)}</span></div>
-              <dl class="calendar-detail-grid">
-                <div><dt>時間</dt><dd>${escapeHtml(item.event_time || "未指定")}</dd></div>
-                <div><dt>指定駕駛</dt><dd>${escapeHtml(driverName(item.driver_id))}</dd></div>
-                <div><dt>保養廠</dt><dd>${escapeHtml(item.vendor || "-")}</dd></div>
-              </dl>
-              <p class="calendar-detail-content">${escapeHtml(item.content || "無詳細內容")}</p>
-            </article>
-          `).join("") : `<div class="empty">當日沒有車隊行程</div>`}
+        <div class="modal-title"><h3>${fmtDate(date)} 行程</h3></div>
+        <div class="modal-form-body">
+          <div class="calendar-day-detail">
+            ${items.length ? items.map((item) => `
+              <article class="calendar-detail-item ${escapeHtml(item.event_type || "other")}">
+                <div class="calendar-detail-title"><strong>${escapeHtml(item.plate_no || "-")}</strong><span>${calendarTypeName(item.event_type)}</span></div>
+                <dl class="calendar-detail-grid">
+                  <div><dt>時間</dt><dd>${escapeHtml(item.event_time || "未指定")}</dd></div>
+                  <div><dt>指定駕駛</dt><dd>${escapeHtml(driverName(item.driver_id))}</dd></div>
+                  <div><dt>保養廠</dt><dd>${escapeHtml(item.vendor || "-")}</dd></div>
+                </dl>
+                <p class="calendar-detail-content">${escapeHtml(item.content || "無詳細內容")}</p>
+              </article>
+            `).join("") : `<div class="empty">當日沒有車隊行程</div>`}
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="ghost-btn" type="button" data-close-modal>關閉</button>
         </div>
       </div>
     `;
@@ -2941,13 +2953,76 @@
   }
 
   function vehicleDrivers(vehicle) {
+    const activeDrivers = vehicleActiveDriverRecords(vehicle);
+    if (activeDrivers.length) {
+      const ids = activeDrivers.map((item) => String(item.driver_id || "")).filter(Boolean);
+      const names = activeDrivers.map((item) => String(item.driver_name || "")).filter(Boolean);
+      return (state.data.drivers || []).filter((driver) => ids.includes(String(driver.id)) || names.includes(driver.name));
+    }
     const names = String(vehicle.assigned_driver_names || "").split("/").map((name) => name.trim()).filter(Boolean);
     return (state.data.drivers || []).filter((driver) => vehicle.current_driver_id === driver.id || names.includes(driver.name));
   }
 
   function vehicleAssignedDriverLabel(vehicle) {
-    const driverLabel = vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
+    const activeNames = vehicleActiveDriverRecords(vehicle).map((item) => item.driver_name || driverName(item.driver_id)).filter(Boolean);
+    const driverLabel = activeNames.join("/") || vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
     return driverLabel || partnerName(vehicle.dealer_partner_id) || "";
+  }
+
+  function parseVehicleDriverHistory(vehicle = {}) {
+    const raw = vehicle.driver_history;
+    if (Array.isArray(raw)) return raw;
+    if (typeof raw === "string") {
+      try {
+        const parsed = JSON.parse(raw || "[]");
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  }
+
+  function vehicleActiveDriverRecords(vehicle = {}) {
+    return parseVehicleDriverHistory(vehicle)
+      .filter((item) => String(item.driver_name || item.driver_id || "").trim())
+      .filter((item) => !String(item.end_at || "").trim());
+  }
+
+  function vehicleInitialDriverHistory(vehicle = {}) {
+    const history = parseVehicleDriverHistory(vehicle);
+    if (history.length) return history;
+    const names = String(vehicle.assigned_driver_names || "")
+      .split("/")
+      .map((name) => name.trim())
+      .filter(Boolean);
+    const rows = [];
+    if (vehicle.current_driver_id) {
+      rows.push({ id: uid(), start_at: "", end_at: "", driver_id: vehicle.current_driver_id, driver_name: driverName(vehicle.current_driver_id), notes: "" });
+    }
+    names.forEach((name) => {
+      if (!rows.some((row) => row.driver_name === name)) {
+        const driver = (state.data.drivers || []).find((item) => item.name === name);
+        rows.push({ id: uid(), start_at: "", end_at: "", driver_id: driver?.id || "", driver_name: name, notes: "" });
+      }
+    });
+    return rows;
+  }
+
+  function collectVehicleDriverHistory(form) {
+    const rows = Array.from(form.querySelectorAll("[data-vehicle-driver-row]"));
+    return rows.map((row) => {
+      const nameInput = row.querySelector("[data-driver-history-search]");
+      const idInput = row.querySelector("[data-driver-history-id]");
+      return {
+        id: row.dataset.historyId || uid(),
+        start_at: row.querySelector('[name="driver_history_start_at"]')?.value || "",
+        end_at: row.querySelector('[name="driver_history_end_at"]')?.value || "",
+        driver_id: idInput?.value || "",
+        driver_name: String(nameInput?.value || "").trim(),
+        notes: row.querySelector('[name="driver_history_notes"]')?.value || ""
+      };
+    }).filter((item) => item.start_at || item.end_at || item.driver_id || item.driver_name || item.notes);
   }
 
   function vehicleFallbackPartnerAvatar(vehicle) {
@@ -3222,14 +3297,18 @@
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
       if (tableName === "vehicles") {
-        if (e.currentTarget.querySelector('[name="assigned_driver_ids"]')) {
-          const driverIds = formData.getAll("assigned_driver_ids").filter(Boolean);
-          record.current_driver_id = driverIds[0] || null;
-          record.assigned_driver_names = driverIds.length
-            ? driverIds.map((driverId) => driverName(driverId)).join("/")
-            : "";
-        }
+        const driverHistory = collectVehicleDriverHistory(e.currentTarget);
+        const activeHistory = driverHistory.filter((item) => String(item.driver_name || item.driver_id || "").trim() && !String(item.end_at || "").trim());
+        record.driver_history = driverHistory;
+        record.current_driver_id = activeHistory.find((item) => item.driver_id)?.driver_id || null;
+        record.assigned_driver_names = activeHistory
+          .map((item) => item.driver_name || driverName(item.driver_id))
+          .filter(Boolean)
+          .join("/");
         delete record.assigned_driver_ids;
+        delete record.driver_history_start_at;
+        delete record.driver_history_end_at;
+        delete record.driver_history_notes;
         if ("attachment_url" in record || "registration_doc_url" in record) {
           record.registration_doc_url = record.attachment_url || record.registration_doc_url || "";
           record.registration_doc_name = record.attachment_name || record.registration_doc_name || "";
@@ -3764,7 +3843,7 @@
       + helperRichEditor(item);
   }
   function driverForm(d) {
-    const assignedVehicles = (state.data.vehicles || []).filter((v) => v.current_driver_id === d.id || String(v.assigned_driver_names || "").split("/").includes(d.name));
+    const assignedVehicles = (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d));
     return `
       <div class="driver-login-permission field full">
         ${checkbox("login_enabled", "允許手機登入", d.login_enabled !== false)}
@@ -3872,11 +3951,64 @@
     </div>`;
   }
 
+  function vehicleDriverHistoryRow(item = {}, index = 0) {
+    const driver = item.driver_id ? (state.data.drivers || []).find((row) => String(row.id) === String(item.driver_id)) : null;
+    const driverNameValue = item.driver_name || driver?.name || "";
+    return `<div class="vehicle-driver-history-row" data-vehicle-driver-row data-history-id="${escapeHtml(item.id || uid())}">
+      <div class="field">
+        <label>開始時間</label>
+        <input name="driver_history_start_at" type="datetime-local" value="${escapeHtml(dateTimeLocalValue(item.start_at))}">
+      </div>
+      <div class="field">
+        <label>結束時間</label>
+        <input name="driver_history_end_at" type="datetime-local" value="${escapeHtml(dateTimeLocalValue(item.end_at))}">
+      </div>
+      <div class="field vehicle-driver-history-driver">
+        <label>駕駛</label>
+        <div class="driver-history-picker">
+          <input type="hidden" data-driver-history-id value="${escapeHtml(item.driver_id || "")}">
+          <input data-driver-history-search autocomplete="off" placeholder="輸入姓名搜尋，也可手動輸入" value="${escapeHtml(driverNameValue)}">
+          <div class="driver-picker-suggestions" data-driver-history-suggestions hidden></div>
+        </div>
+      </div>
+      <div class="field">
+        <label>備註</label>
+        <input name="driver_history_notes" value="${escapeHtml(item.notes || "")}">
+      </div>
+      <button class="soft-btn vehicle-driver-history-remove" type="button" data-vehicle-driver-remove aria-label="刪除駕駛紀錄">刪除</button>
+    </div>`;
+  }
+
+  function vehicleDriverHistoryField(vehicle = {}) {
+    const rows = vehicleInitialDriverHistory(vehicle);
+    const currentLabel = vehicleAssignedDriverLabel(vehicle) || "未指定，會顯示所屬車商";
+    return `<details class="field full vehicle-driver-history-panel" open>
+      <summary>
+        <span>駕駛紀錄</span>
+        <small>目前使用人：${escapeHtml(currentLabel)}</small>
+      </summary>
+      <div class="vehicle-driver-history-list" data-vehicle-driver-history-list>
+        ${rows.length ? rows.map(vehicleDriverHistoryRow).join("") : vehicleDriverHistoryRow({}, 0)}
+      </div>
+      <div class="vehicle-driver-history-actions">
+        <button class="ghost-btn" type="button" data-vehicle-driver-add>新增駕駛紀錄</button>
+        <span class="muted-text">沒有填結束時間的紀錄會被視為目前使用人；若全部空白，車輛列表會顯示所屬車商。</span>
+      </div>
+    </details>`;
+  }
+
+  function dateTimeLocalValue(value) {
+    if (!value) return "";
+    const textValue = String(value);
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(textValue)) return textValue.slice(0, 16);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(textValue)) return `${textValue}T00:00`;
+    const date = new Date(textValue);
+    if (Number.isNaN(date.getTime())) return "";
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 16);
+  }
+
   function vehicleForm(v) {
-    const selectedDriverIds = state.data.drivers
-      .filter((driver) => String(v.assigned_driver_names || "").split("/").includes(driver.name))
-      .map((driver) => driver.id);
-    if (!selectedDriverIds.length && v.current_driver_id) selectedDriverIds.push(v.current_driver_id);
     return `
       <div class="form-section-title field full">車輛基本資料</div>
       ${input("plate_no", "車號", v.plate_no, "text", true)}
@@ -3889,7 +4021,7 @@
       ${select("dealer_partner_id", "所屬車商", v.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}
       <div class="form-section-title field full">識別與狀態</div>
-      ${multiSelect("assigned_driver_ids", "搜尋並複選駕駛", selectedDriverIds, state.data.drivers.map((d) => [d.id, `${d.name}${d.phone ? `｜${d.phone}` : ""}`]))}
+      ${vehicleDriverHistoryField(v)}
       <div class="form-section-title field full">保險資料</div>
       ${insuranceCompanyOptions(v.compulsory_insurance_company || v.insurance_company || "", "強制險保險公司", "compulsory_insurance_company")}
       ${insuranceCompanyOptions(v.voluntary_insurance_company || v.insurance_company || "", "任意險保險公司", "voluntary_insurance_company")}
@@ -4946,6 +5078,27 @@
       if (list) list.innerHTML = files.length ? files.map((file, index) => vehicleFileChip(file, index, true)).join("") : `<span class="muted-chip">尚未新增文件</span>`;
       return;
     }
+    if (target.dataset.vehiclePickerOption !== undefined) {
+      e.preventDefault();
+      applyVehiclePickerSelection(vehiclePickerRoot(target), target.dataset.vehicleId);
+      return;
+    }
+    if (target.dataset.driverHistoryOption !== undefined) {
+      e.preventDefault();
+      applyDriverHistorySelection(target.closest(".driver-history-picker"), target.dataset.driverId);
+      return;
+    }
+    if (target.dataset.vehicleDriverAdd !== undefined) {
+      const list = target.closest(".vehicle-driver-history-panel")?.querySelector("[data-vehicle-driver-history-list]");
+      if (list) list.insertAdjacentHTML("beforeend", vehicleDriverHistoryRow({}, list.querySelectorAll("[data-vehicle-driver-row]").length));
+      return;
+    }
+    if (target.dataset.vehicleDriverRemove !== undefined) {
+      const list = target.closest("[data-vehicle-driver-history-list]");
+      target.closest("[data-vehicle-driver-row]")?.remove();
+      if (list && !list.querySelector("[data-vehicle-driver-row]")) list.insertAdjacentHTML("beforeend", vehicleDriverHistoryRow({}, 0));
+      return;
+    }
     if (target.dataset.page) {
       state.page = Number(target.dataset.page);
       render();
@@ -5073,6 +5226,15 @@
   });
 
   document.addEventListener("keydown", async (e) => {
+    const driverHistorySearch = e.target.closest("[data-driver-history-search]");
+    if (driverHistorySearch && e.key === "Enter") {
+      const firstOption = driverHistorySearch.closest(".driver-history-picker")?.querySelector("[data-driver-history-option]");
+      if (firstOption) {
+        e.preventDefault();
+        applyDriverHistorySelection(driverHistorySearch.closest(".driver-history-picker"), firstOption.dataset.driverId);
+      }
+      return;
+    }
     const vehicleSearch = e.target.closest("[data-vehicle-picker-search], [data-insurance-vehicle-search]");
     if (vehicleSearch && e.key === "Enter") {
       const root = vehiclePickerRoot(vehicleSearch);
@@ -5134,7 +5296,7 @@
       const vehicle = vehicleFromOption(option);
       return `<button type="button" class="vehicle-picker-option" data-vehicle-picker-option data-vehicle-id="${escapeHtml(option.value)}">
         <strong>${escapeHtml(option.dataset.plate || vehicle.plate_no || option.textContent || "")}</strong>
-        <small>${escapeHtml([vehicle.brand, vehicle.model, vehicle.assigned_driver_names].filter(Boolean).join(" · ") || option.textContent || "")}</small>
+        <small>${escapeHtml([vehicle.brand, vehicle.model, vehicleAssignedDriverLabel(vehicle)].filter(Boolean).join(" · ") || option.textContent || "")}</small>
       </button>`;
     }).join("") : "";
   }
@@ -5148,6 +5310,45 @@
     const input = vehiclePickerSearch(root);
     if (input) input.value = option?.dataset.plate || "";
     const suggestions = vehiclePickerSuggestions(root);
+    if (suggestions) {
+      suggestions.hidden = true;
+      suggestions.innerHTML = "";
+    }
+  }
+
+  function renderDriverHistorySuggestions(input) {
+    const picker = input?.closest(".driver-history-picker");
+    const suggestions = picker?.querySelector("[data-driver-history-suggestions]");
+    const hidden = picker?.querySelector("[data-driver-history-id]");
+    if (!picker || !suggestions) return;
+    const query = String(input.value || "").trim().toLowerCase();
+    if (hidden && input.dataset.selectedName && input.value !== input.dataset.selectedName) hidden.value = "";
+    if (!query) {
+      suggestions.hidden = true;
+      suggestions.innerHTML = "";
+      return;
+    }
+    const matches = (state.data.drivers || [])
+      .filter((driver) => [driver.name, driver.phone, driver.driver_code].some((value) => String(value || "").toLowerCase().includes(query)))
+      .slice(0, 8);
+    suggestions.hidden = !matches.length;
+    suggestions.innerHTML = matches.map((driver) => `<button type="button" class="driver-picker-option" data-driver-history-option data-driver-id="${escapeHtml(driver.id)}">
+      <strong>${escapeHtml(driver.name || "-")}</strong>
+      <small>${escapeHtml([driver.phone, driver.region, partnerName(driver.dealer_partner_id)].filter(Boolean).join(" · "))}</small>
+    </button>`).join("");
+  }
+
+  function applyDriverHistorySelection(picker, driverId) {
+    const driver = (state.data.drivers || []).find((item) => String(item.id) === String(driverId));
+    if (!picker || !driver) return;
+    const hidden = picker.querySelector("[data-driver-history-id]");
+    const input = picker.querySelector("[data-driver-history-search]");
+    if (hidden) hidden.value = driver.id;
+    if (input) {
+      input.value = driver.name || "";
+      input.dataset.selectedName = driver.name || "";
+    }
+    const suggestions = picker.querySelector("[data-driver-history-suggestions]");
     if (suggestions) {
       suggestions.hidden = true;
       suggestions.innerHTML = "";
@@ -5168,6 +5369,11 @@
     const vehiclePickerSearch = e.target.closest("[data-vehicle-picker-search]");
     if (vehiclePickerSearch) {
       renderVehiclePickerSuggestions(vehiclePickerSearch);
+      return;
+    }
+    const driverHistorySearch = e.target.closest("[data-driver-history-search]");
+    if (driverHistorySearch) {
+      renderDriverHistorySuggestions(driverHistorySearch);
       return;
     }
     const driverSelectSearch = e.target.closest("[data-driver-select-search]");

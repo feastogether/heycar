@@ -142,6 +142,7 @@ alter table public.vehicles add column if not exists voluntary_insurance_expiry 
 alter table public.vehicles add column if not exists lease_status text default '自有';
 alter table public.vehicles add column if not exists vehicle_region text;
 alter table public.vehicles add column if not exists assigned_driver_names text;
+alter table public.vehicles add column if not exists driver_history jsonb not null default '[]'::jsonb;
 alter table public.vehicles add column if not exists insurance_expiry date;
 alter table public.vehicles add column if not exists insurance_company text;
 alter table public.vehicles add column if not exists last_inspection_date date;

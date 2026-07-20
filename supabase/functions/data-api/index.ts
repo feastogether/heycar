@@ -167,7 +167,7 @@ async function loadDriverData(driverId: string) {
   const onboardAt = driver.onboard_date ? new Date(`${driver.onboard_date}T00:00:00+08:00`).getTime() : 0;
   const canSeeLinks = Boolean(onboardAt && Date.now() < onboardAt + 4 * 24 * 60 * 60 * 1000);
   const queries = await Promise.all([
-    db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region,assigned_driver_names,fuel_type,registration_doc_url,registration_doc_name,vehicle_files,roadside_assistance_phone,compulsory_insurance_company,voluntary_insurance_company,insurance_company,dealer_partner_id,compulsory_insurance_expiry,voluntary_insurance_expiry,next_inspection_date"),
+    db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region,assigned_driver_names,driver_history,fuel_type,registration_doc_url,registration_doc_name,vehicle_files,roadside_assistance_phone,compulsory_insurance_company,voluntary_insurance_company,insurance_company,dealer_partner_id,compulsory_insurance_expiry,voluntary_insurance_expiry,next_inspection_date"),
     db.from("announcements").select("*").in("target_fleet", driverTargets),
     db.from("announcement_reads").select("*").eq("driver_id", driverId),
     db.from("maintenance_notifications").select("*").eq("driver_id", driverId),
