@@ -722,25 +722,32 @@
   }
 
   function vehicleStatusBadge(status) {
-    const statusClass = status === "正常"
-      ? "done"
-      : ["閒置", "備用車"].includes(status)
-        ? "pending"
-        : ["待修", "維修中"].includes(status)
-          ? "returned"
-          : "read";
+    const statusClass = vehicleStatusColorClass(status);
     return `<span class="status vehicle-status ${statusClass}">${escapeHtml(status || "未設定")}</span>`;
   }
 
   function leaseStatusBadge(status) {
-    const statusClass = ["自有", "集團"].includes(status)
-      ? "done"
-      : ["月租", "短租", "長租"].includes(status)
-        ? "pending"
-        : status === "特殊"
-          ? "returned"
-          : "read";
+    const statusClass = leaseStatusColorClass(status);
     return `<span class="status vehicle-status lease-status ${statusClass}">${escapeHtml(status || "未設定")}</span>`;
+  }
+
+  function vehicleStatusColorClass(status) {
+    if (status === "正常") return "vehicle-green";
+    if (status === "閒置") return "vehicle-yellow";
+    if (["維修", "維修中"].includes(status)) return "vehicle-red";
+    if (["待修", "待修中"].includes(status)) return "vehicle-orange";
+    if (status === "公務車") return "vehicle-blue";
+    if (status === "備用車") return "vehicle-gray";
+    return "vehicle-gray";
+  }
+
+  function leaseStatusColorClass(status) {
+    if (status === "自有") return "vehicle-green";
+    if (["租賃", "租購", "月租"].includes(status)) return "vehicle-yellow";
+    if (["短租", "長租"].includes(status)) return "vehicle-red";
+    if (status === "集團") return "vehicle-orange";
+    if (status === "特殊") return "vehicle-gray";
+    return "vehicle-gray";
   }
 
   function escapeHtml(value) {
@@ -996,7 +1003,19 @@
     const folder = isInsuranceDocument
       ? [dealerName || "未指定車商", plateNo || "未指定車牌"].map((part) => safeFolderPart(part)).join("/")
       : safeFolderPart(plateNo || "general");
-    return await storageRequest("upload", { name, type: file.type, plate_no: plateNo, dealer_name: dealerName, folder, base64 });
+    return await storageRequest("upload", { name, type: inferAttachmentType(name, file.type), plate_no: plateNo, dealer_name: dealerName, folder, base64 });
+  }
+
+  function inferAttachmentType(name = "", type = "") {
+    const explicitType = String(type || "").trim();
+    if (explicitType && explicitType !== "application/octet-stream") return explicitType;
+    const lowerName = String(name || "").toLowerCase();
+    if (lowerName.endsWith(".pdf")) return "application/pdf";
+    if (lowerName.endsWith(".png")) return "image/png";
+    if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+    if (lowerName.endsWith(".webp")) return "image/webp";
+    if (lowerName.endsWith(".gif")) return "image/gif";
+    return explicitType || "";
   }
 
   function safeFolderPart(value) {
@@ -1933,7 +1952,8 @@
 
   function insuranceFileLink(item, prefix, label) {
     const url = item?.[`${prefix}_url`];
-    return url ? `<button class="insurance-file-link" data-preview-file="${escapeHtml(url)}" data-preview-name="${escapeHtml(item?.[`${prefix}_name`] || label)}" data-preview-type="">${label}</button>` : "";
+    const name = item?.[`${prefix}_name`] || label;
+    return url ? `<button class="insurance-file-link" data-preview-file="${escapeHtml(url)}" data-preview-name="${escapeHtml(name)}" data-preview-type="${escapeHtml(inferAttachmentType(name, ""))}">${label}</button>` : "";
   }
 
   function jsonFileLinks(value, label) {
@@ -2391,6 +2411,13 @@
     const modal = document.createElement("div");
     modal.className = "modal-backdrop file-preview-backdrop";
     const encodedUrl = escapeHtml(url);
+    let downloadUrl = url;
+    if (/^https?:\/\//i.test(String(url || "")) || String(url || "").startsWith("/")) {
+      const downloadTarget = new URL(url, location.href);
+      downloadTarget.searchParams.set("download", "1");
+      downloadUrl = downloadTarget.toString();
+    }
+    const encodedDownloadUrl = escapeHtml(downloadUrl);
     const hint = `${type || ""} ${name || ""} ${decodeURIComponent(String(url || ""))}`.toLowerCase();
     const inferredType = hint.includes("image/") || /\.(png|jpe?g|webp|gif)(\?|$)/i.test(hint)
       ? "image/unknown"
@@ -2403,7 +2430,7 @@
       : inferredType.includes("pdf")
       ? `<object class="file-preview-frame" data="${encodedUrl}" type="application/pdf"><div class="empty">此瀏覽器無法內嵌 PDF，請使用下載按鈕。</div></object>`
       : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
-    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><a class="primary-btn" href="${encodedUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
+    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><a class="primary-btn" href="${encodedDownloadUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
     document.body.appendChild(modal);
   }
   function adminCan(permission) {
@@ -2984,9 +3011,14 @@
   }
 
   function vehicleActiveDriverRecords(vehicle = {}) {
+    const currentDate = today();
     return parseVehicleDriverHistory(vehicle)
       .filter((item) => String(item.driver_name || item.driver_id || "").trim())
-      .filter((item) => !String(item.end_at || "").trim());
+      .filter((item) => {
+        const startDate = formDate(item.start_at);
+        const endDate = formDate(item.end_at);
+        return (!startDate || startDate <= currentDate) && (!endDate || endDate >= currentDate);
+      });
   }
 
   function vehicleInitialDriverHistory(vehicle = {}) {
@@ -3277,8 +3309,12 @@
       showAlert("\u8868\u55ae\u8f09\u5165\u5931\u6557\uff0c\u8acb\u91cd\u65b0\u6574\u7406\u5f8c\u518d\u8a66\u3002", "表單錯誤");
       return;
     }
+    const modalClass = [
+      type === "driver" ? "driver-editor-modal" : "",
+      type === "vehicle" ? "vehicle-editor-modal" : ""
+    ].filter(Boolean).join(" ");
     modal.innerHTML = `
-      <div class="modal ${type === "driver" ? "driver-editor-modal" : ""}">
+      <div class="modal ${modalClass}">
         <div class="modal-title"><h3>${id ? "編輯" : "新增"}${title}</h3></div>
         <form id="modalForm" class="modal-form">
           <div class="modal-form-body form-grid">${formHtml}</div>
@@ -3298,7 +3334,7 @@
       const record = Object.fromEntries(formData.entries());
       if (tableName === "vehicles") {
         const driverHistory = collectVehicleDriverHistory(e.currentTarget);
-        const activeHistory = driverHistory.filter((item) => String(item.driver_name || item.driver_id || "").trim() && !String(item.end_at || "").trim());
+        const activeHistory = vehicleActiveDriverRecords({ driver_history: driverHistory });
         record.driver_history = driverHistory;
         record.current_driver_id = activeHistory.find((item) => item.driver_id)?.driver_id || null;
         record.assigned_driver_names = activeHistory
@@ -3956,12 +3992,12 @@
     const driverNameValue = item.driver_name || driver?.name || "";
     return `<div class="vehicle-driver-history-row" data-vehicle-driver-row data-history-id="${escapeHtml(item.id || uid())}">
       <div class="field">
-        <label>開始時間</label>
-        <input name="driver_history_start_at" type="datetime-local" value="${escapeHtml(dateTimeLocalValue(item.start_at))}">
+        <label>開始日期</label>
+        <input name="driver_history_start_at" type="date" value="${escapeHtml(formDate(item.start_at))}">
       </div>
       <div class="field">
-        <label>結束時間</label>
-        <input name="driver_history_end_at" type="datetime-local" value="${escapeHtml(dateTimeLocalValue(item.end_at))}">
+        <label>結束日期</label>
+        <input name="driver_history_end_at" type="date" value="${escapeHtml(formDate(item.end_at))}">
       </div>
       <div class="field vehicle-driver-history-driver">
         <label>駕駛</label>
@@ -3995,17 +4031,6 @@
         <span class="muted-text">沒有填結束時間的紀錄會被視為目前使用人；若全部空白，車輛列表會顯示所屬車商。</span>
       </div>
     </details>`;
-  }
-
-  function dateTimeLocalValue(value) {
-    if (!value) return "";
-    const textValue = String(value);
-    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(textValue)) return textValue.slice(0, 16);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(textValue)) return `${textValue}T00:00`;
-    const date = new Date(textValue);
-    if (Number.isNaN(date.getTime())) return "";
-    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    return local.toISOString().slice(0, 16);
   }
 
   function vehicleForm(v) {

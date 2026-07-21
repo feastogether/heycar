@@ -1867,7 +1867,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-driver-history-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) minmax(190px, 1.25fr) minmax(160px, 1fr) auto;
+  grid-template-columns: minmax(165px, 1fr) minmax(165px, 1fr) minmax(220px, 1.2fr) minmax(180px, 1fr) 72px;
   gap: 10px;
   align-items: end;
   padding: 12px;
@@ -1907,6 +1907,12 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .driver-picker-option strong { font-size: 14px; font-weight: 950; }
 .driver-picker-option small { color: var(--muted); font-size: 12px; font-weight: 750; }
 .vehicle-driver-history-remove { white-space: nowrap; }
+.vehicle-editor-modal .vehicle-driver-history-panel {
+  grid-column: 1 / -1;
+}
+.vehicle-editor-modal .vehicle-driver-history-list {
+  overflow: visible;
+}
 .vehicle-driver-history-actions {
   display: flex;
   align-items: center;
@@ -2598,6 +2604,12 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-row-facts dd { margin: 3px 0 0; color: var(--ink); font-size: 12px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
 .vehicle-status { min-width: 50px; padding: 3px 8px; text-align: center; font-size: 11px; }
 .lease-status { background: #edf2f7; color: #344054; }
+.vehicle-status.vehicle-green { background: #dcfce7; color: #15803d; }
+.vehicle-status.vehicle-yellow { background: #fef3c7; color: #b45309; }
+.vehicle-status.vehicle-red { background: #fee2e2; color: #b91c1c; }
+.vehicle-status.vehicle-orange { background: #ffedd5; color: #c2410c; }
+.vehicle-status.vehicle-blue { background: #dbeafe; color: #1d4ed8; }
+.vehicle-status.vehicle-gray { background: #e5e7eb; color: #475467; }
 .vehicle-status-pair { display: inline-flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 .vehicle-status-fact dd { margin-top: 4px; }
 .vehicle-row-actions .actions { flex-wrap: nowrap; }
@@ -3510,7 +3522,14 @@ tr:last-child td { border-bottom: 0; }
   width: min(1180px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
 }
+.vehicle-editor-modal {
+  width: min(1180px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+}
 .driver-editor-modal .form-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.vehicle-editor-modal .form-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .modal-title { padding: 20px 24px 14px; border-bottom: 1px solid var(--line); }

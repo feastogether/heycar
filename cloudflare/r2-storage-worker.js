@@ -13,6 +13,46 @@ const json = (body, status = 200) => new Response(JSON.stringify(body), {
 const bytesToHex = (bytes) =>
   Array.from(new Uint8Array(bytes)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 
+function inferContentType(name, type) {
+  const explicitType = String(type || "").trim();
+  if (explicitType && explicitType !== "application/octet-stream") return explicitType;
+  const lowerName = String(name || "").toLowerCase();
+  if (lowerName.endsWith(".pdf")) return "application/pdf";
+  if (lowerName.endsWith(".png")) return "image/png";
+  if (lowerName.endsWith(".jpg") || lowerName.endsWith(".jpeg")) return "image/jpeg";
+  if (lowerName.endsWith(".webp")) return "image/webp";
+  if (lowerName.endsWith(".gif")) return "image/gif";
+  return explicitType || "application/octet-stream";
+}
+
+function base64ToBytes(value) {
+  const binary = atob(String(value || "").replace(/\s/g, ""));
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+  return bytes;
+}
+
+function parseRangeHeader(rangeHeader, size) {
+  const match = /^bytes=(\d*)-(\d*)$/.exec(String(rangeHeader || "").trim());
+  if (!match) return null;
+  const startRaw = match[1];
+  const endRaw = match[2];
+  if (!startRaw && !endRaw) return null;
+  let start;
+  let end;
+  if (!startRaw) {
+    const suffixLength = Number(endRaw);
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return null;
+    start = Math.max(size - suffixLength, 0);
+    end = size - 1;
+  } else {
+    start = Number(startRaw);
+    end = endRaw ? Number(endRaw) : size - 1;
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= size) return null;
+  return { start, end: Math.min(end, size - 1) };
+}
+
 async function signPath(secret, path) {
   const key = await crypto.subtle.importKey(
     "raw",
@@ -75,22 +115,60 @@ async function listAll(bucket, origin, signingSecret) {
 }
 
 async function handleDownload(request, env, path) {
-  const signature = new URL(request.url).searchParams.get("sig") || "";
+  const url = new URL(request.url);
+  const signature = url.searchParams.get("sig") || "";
   const expected = await signPath(env.FILE_SIGNING_SECRET, path);
   if (!signature || signature !== expected) return json({ error: "INVALID_FILE_SIGNATURE" }, 403);
-  const object = await env.ATTACHMENTS.get(path);
+  const head = await env.ATTACHMENTS.head(path);
+  if (!head) return json({ error: "FILE_NOT_FOUND" }, 404);
+  const range = parseRangeHeader(request.headers.get("Range"), head.size);
+  const object = await env.ATTACHMENTS.get(path, range ? { range: { offset: range.start, length: range.end - range.start + 1 } } : undefined);
   if (!object) return json({ error: "FILE_NOT_FOUND" }, 404);
+  const originalName = object.customMetadata?.originalName || head.customMetadata?.originalName || "attachment";
   const headers = new Headers(corsHeaders);
   object.writeHttpMetadata(headers);
+  if (!headers.get("Content-Type") || headers.get("Content-Type") === "application/octet-stream") {
+    headers.set("Content-Type", inferContentType(originalName, headers.get("Content-Type")));
+  }
   headers.set("ETag", object.httpEtag);
   headers.set("Cache-Control", "private, max-age=300");
   headers.set("Accept-Ranges", "bytes");
-  headers.set("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(object.customMetadata?.originalName || "attachment")}`);
+  headers.set("Content-Disposition", `${url.searchParams.get("download") === "1" ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(originalName)}`);
   if (request.method === "HEAD") {
-    headers.set("Content-Length", String(object.size));
-    return new Response(null, { headers });
+    headers.set("Content-Length", String(range ? range.end - range.start + 1 : head.size));
+    if (range) headers.set("Content-Range", `bytes ${range.start}-${range.end}/${head.size}`);
+    return new Response(null, { status: range ? 206 : 200, headers });
   }
+  if (range) {
+    headers.set("Content-Range", `bytes ${range.start}-${range.end}/${head.size}`);
+    headers.set("Content-Length", String(range.end - range.start + 1));
+    return new Response(object.body, { status: 206, headers });
+  }
+  headers.set("Content-Length", String(head.size));
   return new Response(object.body, { headers });
+}
+
+async function handleUpload(body, env, origin) {
+  const bytes = base64ToBytes(body.base64);
+  if (!bytes.length || bytes.length > 10 * 1024 * 1024) return json({ error: "INVALID_FILE_SIZE" }, 400);
+  const name = safePart(body.name, "attachment", 180);
+  const plate = safePart(body.plate_no, "general", 40);
+  const folder = String(body.folder || plate || "general")
+    .split("/")
+    .map((part) => safePart(part, "general", 80))
+    .filter(Boolean)
+    .join("/") || "general";
+  const path = `${folder}/${crypto.randomUUID()}-${name}`;
+  await env.ATTACHMENTS.put(path, bytes, {
+    httpMetadata: { contentType: inferContentType(name, body.type) },
+    customMetadata: {
+      originalName: name,
+      dealerName: safePart(body.dealer_name, "", 80),
+      plateNo: plate
+    }
+  });
+  const signature = await signPath(env.FILE_SIGNING_SECRET, path);
+  return json({ path, name, url: `${origin}/files/${encodeURIComponent(path)}?sig=${signature}` });
 }
 
 export default {
@@ -108,26 +186,7 @@ export default {
       const body = await request.json();
 
       if (body.action === "upload") {
-        const bytes = Uint8Array.from(atob(String(body.base64 || "")), (char) => char.charCodeAt(0));
-        if (!bytes.length || bytes.length > 10 * 1024 * 1024) return json({ error: "INVALID_FILE_SIZE" }, 400);
-        const name = safePart(body.name, "attachment", 180);
-        const plate = safePart(body.plate_no, "general", 40);
-        const folder = String(body.folder || plate || "general")
-          .split("/")
-          .map((part) => safePart(part, "general", 80))
-          .filter(Boolean)
-          .join("/") || "general";
-        const path = `${folder}/${crypto.randomUUID()}-${name}`;
-        await env.ATTACHMENTS.put(path, bytes, {
-          httpMetadata: { contentType: String(body.type || "application/octet-stream") },
-          customMetadata: {
-            originalName: name,
-            dealerName: safePart(body.dealer_name, "", 80),
-            plateNo: plate
-          }
-        });
-        const signature = await signPath(env.FILE_SIGNING_SECRET, path);
-        return json({ path, name, url: `${url.origin}/files/${encodeURIComponent(path)}?sig=${signature}` });
+        return await handleUpload(body, env, url.origin);
       }
 
       if (session.session_type !== "admin") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
