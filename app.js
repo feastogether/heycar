@@ -2430,26 +2430,37 @@
       : inferredType.includes("pdf")
       ? `<iframe class="file-preview-frame" src="${encodedUrl}#toolbar=1&navpanes=0" title="${escapeHtml(name || "PDF 預覽")}"></iframe>`
       : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
-    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><button class="primary-btn" type="button" data-download-file="${encodedDownloadUrl}" data-download-name="${escapeHtml(name || "attachment")}">下載</button><a class="ghost-btn" href="${encodedUrl}" target="_blank" rel="noreferrer">另開</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
+    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><button class="primary-btn" type="button" data-download-file="${encodedDownloadUrl}" data-download-name="${escapeHtml(name || "attachment")}">下載</button><button class="ghost-btn" type="button" data-open-file="${encodedUrl}" data-open-name="${escapeHtml(name || "attachment")}" data-open-type="${escapeHtml(inferredType)}">另開</button><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
     document.body.appendChild(modal);
   }
 
-  async function downloadFile(url, name = "attachment") {
+  function fileTransferUrl(url, forceDownload = false) {
     let targetUrl = url;
     if (/^https?:\/\//i.test(String(url || "")) || String(url || "").startsWith("/")) {
       const downloadTarget = new URL(url, location.href);
-      downloadTarget.searchParams.set("download", "1");
+      if (forceDownload) downloadTarget.searchParams.set("download", "1");
       targetUrl = downloadTarget.toString();
     }
+    return targetUrl;
+  }
+
+  async function fetchFileBlob(url, name = "attachment", forceDownload = false) {
+    const targetUrl = fileTransferUrl(url, forceDownload);
     const response = await fetch(targetUrl, { cache: "no-store" });
-    if (!response.ok) throw new Error(`下載失敗 (${response.status})`);
+    if (!response.ok) throw new Error(`檔案讀取失敗 (${response.status})`);
     const contentType = response.headers.get("Content-Type") || "";
     const blob = await response.blob();
     if (!blob.size) throw new Error("檔案內容為空，請重新上傳。");
     if (contentType.includes("text/html") || contentType.includes("application/json")) {
       const text = await blob.text();
-      throw new Error(text.slice(0, 120) || "下載內容不是檔案。");
+      throw new Error(text.slice(0, 120) || "讀取內容不是檔案。");
     }
+    if (!blob.type && inferAttachmentType(name, "")) return new Blob([blob], { type: inferAttachmentType(name, "") });
+    return blob;
+  }
+
+  async function downloadFile(url, name = "attachment") {
+    const blob = await fetchFileBlob(url, name, true);
     const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = objectUrl;
@@ -2458,6 +2469,28 @@
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
+  }
+
+  async function openFileInNewTab(url, name = "attachment", type = "") {
+    const popup = window.open("about:blank", "_blank");
+    if (!popup) throw new Error("瀏覽器阻擋新視窗，請允許彈出視窗後再試。");
+    popup.document.write("<!doctype html><title>檔案載入中</title><body style=\"font-family:system-ui;padding:24px;\">檔案載入中...</body>");
+    try {
+      const blob = await fetchFileBlob(url, name, false);
+      const fileType = blob.type || inferAttachmentType(name, type);
+      const objectUrl = URL.createObjectURL(fileType && blob.type !== fileType ? new Blob([blob], { type: fileType }) : blob);
+      const safeTitle = escapeHtml(name || "附件");
+      if (fileType.includes("pdf")) {
+        popup.document.open();
+        popup.document.write(`<!doctype html><html><head><title>${safeTitle}</title><style>html,body,iframe{margin:0;width:100%;height:100%;border:0;background:#111;}</style></head><body><iframe src="${objectUrl}#toolbar=1&navpanes=0"></iframe></body></html>`);
+        popup.document.close();
+      } else {
+        popup.location.href = objectUrl;
+      }
+    } catch (error) {
+      popup.close();
+      throw error;
+    }
   }
   function adminCan(permission) {
     if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
@@ -4923,6 +4956,17 @@
         await downloadFile(target.dataset.downloadFile, target.dataset.downloadName || "attachment");
       } catch (error) {
         await showAlert(error.message || error, "下載失敗");
+      } finally {
+        target.disabled = false;
+      }
+      return;
+    }
+    if (target.dataset.openFile) {
+      try {
+        target.disabled = true;
+        await openFileInNewTab(target.dataset.openFile, target.dataset.openName || "attachment", target.dataset.openType || "");
+      } catch (error) {
+        await showAlert(error.message || error, "另開失敗");
       } finally {
         target.disabled = false;
       }
