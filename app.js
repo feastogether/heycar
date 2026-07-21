@@ -2294,7 +2294,7 @@
             <span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span>
             <b>${formatBytes(file.size)}</b>
             <time>${fmtDate(file.created_at)}</time>
-            ${file.url ? `<div class="actions"><button class="ghost-btn" data-preview-file="${escapeHtml(file.url)}" data-preview-name="${escapeHtml(file.name)}" data-preview-type="${escapeHtml(file.content_type || "")}">查看</button><a class="ghost-btn" href="${escapeHtml(file.url)}" download="${escapeHtml(file.name)}">下載</a></div>` : ""}
+            ${file.url ? `<div class="actions"><button class="ghost-btn" data-preview-file="${escapeHtml(file.url)}" data-preview-name="${escapeHtml(file.name)}" data-preview-type="${escapeHtml(file.content_type || "")}">查看</button><button class="ghost-btn" type="button" data-download-file="${escapeHtml(file.url)}" data-download-name="${escapeHtml(file.name)}">下載</button></div>` : ""}
           </div>
         `).join("") : `<div class="empty">${state.storageLoading ? "正在讀取儲存空間..." : "目前沒有符合條件的附件資料。"}</div>`}
       </div>
@@ -2428,10 +2428,36 @@
     const media = inferredType.startsWith("image/")
       ? `<img class="file-preview-media" src="${encodedUrl}" alt="${escapeHtml(name)}">`
       : inferredType.includes("pdf")
-      ? `<object class="file-preview-frame" data="${encodedUrl}" type="application/pdf"><div class="empty">此瀏覽器無法內嵌 PDF，請使用下載按鈕。</div></object>`
+      ? `<iframe class="file-preview-frame" src="${encodedUrl}#toolbar=1&navpanes=0" title="${escapeHtml(name || "PDF 預覽")}"></iframe>`
       : `<div class="empty">此檔案無法直接預覽，請使用下載按鈕。</div>`;
-    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><a class="primary-btn" href="${encodedDownloadUrl}" download="${escapeHtml(name || "attachment")}">下載</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
+    modal.innerHTML = `<div class="modal file-preview-modal"><div class="section-head file-preview-head"><div><h3>${previewTitle}</h3><small>${escapeHtml(name || "附件")}</small></div><div class="actions"><button class="primary-btn" type="button" data-download-file="${encodedDownloadUrl}" data-download-name="${escapeHtml(name || "attachment")}">下載</button><a class="ghost-btn" href="${encodedUrl}" target="_blank" rel="noreferrer">另開</a><button class="ghost-btn" data-close-modal>關閉</button></div></div>${media}</div>`;
     document.body.appendChild(modal);
+  }
+
+  async function downloadFile(url, name = "attachment") {
+    let targetUrl = url;
+    if (/^https?:\/\//i.test(String(url || "")) || String(url || "").startsWith("/")) {
+      const downloadTarget = new URL(url, location.href);
+      downloadTarget.searchParams.set("download", "1");
+      targetUrl = downloadTarget.toString();
+    }
+    const response = await fetch(targetUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error(`下載失敗 (${response.status})`);
+    const contentType = response.headers.get("Content-Type") || "";
+    const blob = await response.blob();
+    if (!blob.size) throw new Error("檔案內容為空，請重新上傳。");
+    if (contentType.includes("text/html") || contentType.includes("application/json")) {
+      const text = await blob.text();
+      throw new Error(text.slice(0, 120) || "下載內容不是檔案。");
+    }
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = name || "attachment";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 5000);
   }
   function adminCan(permission) {
     if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
@@ -4889,6 +4915,17 @@
     }
     if (target.dataset.previewFile) {
       openFilePreview(target.dataset.previewFile, target.dataset.previewName, target.dataset.previewType);
+      return;
+    }
+    if (target.dataset.downloadFile) {
+      try {
+        target.disabled = true;
+        await downloadFile(target.dataset.downloadFile, target.dataset.downloadName || "attachment");
+      } catch (error) {
+        await showAlert(error.message || error, "下載失敗");
+      } finally {
+        target.disabled = false;
+      }
       return;
     }
     if (target.dataset.driverFileClear !== undefined) {
