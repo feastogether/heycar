@@ -34,6 +34,7 @@
     partnerCollapsed: true,
     loanSearch: "",
     loanDateFilter: "",
+    onboardingFilter: "active",
     serviceSearch: "",
     serviceTypeFilter: "",
     serviceMonthFilter: "",
@@ -1975,7 +1976,7 @@
     const dealerCanSeeFinal = ["quote", "addition", "document"].includes(item.request_type) && ["completed", "addition_completed", "document_received"].includes(item.status);
     const files = [];
     if (!isDealer || dealerCanSeeQuote) files.push(insuranceFileLink(item, "quote", "\u5831\u50f9\u55ae"));
-    if (!isDealer) files.push(jsonFileLinks(item.license_files, "\u99d5\u7167"), jsonFileLinks(item.amendment_files, "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
+    if (!isDealer) files.push(jsonFileLinks(item.quote_request_files, "報價需求附件"), jsonFileLinks(item.license_files, "\u99d5\u7167"), jsonFileLinks(item.amendment_files, "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
     if (!isDealer || dealerCanSeeFinal) files.push(insuranceFileLink(item, "policy", "\u4fdd\u55ae"), insuranceFileLink(item, "receipt", "\u6536\u64da"), insuranceFileLink(item, "document_policy", "\u88dc\u767c\u4fdd\u55ae"), insuranceFileLink(item, "document_receipt", "\u88dc\u767c\u6536\u64da"));
     const clean = files.filter(Boolean);
     return clean.length ? `<div class="insurance-files">${clean.join("")}</div>` : "";
@@ -2522,6 +2523,7 @@
     drivers: "駕駛管理",
     vehicles: "車輛管理",
     vehicleLoans: "車輛租借",
+    driverOnboarding: "上線管理",
     serviceRecords: "車輛履歷",
     insuranceCenter: "保險中心",
     insurancePartners: "廠商管理",
@@ -2543,7 +2545,7 @@
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["drivers", "driverOnboarding", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "driverLinks", "bom", "storage"]]
@@ -2575,6 +2577,7 @@
     const nav = [
       ["adminUsers", "權限管理", "🔐", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
+      ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
@@ -2602,6 +2605,7 @@
     const body = {
       adminUsers,
       drivers: adminDrivers,
+      driverOnboarding: adminDriverOnboarding,
       vehicleTypes: adminVehicleTypes,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
@@ -2661,6 +2665,89 @@
         ${state.driverSearch ? `<button class="ghost-btn" type="button" data-action="clear-driver-search">\u6e05\u9664</button>` : ""}
       </form>
       ${driverManagementRows()}
+    `;
+  }
+
+  const onboardingStepDefs = [
+    ["new_driver", "新司機"],
+    ["files_confirmed_at", "檔案齊全確認"],
+    ["training_at", "教育訓練"],
+    ["online_confirmed_at", "確認上線時間"],
+    ["vehicle_confirmed_at", "配車確認"],
+    ["delivery_at", "交車日期"],
+    ["completed_at", "結案"]
+  ];
+
+  function onboardingProgress(driver = {}) {
+    if (driver.onboarding_progress && typeof driver.onboarding_progress === "object" && !Array.isArray(driver.onboarding_progress)) {
+      return driver.onboarding_progress;
+    }
+    if (typeof driver.onboarding_progress === "string") {
+      try { return JSON.parse(driver.onboarding_progress || "{}") || {}; } catch {}
+    }
+    return {};
+  }
+
+  function onboardingDone(progress, key) {
+    return key === "new_driver" || Boolean(progress?.[key]);
+  }
+
+  function onboardingIsCompleted(driver) {
+    const progress = onboardingProgress(driver);
+    return Boolean(progress.completed_at || driver.onboarding_completed_at);
+  }
+
+  function adminDriverOnboarding() {
+    const activeDrivers = (state.data.drivers || []).filter((driver) => (driver.driver_status || "待上線") === "待上線" && !onboardingIsCompleted(driver));
+    const completedDrivers = (state.data.drivers || []).filter(onboardingIsCompleted);
+    const showCompleted = state.onboardingFilter === "completed";
+    const rows = showCompleted ? completedDrivers : activeDrivers;
+    return `
+      <div class="section-head">
+        <div>
+          <h2>上線管理</h2>
+          <small>追蹤新司機從建檔到交車上線的每一步。</small>
+        </div>
+      </div>
+      <div class="compact-filter-bar onboarding-filter-bar">
+        <button class="filter-btn ${!showCompleted ? "active" : ""}" data-onboarding-filter="active">進行中 <b>${activeDrivers.length}</b></button>
+        <button class="filter-btn ${showCompleted ? "active" : ""}" data-onboarding-filter="completed">已結案 <b>${completedDrivers.length}</b></button>
+      </div>
+      <div class="onboarding-list">
+        ${rows.length ? rows.map(onboardingRow).join("") : `<div class="empty">${showCompleted ? "目前沒有已結案的上線紀錄" : "目前沒有待上線司機"}</div>`}
+      </div>
+    `;
+  }
+
+  function onboardingRow(driver) {
+    const progress = onboardingProgress(driver);
+    const doneCount = onboardingStepDefs.filter(([key]) => onboardingDone(progress, key)).length;
+    const percent = Math.round((doneCount / onboardingStepDefs.length) * 100);
+    const currentStep = [...onboardingStepDefs].reverse().find(([key]) => onboardingDone(progress, key))?.[1] || "新司機";
+    return `
+      <article class="onboarding-row ${onboardingIsCompleted(driver) ? "is-completed" : ""}">
+        <div class="onboarding-driver">
+          ${driverPhoto(driver)}
+          <div>
+            <strong>${escapeHtml(driver.name || "未命名司機")}</strong>
+            <span>${escapeHtml(driver.phone || "-")}</span>
+          </div>
+        </div>
+        <div class="onboarding-progress">
+          <div class="onboarding-progress-head">
+            <span>${escapeHtml(currentStep)}</span>
+            <b>${percent}%</b>
+          </div>
+          <div class="onboarding-bar"><span style="width:${percent}%"></span></div>
+          <div class="onboarding-steps">
+            ${onboardingStepDefs.map(([key, label]) => `<span class="${onboardingDone(progress, key) ? "done" : ""}"><i></i>${escapeHtml(label)}${progress?.[key] ? `<small>${escapeHtml(formDate(progress[key]) || progress[key])}${key === "vehicle_confirmed_at" && progress.vehicle_plate ? `｜${escapeHtml(progress.vehicle_plate)}` : ""}</small>` : ""}</span>`).join("")}
+          </div>
+          ${progress.notes ? `<p class="onboarding-note">${escapeHtml(progress.notes)}</p>` : ""}
+        </div>
+        <div class="actions">
+          <button class="primary-btn" data-modal="driverOnboarding" data-id="${driver.id}">更新進度</button>
+        </div>
+      </article>
     `;
   }
 
@@ -2786,6 +2873,32 @@
     if (Number.isNaN(borrow)) return String(item.borrow_at || item.return_at || item.actual_return_at || "").includes(date);
     const end = Number.isNaN(plannedReturn) ? borrow : plannedReturn;
     return borrow <= dayEnd && end >= dayStart;
+  }
+
+  function loanConflictFor(record, editingId = "") {
+    const vehicleId = record.vehicle_id || "";
+    const plateNo = normalizedText(record.plate_no);
+    const start = new Date(record.borrow_at || "").getTime();
+    const end = new Date(record.return_at || record.borrow_at || "").getTime();
+    if (Number.isNaN(start) || Number.isNaN(end) || (!vehicleId && !plateNo)) return null;
+    const normalizedStart = Math.min(start, end);
+    const normalizedEnd = Math.max(start, end);
+    return (state.data.vehicle_loans || []).find((loan) => {
+      if (loan.id === editingId) return false;
+      if (loan.status === "completed") return false;
+      const sameVehicle = vehicleId ? loan.vehicle_id === vehicleId : normalizedText(loan.plate_no) === plateNo;
+      if (!sameVehicle) return false;
+      const loanStart = new Date(loan.borrow_at || "").getTime();
+      const loanEnd = new Date(loan.return_at || loan.actual_return_at || loan.borrow_at || "").getTime();
+      if (Number.isNaN(loanStart) || Number.isNaN(loanEnd)) return false;
+      const a = Math.min(loanStart, loanEnd);
+      const b = Math.max(loanStart, loanEnd);
+      return normalizedStart < b && normalizedEnd > a;
+    }) || null;
+  }
+
+  function loanConflictMessage(conflict) {
+    return `這台車在所選時段已由「${conflict.requested_by_name || "其他同仁"}」登記使用。\n\n車牌：${conflict.plate_no || "-"}\n借車：${fmtDateTime(conflict.borrow_at)}\n預計還車：${fmtDateTime(conflict.return_at)}\n用途：${conflict.purpose || "-"}`;
   }
 
   function openLoanDetail(id) {
@@ -3308,6 +3421,7 @@
     const map = {
       adminUser: ["內部帳號", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
+      driverOnboarding: ["上線進度", "drivers", driverOnboardingForm],
       vehicleType: ["車種", "vehicle_types", vehicleTypeForm],
       vehicle: ["車輛", "vehicles", vehicleForm],
       vehicleFolder: ["車輛資料夾", "vehicles", vehicleFolderForm],
@@ -3418,10 +3532,21 @@
         record.frontend_permissions = Object.fromEntries(driverFrontendFeatures.map(([key]) => [key, formData.get(`frontend_${key}`) === "true"]));
         driverFrontendFeatures.forEach(([key]) => delete record[`frontend_${key}`]);
       }
+      if (tableName === "vehicle_loans") {
+        const normalizedLoan = normalizeRecord(tableName, { ...record });
+        const conflict = loanConflictFor(normalizedLoan, id || "");
+        if (conflict) {
+          await showAlert(loanConflictMessage(conflict), "車輛已被登記");
+          return;
+        }
+      }
       try {
+        const normalizedRecord = type === "driverOnboarding"
+          ? normalizeDriverOnboardingRecord(record)
+          : normalizeRecord(tableName, record);
         const saved = id
-          ? await update(tableName, id, normalizeRecord(tableName, record))
-          : await insert(tableName, normalizeRecord(tableName, record));
+          ? await update(tableName, id, normalizedRecord)
+          : await insert(tableName, normalizedRecord);
         if (tableName === "calendar_events") await syncCalendarNotification(saved);
         const pushMessage = !id && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(tableName)
           ? linePushSummary(state.lastLinePushResult)
@@ -3450,8 +3575,33 @@
         "resigned_date",
         "birthday",
         "training_completed_date",
-        "planned_vehicle_change_date"
+        "planned_vehicle_change_date",
+        "onboarding_completed_at"
       ]);
+      const hasOnboardingFields = Object.keys(record).some((key) => key.startsWith("onboarding_"));
+      if (hasOnboardingFields) {
+        const progress = {
+          files_confirmed_at: record.onboarding_files_confirmed_at || "",
+          training_at: record.onboarding_training_at || "",
+          online_confirmed_at: record.onboarding_online_confirmed_at || "",
+          vehicle_confirmed_at: record.onboarding_vehicle_confirmed_at || "",
+          vehicle_plate: record.onboarding_vehicle_plate || "",
+          delivery_at: record.onboarding_delivery_at || "",
+          completed_at: record.onboarding_completed_at || "",
+          notes: record.onboarding_notes || ""
+        };
+        record.onboarding_progress = progress;
+        record.onboarding_completed_at = progress.completed_at ? new Date(`${progress.completed_at}T00:00:00+08:00`).toISOString() : null;
+        [
+          "onboarding_files_confirmed_at",
+          "onboarding_training_at",
+          "onboarding_online_confirmed_at",
+          "onboarding_vehicle_confirmed_at",
+          "onboarding_vehicle_plate",
+          "onboarding_delivery_at",
+          "onboarding_notes"
+        ].forEach((key) => delete record[key]);
+      }
       record.private_trip_count = Number(record.private_trip_count || 0);
       record.child_seat_count = Number(record.child_seat_count || 0);
       record.booster_seat_count = Number(record.booster_seat_count || 0);
@@ -3565,7 +3715,7 @@
         else delete record.insurance_type;
       }
       if ("quote_amount" in record) record.quote_amount = Number(record.quote_amount || 0) || null;
-      ["license_files", "amendment_files"].forEach((key) => {
+      ["license_files", "amendment_files", "quote_request_files"].forEach((key) => {
         if (typeof record[key] === "string") {
           try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
         }
@@ -3596,6 +3746,24 @@
       record.mileage = Number(record.mileage || 0);
     }
     return record;
+  }
+
+  function normalizeDriverOnboardingRecord(record) {
+    const progress = {
+      files_confirmed_at: record.onboarding_files_confirmed_at || "",
+      training_at: record.onboarding_training_at || "",
+      online_confirmed_at: record.onboarding_online_confirmed_at || "",
+      vehicle_confirmed_at: record.onboarding_vehicle_confirmed_at || "",
+      vehicle_plate: record.onboarding_vehicle_plate || "",
+      delivery_at: record.onboarding_delivery_at || "",
+      completed_at: record.onboarding_completed_at || "",
+      notes: record.onboarding_notes || ""
+    };
+    return {
+      onboarding_progress: progress,
+      onboarding_completed_at: progress.completed_at ? new Date(`${progress.completed_at}T00:00:00+08:00`).toISOString() : null,
+      updated_at: now()
+    };
   }
 
   function blankToNull(record, keys) {
@@ -3762,6 +3930,25 @@
         <button class="photo-mini-btn danger" type="button" data-driver-photo-clear ${driver.photo_url ? "" : "style=\"display:none\""}>\u522a\u9664</button>
       </div>
     </div>`;
+  }
+
+  function driverOnboardingForm(driver = {}) {
+    const progress = onboardingProgress(driver);
+    return `<div class="field full onboarding-form-driver">
+        ${driverPhoto(driver)}
+        <div>
+          <strong>${escapeHtml(driver.name || "未命名司機")}</strong>
+          <span>${escapeHtml(driver.phone || "-")}</span>
+        </div>
+      </div>
+      <div class="field onboarding-field"><label>檔案齊全確認</label><input name="onboarding_files_confirmed_at" type="date" value="${escapeHtml(formDate(progress.files_confirmed_at))}"></div>
+      <div class="field onboarding-field"><label>教育訓練</label><input name="onboarding_training_at" type="date" value="${escapeHtml(formDate(progress.training_at))}"></div>
+      <div class="field onboarding-field"><label>確認上線時間</label><input name="onboarding_online_confirmed_at" type="date" value="${escapeHtml(formDate(progress.online_confirmed_at))}"></div>
+      <div class="field onboarding-field"><label>配車確認日期</label><input name="onboarding_vehicle_confirmed_at" type="date" value="${escapeHtml(formDate(progress.vehicle_confirmed_at))}"></div>
+      <div class="field onboarding-field"><label>配車車號</label><input name="onboarding_vehicle_plate" value="${escapeHtml(progress.vehicle_plate || "")}" placeholder="例如 RFB-9253"></div>
+      <div class="field onboarding-field"><label>交車日期</label><input name="onboarding_delivery_at" type="date" value="${escapeHtml(formDate(progress.delivery_at))}"></div>
+      <div class="field onboarding-field"><label>結案日期</label><input name="onboarding_completed_at" type="date" value="${escapeHtml(formDate(progress.completed_at || driver.onboarding_completed_at))}"></div>
+      <div class="field full"><label>備註</label><textarea name="onboarding_notes">${escapeHtml(progress.notes || "")}</textarea></div>`;
   }
 
   function driverMultiDocumentField(item, name, label) {
@@ -4506,6 +4693,7 @@
       + input("requested_driver", "\u99d5\u99db(\u9078\u586b)", item.requested_driver)
       + select("lienholder", "\u62b5\u62bc\u6b0a\u4eba", item.lienholder || "", [["", "\u7121"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u4e2d\u4fe1", "\u4e2d\u4fe1"], ["\u6c38\u8c50", "\u6c38\u8c50"], ["\u83ef\u5357", "\u83ef\u5357"]])
       + insuranceCompanyAdminField(item.assigned_insurance_company || "", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", "assigned_insurance_company")
+      + multiAttachmentField(item, "quote_request_files", "報價需求附件")
       + text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes);
   }
 
@@ -5143,6 +5331,10 @@
     }
     if (target.dataset.driverFilter) {
       state.driverStatusFilter = target.dataset.driverFilter;
+      render();
+    }
+    if (target.dataset.onboardingFilter) {
+      state.onboardingFilter = target.dataset.onboardingFilter;
       render();
     }
     if (target.dataset.loanFilter !== undefined) {

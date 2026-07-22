@@ -332,7 +332,7 @@ function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
     "stamped_application_url", "stamped_application_name",
     "amendment_stamped_url", "amendment_stamped_name",
     "payment_slip_url", "payment_slip_name",
-    "license_files", "amendment_files"
+    "license_files", "amendment_files", "quote_request_files"
   );
   if (!dealerCanSeeQuote) hide("quote_url", "quote_name");
   if (!dealerCanSeePolicy) hide("policy_url", "policy_name", "document_policy_url", "document_policy_name");
@@ -419,6 +419,43 @@ async function loadPartnerData(partnerId: string) {
 
 function compactText(value: unknown, fallback = "") {
   return String(value || fallback).replace(/\s+/g, " ").trim();
+}
+
+function parseTime(value: unknown) {
+  const time = new Date(String(value || "")).getTime();
+  return Number.isNaN(time) ? null : time;
+}
+
+async function assertVehicleLoanAvailable(record: Record<string, unknown>, editingId = "") {
+  const vehicleId = compactText(record.vehicle_id);
+  const plateNo = compactText(record.plate_no).toUpperCase();
+  const start = parseTime(record.borrow_at);
+  const end = parseTime(record.return_at || record.borrow_at);
+  if (start === null || end === null || (!vehicleId && !plateNo)) return;
+  const requestedStart = Math.min(start, end);
+  const requestedEnd = Math.max(start, end);
+
+  let query = db
+    .from("vehicle_loans")
+    .select("id,vehicle_id,plate_no,requested_by_name,borrow_at,return_at,actual_return_at,purpose,status")
+    .neq("status", "completed");
+  if (vehicleId) query = query.eq("vehicle_id", vehicleId);
+  else query = query.ilike("plate_no", plateNo);
+  const { data, error } = await query;
+  if (error) throw error;
+
+  const conflict = (data || []).find((loan: Record<string, unknown>) => {
+    if (editingId && loan.id === editingId) return false;
+    const loanStart = parseTime(loan.borrow_at);
+    const loanEnd = parseTime(loan.return_at || loan.actual_return_at || loan.borrow_at);
+    if (loanStart === null || loanEnd === null) return false;
+    const activeStart = Math.min(loanStart, loanEnd);
+    const activeEnd = Math.max(loanStart, loanEnd);
+    return requestedStart < activeEnd && requestedEnd > activeStart;
+  });
+  if (conflict) {
+    throw new Error(`車輛時段已被「${compactText(conflict.requested_by_name, "其他同仁")}」登記使用：${compactText(conflict.plate_no)} ${compactText(conflict.borrow_at)} ~ ${compactText(conflict.return_at)}`);
+  }
 }
 
 function lineMessageFor(table: string, record: Record<string, unknown>) {
@@ -663,7 +700,14 @@ Deno.serve(async (req) => {
       if (body.table === "admin_users" && !session.is_super_admin) {
         return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
       }
-      const permission = tablePermission[body.table];
+      let permission = tablePermission[body.table];
+      if (
+        body.table === "drivers" &&
+        body.action === "update" &&
+        Object.keys(body.record || {}).every((key) => ["onboarding_progress", "onboarding_completed_at", "updated_at"].includes(key))
+      ) {
+        permission = "driverOnboarding";
+      }
       const isVehicleLoanSelfAction = body.table === "vehicle_loans" && ["insert", "update"].includes(String(body.action || ""));
       if (permission && !isVehicleLoanSelfAction && !(await adminCan(session, permission))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
@@ -673,6 +717,7 @@ Deno.serve(async (req) => {
           body.record.requested_by_admin_id = session.admin_user_id || null;
           body.record.requested_by_name = session.admin_name || "同仁";
           body.record.status = "pending_approval";
+          await assertVehicleLoanAvailable(body.record || {});
           body.record.requested_by_name = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
         } else if (!session.is_super_admin && body.action === "update") {
           const { data: loan } = await db.from("vehicle_loans").select("*").eq("id", body.id).single();
@@ -686,6 +731,8 @@ Deno.serve(async (req) => {
           };
         } else if (!session.is_super_admin) {
           return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
+        } else if (body.action === "update" && (body.record?.vehicle_id || body.record?.plate_no || body.record?.borrow_at || body.record?.return_at)) {
+          await assertVehicleLoanAvailable(body.record || {}, compactText(body.id));
         }
       }
     }
@@ -704,7 +751,7 @@ Deno.serve(async (req) => {
           "insurance_type", "passenger_limit", "coverage_spec", "vehicle_body_limit",
           "deductible", "requested_driver", "driver_change_names", "lienholder",
           "assigned_insurance_company", "vehicle_dept_notes", "insurance_notes",
-          "document_request_type", "license_files", "created_by_partner_type", "updated_at"
+          "document_request_type", "license_files", "quote_request_files", "created_by_partner_type", "updated_at"
         ];
         body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowedInsert.includes(key)));
         body.record.dealer_partner_id = session.partner_id;
