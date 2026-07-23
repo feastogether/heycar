@@ -53,7 +53,7 @@
     loginHistoryFilter: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
-    calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
+    calendarMonth: `${today().slice(0, 7)}-01`,
     data: {},
     weather: null,
     weatherFetchedAt: 0,
@@ -213,8 +213,36 @@
     return new Date().toISOString();
   }
 
+  function taipeiParts(date = new Date()) {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Taipei",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23"
+    }).formatToParts(date);
+    return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  }
+
   function today() {
-    return new Date().toISOString().slice(0, 10);
+    const parts = taipeiParts();
+    return `${parts.year}-${parts.month}-${parts.day}`;
+  }
+
+  function taipeiDateTimeInput(value = null) {
+    const date = value ? new Date(value) : new Date();
+    if (Number.isNaN(date.getTime())) return String(value || "").slice(0, 16);
+    const parts = taipeiParts(date);
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+  }
+
+  function taipeiLocalDateTimeToIso(value) {
+    const text = String(value || "");
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(text)) return value || null;
+    const date = new Date(`${text}:00+08:00`);
+    return Number.isNaN(date.getTime()) ? value : date.toISOString();
   }
 
   function localLoad() {
@@ -790,7 +818,12 @@
 
   function fmtDate(value) {
     if (!value) return "-";
-    return String(value).slice(0, 10);
+    const raw = String(value);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw.slice(0, 10);
+    const parts = taipeiParts(date);
+    return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
   function expiryDateBadge(value, warningDays = 30) {
@@ -815,7 +848,11 @@
 
   function fmtDateTime(value) {
     if (!value) return "-";
-    return String(value).replace("T", " ").slice(0, 16);
+    const raw = String(value);
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(raw)) return raw.replace("T", " ");
+    const date = new Date(raw);
+    if (Number.isNaN(date.getTime())) return raw.replace("T", " ").slice(0, 16);
+    return taipeiDateTimeInput(date).replace("T", " ");
   }
 
   async function compressPhoto(file) {
@@ -2934,9 +2971,11 @@
       ].join(" ").toUpperCase().includes(search))
       .filter((item) => !date || loanTouchesDate(item, date))
       .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
+    const keyCodeButton = state.adminProfile?.is_super_admin
+      ? `<button class="ghost-btn" data-modal="keyAccessCode" ${activeKeyAccessCode() ? `data-id="${activeKeyAccessCode().id}"` : ""}>密碼管理</button>`
+      : "";
     return `
-      <div class="section-head"><div><h2>車輛租借</h2><small>登入同仁：${escapeHtml(state.adminProfile?.name || "管理者")}</small></div><button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div>
-      ${keyAccessCodePanel()}
+      <div class="section-head"><div><h2>車輛租借</h2><small>登入同仁：${escapeHtml(state.adminProfile?.name || "管理者")}</small></div><div class="actions">${keyCodeButton}<button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div></div>
       <form id="loanSearchForm" class="loan-filter-panel">
         <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button type="button" class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
         <div class="loan-search-row">
@@ -3771,8 +3810,9 @@
     }
     if (tableName === "vehicle_loans") {
       record.vehicle_id = record.vehicle_id || null;
-      record.return_at = record.return_at || null;
-      record.actual_return_at = record.actual_return_at || null;
+      record.borrow_at = taipeiLocalDateTimeToIso(record.borrow_at);
+      record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
+      record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
       record.status = record.status || "pending_approval";
     }
     if (tableName === "key_access_codes") {
@@ -4631,15 +4671,15 @@
 
   function vehicleLoanForm(item) {
     return vehiclePlatePicker(item)
-      + input("borrow_at", "借車時間", item.borrow_at ? String(item.borrow_at).slice(0, 16) : String(now()).slice(0, 16), "datetime-local", true)
-      + input("return_at", "預計還車時間", item.return_at ? String(item.return_at).slice(0, 16) : "", "datetime-local", true)
+      + input("borrow_at", "借車時間", item.borrow_at ? taipeiDateTimeInput(item.borrow_at) : taipeiDateTimeInput(), "datetime-local", true)
+      + input("return_at", "預計還車時間", item.return_at ? taipeiDateTimeInput(item.return_at) : "", "datetime-local", true)
       + select("purpose", "用途", item.purpose || "公務使用", [["個人借用", "個人借用"], ["公務使用", "公務使用"], ["車輛維修", "車輛維修"], ["外部單位", "外部單位"]])
       + text("notes", "備註", item.notes);
   }
 
   function vehicleReturnForm(item) {
     return `<div class="field full"><strong>${escapeHtml(item.plate_no || "")}</strong><small>請確認實際還車時間後送出。</small></div>`
-      + input("actual_return_at", "實際還車時間", String(now()).slice(0, 16), "datetime-local", true);
+      + input("actual_return_at", "實際還車時間", taipeiDateTimeInput(), "datetime-local", true);
   }
 
   function keyAccessCodeForm(item = {}) {
@@ -5240,9 +5280,7 @@
       return;
     }
     if (target?.dataset.action === "edit-onboarding-driver") {
-      state.adminView = "drivers";
-      render();
-      setTimeout(() => openModal("driver", target.dataset.id), 0);
+      openModal("driver", target.dataset.id);
       return;
     }
     if (target?.dataset.modal) {
