@@ -13,7 +13,8 @@ const tables = [
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
-  "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages"
+  "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
+  "login_audit_logs", "key_access_codes"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -135,6 +136,37 @@ async function createSession(
   return { token, expires_at: expiresAt };
 }
 
+function requestIp(req: Request) {
+  return req.headers.get("cf-connecting-ip")
+    || (req.headers.get("x-forwarded-for") || "").split(",")[0].trim()
+    || "";
+}
+
+const partnerRoleLabels: Record<string, string> = {
+  dealer: "車商",
+  broker: "保經",
+  repair_shop: "保修廠",
+  insurance_company: "保險公司"
+};
+const partnerRoleName = (type: unknown) => partnerRoleLabels[String(type || "")] || "廠商";
+
+async function recordLogin(req: Request, entry: Record<string, unknown>) {
+  try {
+    await db.from("login_audit_logs").insert({
+      actor_type: entry.actor_type || "",
+      actor_id: entry.actor_id || null,
+      actor_name: entry.actor_name || "",
+      actor_role: entry.actor_role || "",
+      login_identifier: entry.login_identifier || "",
+      ip_address: requestIp(req),
+      user_agent: req.headers.get("user-agent") || "",
+      login_at: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("login audit failed", error);
+  }
+}
+
 async function getSession(req: Request) {
   const token = req.headers.get("x-afide-session") || "";
   if (!token) return null;
@@ -207,6 +239,20 @@ async function loadAdminData(session: Record<string, unknown>) {
     const permission = tablePermission[table];
     if (table === "admin_users" && !session.is_super_admin) {
       result[table] = [];
+      continue;
+    }
+    if (table === "login_audit_logs" && !session.is_super_admin) {
+      result[table] = [];
+      continue;
+    }
+    if (table === "key_access_codes" && !session.is_super_admin) {
+      const { data, error } = await db
+        .from("key_access_codes")
+        .select("id,label,code,active,created_at,updated_at")
+        .eq("active", true)
+        .order("updated_at", { ascending: false });
+      if (error) throw error;
+      result[table] = data || [];
       continue;
     }
     if (table === "vehicle_loans" && !session.is_super_admin) {
@@ -304,7 +350,9 @@ const tablePermission: Record<string, string> = {
   driver_helper_articles: "driverHelperArticles",
   login_slogans: "loginSlogans",
   bom_parts: "bom",
-  bom_packages: "bom"
+  bom_packages: "bom",
+  login_audit_logs: "super",
+  key_access_codes: "vehicleLoans"
 };
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
@@ -562,7 +610,15 @@ Deno.serve(async (req) => {
       if (error) throw error;
       const driver = (data || []).find((item) => phoneMatches(item.phone, body.phone));
       if (!driver) return json({ error: "DRIVER_LOGIN_FAILED" }, 401);
-      return json(await signStorageUrls({ ...(await createSession("driver", driver.id)), user: driver }));
+      const sessionData = await createSession("driver", driver.id);
+      await recordLogin(req, {
+        actor_type: "driver",
+        actor_id: driver.id,
+        actor_name: driver.name,
+        actor_role: "司機",
+        login_identifier: driver.phone || ""
+      });
+      return json(await signStorageUrls({ ...sessionData, user: driver }));
     }
     if (body.action === "login_line_driver") {
       let lineIdentity;
@@ -580,20 +636,44 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) throw error;
       if (!driver) return json({ error: "LINE_NOT_BOUND" }, 404);
-      return json(await signStorageUrls({ ...(await createSession("driver", driver.id)), user: driver }));
+      const sessionData = await createSession("driver", driver.id);
+      await recordLogin(req, {
+        actor_type: "driver",
+        actor_id: driver.id,
+        actor_name: driver.name,
+        actor_role: "司機",
+        login_identifier: "LINE"
+      });
+      return json(await signStorageUrls({ ...sessionData, user: driver }));
     }
     if (body.action === "login_admin") {
       const loginCode = normalizeLoginCode(body.code);
       if (adminCode && loginCode === normalizeLoginCode(adminCode)) {
-        return json({ ...(await createSession("admin", undefined, { name: "最高管理員", isSuper: true })), admin_profile: { name: "最高管理員", is_super_admin: true, permissions: { all: true } } });
+        const sessionData = await createSession("admin", undefined, { name: "最高管理員", isSuper: true });
+        await recordLogin(req, {
+          actor_type: "admin",
+          actor_id: "super",
+          actor_name: "最高管理員",
+          actor_role: "員工",
+          login_identifier: "最高權限"
+        });
+        return json({ ...sessionData, admin_profile: { name: "最高管理員", is_super_admin: true, permissions: { all: true } } });
       }
       const codeHash = await hashCode(loginCode);
       const { data: adminUser, error } = await db.from("admin_users")
         .select("id,name,active,permissions").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
       if (!adminUser) return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
+      const sessionData = await createSession("admin", adminUser.id, { name: adminUser.name });
+      await recordLogin(req, {
+        actor_type: "admin",
+        actor_id: adminUser.id,
+        actor_name: adminUser.name,
+        actor_role: "員工",
+        login_identifier: "管理代碼"
+      });
       return json(await signStorageUrls({
-        ...(await createSession("admin", adminUser.id, { name: adminUser.name })),
+        ...sessionData,
         admin_profile: { ...adminUser, is_super_admin: false }
       }));
     }
@@ -607,7 +687,15 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (error) throw error;
       if (!partner) return json({ error: "PARTNER_LOGIN_FAILED" }, 401);
-      return json(await signStorageUrls({ ...(await createSession("partner", partner.id)), partner }));
+      const sessionData = await createSession("partner", partner.id);
+      await recordLogin(req, {
+        actor_type: "partner",
+        actor_id: partner.id,
+        actor_name: partner.name,
+        actor_role: partnerRoleName(partner.partner_type),
+        login_identifier: partner.partner_type || ""
+      });
+      return json(await signStorageUrls({ ...sessionData, partner }));
     }
     if (body.action === "public_login_slogans") {
       const { data, error } = await db
@@ -698,6 +786,12 @@ Deno.serve(async (req) => {
     }
     if (session.session_type === "admin") {
       if (body.table === "admin_users" && !session.is_super_admin) {
+        return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
+      }
+      if (body.table === "login_audit_logs") {
+        return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      }
+      if (body.table === "key_access_codes" && !session.is_super_admin) {
         return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
       }
       let permission = tablePermission[body.table];
@@ -835,6 +929,13 @@ Deno.serve(async (req) => {
       body.record = body.record || {};
       const linePushEnabled = body.record?.line_push_enabled !== false && body.record?.line_push_enabled !== "false";
       delete body.record.line_push_enabled;
+      if (body.table === "key_access_codes") {
+        const code = compactText(body.record.code).replace(/\D/g, "");
+        if (!/^\d{4}$/.test(code)) return json({ error: "KEY_CODE_MUST_BE_4_DIGITS" }, 400);
+        body.record.code = code;
+        body.record.active = body.record.active !== false && body.record.active !== "false";
+        if (body.record.active) await db.from("key_access_codes").update({ active: false, updated_at: new Date().toISOString() }).eq("active", true);
+      }
       if (body.table === "insurance_partners") {
         if (!body.record.login_code) return json({ error: "PARTNER_CODE_REQUIRED" }, 400);
         body.record.login_code_hash = await hashCode(body.record.login_code);
@@ -866,6 +967,13 @@ Deno.serve(async (req) => {
       return json(await signStorageUrls({ data: responseData, line_push }));
     }
     if (body.action === "update") {
+      if (body.table === "key_access_codes") {
+        const code = compactText(body.record.code).replace(/\D/g, "");
+        if (!/^\d{4}$/.test(code)) return json({ error: "KEY_CODE_MUST_BE_4_DIGITS" }, 400);
+        body.record.code = code;
+        body.record.active = body.record.active !== false && body.record.active !== "false";
+        if (body.record.active) await db.from("key_access_codes").update({ active: false, updated_at: new Date().toISOString() }).eq("active", true);
+      }
       if (body.table === "insurance_partners") {
         if (body.record.login_code) body.record.login_code_hash = await hashCode(body.record.login_code);
         delete body.record.login_code;

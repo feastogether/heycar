@@ -50,6 +50,7 @@
     storageLoading: false,
     storageSearch: "",
     storageFolderFilter: "",
+    loginHistoryFilter: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${new Date().toISOString().slice(0, 7)}-01`,
@@ -92,7 +93,9 @@
     "login_slogans",
     "vehicle_types",
     "bom_parts",
-    "bom_packages"
+    "bom_packages",
+    "login_audit_logs",
+    "key_access_codes"
   ];
 
   const insuranceStatuses = [
@@ -197,7 +200,9 @@
     login_slogans: [],
     vehicle_types: [],
     bom_parts: [],
-    bom_packages: []
+    bom_packages: [],
+    login_audit_logs: [],
+    key_access_codes: []
   };
 
   function uid() {
@@ -2539,6 +2544,7 @@
     driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
     loginSlogans: "\u6a19\u8a9e\u7ba1\u7406",
     driverLinks: "連結管理",
+    loginHistory: "登入紀錄",
     bom: "BOM表",
     vehicleTypes: "車種管理"
   };
@@ -2548,7 +2554,7 @@
     ["禮賓司機", ["drivers", "driverOnboarding", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
-    ["系統管理", ["adminUsers", "driverLinks", "bom", "storage"]]
+    ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "bom", "storage"]]
   ];
 
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
@@ -2556,7 +2562,7 @@
   function adminPermissionCatalog() {
     return adminNavDepartments.flatMap(([department, keys]) =>
       keys
-        .filter((key) => key !== "adminUsers")
+        .filter((key) => key !== "adminUsers" && key !== "loginHistory")
         .map((key) => [key, adminNavLabels[key] || key, department])
     );
   }
@@ -2576,6 +2582,7 @@
   function renderAdmin() {
     const nav = [
       ["adminUsers", "權限管理", "🔐", "super"],
+      ["loginHistory", "登入紀錄", "🕘", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
@@ -2604,6 +2611,7 @@
     if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
       adminUsers,
+      loginHistory: adminLoginHistory,
       drivers: adminDrivers,
       driverOnboarding: adminDriverOnboarding,
       vehicleTypes: adminVehicleTypes,
@@ -2746,6 +2754,7 @@
         </div>
         <div class="actions">
           <button class="primary-btn" data-modal="driverOnboarding" data-id="${driver.id}">更新進度</button>
+          <button class="soft-btn" data-action="edit-onboarding-driver" data-id="${driver.id}">編輯司機</button>
         </div>
       </article>
     `;
@@ -2782,6 +2791,84 @@
     return ({ drivers: "駕駛", vehicles: "車輛", loans: "租借", service_records: "履歷", messages: "訊息", finance: "費用", insurance: "保險" })[key] || key;
   }
 
+  function adminLoginHistory() {
+    if (!adminCan("super")) return `<div class="empty">僅最高管理員可查看登入紀錄。</div>`;
+    const typeLabels = [
+      ["", "全部"],
+      ["員工", "員工"],
+      ["司機", "司機"],
+      ["車商", "車商"],
+      ["保經", "保經"],
+      ["保修廠", "保修廠"],
+      ["保險公司", "保險公司"]
+    ];
+    const latest = new Map();
+    [...(state.data.login_audit_logs || [])]
+      .sort((a, b) => String(b.login_at || b.created_at || "").localeCompare(String(a.login_at || a.created_at || "")))
+      .forEach((item) => {
+        const role = item.actor_role || loginActorRole(item);
+        const key = `${role}:${item.actor_id || item.actor_name || item.id}`;
+        if (!latest.has(key)) latest.set(key, { ...item, actor_role: role });
+      });
+    const rows = [...latest.values()].filter((item) => !state.loginHistoryFilter || item.actor_role === state.loginHistoryFilter);
+    return `
+      <div class="section-head">
+        <div><h2>登入紀錄</h2><small>依使用者分類顯示最後一次登入時間。</small></div>
+        <button class="ghost-btn" data-action="refresh-login-history">重新整理</button>
+      </div>
+      <div class="compact-filter-bar">
+        ${typeLabels.map(([value, label]) => `<button class="filter-btn ${state.loginHistoryFilter === value ? "active" : ""}" data-login-history-filter="${value}">${label}<b>${value ? rowsForLoginRole(value).length : latest.size}</b></button>`).join("")}
+      </div>
+      <div class="login-history-list">
+        ${rows.length ? rows.map((item) => `<article class="login-history-row">
+          <div class="login-history-type">${escapeHtml(item.actor_role || "-")}</div>
+          <div class="login-history-main">
+            <strong>${escapeHtml(item.actor_name || "未命名")}</strong>
+            <small>${escapeHtml(loginActorSubtitle(item))}</small>
+          </div>
+          <div><small>最後登入</small><b>${fmtDateTime(item.login_at || item.created_at)}</b></div>
+          <div><small>來源 IP</small><b>${escapeHtml(item.ip_address || "-")}</b></div>
+          <div><small>裝置</small><b>${escapeHtml(shortUserAgent(item.user_agent))}</b></div>
+        </article>`).join("") : `<div class="empty">目前沒有登入紀錄</div>`}
+      </div>
+    `;
+  }
+
+  function rowsForLoginRole(role) {
+    const latest = new Map();
+    [...(state.data.login_audit_logs || [])]
+      .sort((a, b) => String(b.login_at || b.created_at || "").localeCompare(String(a.login_at || a.created_at || "")))
+      .forEach((item) => {
+        const actorRole = item.actor_role || loginActorRole(item);
+        const key = `${actorRole}:${item.actor_id || item.actor_name || item.id}`;
+        if (!latest.has(key)) latest.set(key, { ...item, actor_role: actorRole });
+      });
+    return [...latest.values()].filter((item) => item.actor_role === role);
+  }
+
+  function loginActorRole(item) {
+    if (item.actor_type === "driver") return "司機";
+    if (item.actor_type === "admin") return "員工";
+    if (item.actor_role) return item.actor_role;
+    return "其他";
+  }
+
+  function loginActorSubtitle(item) {
+    if (item.actor_type === "admin") return item.login_identifier || "管理後台";
+    if (item.actor_type === "driver") return item.login_identifier ? `手機 ${item.login_identifier}` : "司機前台";
+    return item.login_identifier || "廠商前台";
+  }
+
+  function shortUserAgent(value) {
+    const text = String(value || "");
+    if (!text) return "-";
+    if (/iPhone|iPad/i.test(text)) return "iPhone / iPad";
+    if (/Android/i.test(text)) return "Android";
+    if (/Windows/i.test(text)) return "Windows";
+    if (/Macintosh|Mac OS/i.test(text)) return "Mac";
+    return text.slice(0, 32);
+  }
+
   function adminPermissionEnabled(permissions, key) {
     if (permissions?.[key]) return true;
     const legacy = {
@@ -2805,6 +2892,34 @@
     return Boolean(permissions?.[legacy[key]]);
   }
 
+  function activeKeyAccessCode() {
+    return [...(state.data.key_access_codes || [])]
+      .filter((item) => item.active !== false)
+      .sort((a, b) => String(b.updated_at || b.created_at || "").localeCompare(String(a.updated_at || a.created_at || "")))[0] || null;
+  }
+
+  function keyAccessCodePanel() {
+    const activeCode = activeKeyAccessCode();
+    if (!state.adminProfile?.is_super_admin) return "";
+    return `<section class="key-code-panel">
+      <div>
+        <small>取鑰密碼</small>
+        <strong>${activeCode ? escapeHtml(activeCode.code) : "尚未設定"}</strong>
+        <span>同仁借車或還車送出後會跳出此四位數字。</span>
+      </div>
+      <div class="actions">
+        ${activeCode ? `<button class="soft-btn" data-modal="keyAccessCode" data-id="${activeCode.id}">編輯密碼</button>` : ""}
+        <button class="primary-btn" data-modal="keyAccessCode">新增密碼</button>
+      </div>
+    </section>`;
+  }
+
+  function keyAccessCodeMessage(actionType) {
+    const code = activeKeyAccessCode()?.code;
+    if (!code) return "目前尚未設定取鑰密碼，請聯繫最高管理員。";
+    return `${actionType === "vehicleReturn" ? "還車" : "取鑰"}密碼：${code}\n\n請使用這組四位數字完成鑰匙交接。`;
+  }
+
   function adminVehicleLoans() {
     const search = String(state.loanSearch || "").trim().toUpperCase();
     const date = String(state.loanDateFilter || "");
@@ -2821,6 +2936,7 @@
       .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
     return `
       <div class="section-head"><div><h2>車輛租借</h2><small>登入同仁：${escapeHtml(state.adminProfile?.name || "管理者")}</small></div><button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div>
+      ${keyAccessCodePanel()}
       <form id="loanSearchForm" class="loan-filter-panel">
         <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button type="button" class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
         <div class="loan-search-row">
@@ -3427,6 +3543,7 @@
       vehicleFolder: ["車輛資料夾", "vehicles", vehicleFolderForm],
       vehicleLoan: ["借車登記", "vehicle_loans", vehicleLoanForm],
       vehicleReturn: ["登記還車", "vehicle_loans", vehicleReturnForm],
+      keyAccessCode: ["取鑰密碼", "key_access_codes", keyAccessCodeForm],
       serviceRecord: ["車輛履歷", "vehicle_service_records", serviceRecordForm],
       feedback: ["意見反饋", "feedbacks", feedbackForm],
       feedbackReply: ["反饋回覆", "feedbacks", feedbackReplyForm],
@@ -3551,8 +3668,12 @@
         const pushMessage = !id && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(tableName)
           ? linePushSummary(state.lastLinePushResult)
           : "";
+        const keyCodeMessage = tableName === "vehicle_loans" && !state.adminProfile?.is_super_admin
+          ? keyAccessCodeMessage(type)
+          : "";
         modal.remove();
         render();
+        if (keyCodeMessage) await showAlert(keyCodeMessage, "取鑰密碼");
         if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
       } catch (err) {
         await showAlert(err.message || err, "儲存失敗");
@@ -3653,6 +3774,10 @@
       record.return_at = record.return_at || null;
       record.actual_return_at = record.actual_return_at || null;
       record.status = record.status || "pending_approval";
+    }
+    if (tableName === "key_access_codes") {
+      record.code = String(record.code || "").replace(/\D/g, "").slice(0, 4);
+      record.active = record.active !== "false" && record.active !== false;
     }
     if (tableName === "vehicle_service_records") {
       record.vehicle_id = record.vehicle_id || null;
@@ -4517,6 +4642,15 @@
       + input("actual_return_at", "實際還車時間", String(now()).slice(0, 16), "datetime-local", true);
   }
 
+  function keyAccessCodeForm(item = {}) {
+    return `<div class="field full">
+        <label>四位數字密碼</label>
+        <input name="code" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" value="${escapeHtml(item.code || "")}" placeholder="例如 2580" required>
+        <small>啟用後，同仁借車與還車時會看到這組取鑰密碼。</small>
+      </div>`
+      + select("active", "狀態", item.active === false ? "false" : "true", [["true", "啟用"], ["false", "停用"]]);
+  }
+
   function serviceRecordForm(item) {
     return vehiclePlatePicker(item)
       + select("record_type", "履歷類型", item.record_type || "定期保養", [["定期保養", "定期保養"], ["維修", "維修"], ["檢驗", "檢驗"], ["輪胎", "輪胎"], ["事故修復", "事故修復"], ["召回", "召回"], ["其他", "其他"]])
@@ -5105,6 +5239,12 @@
       render();
       return;
     }
+    if (target?.dataset.action === "edit-onboarding-driver") {
+      state.adminView = "drivers";
+      render();
+      setTimeout(() => openModal("driver", target.dataset.id), 0);
+      return;
+    }
     if (target?.dataset.modal) {
       e.preventDefault();
       openModal(target.dataset.modal, target.dataset.id);
@@ -5335,6 +5475,14 @@
     }
     if (target.dataset.onboardingFilter) {
       state.onboardingFilter = target.dataset.onboardingFilter;
+      render();
+    }
+    if (target.dataset.loginHistoryFilter !== undefined) {
+      state.loginHistoryFilter = target.dataset.loginHistoryFilter;
+      render();
+    }
+    if (target.dataset.action === "refresh-login-history") {
+      await loadAll();
       render();
     }
     if (target.dataset.loanFilter !== undefined) {
