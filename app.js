@@ -266,8 +266,41 @@
     localStorage.setItem("afide-session", JSON.stringify({ type, user, token, adminProfile }));
   }
 
+  function currentViewState() {
+    return {
+      type: state.admin ? "admin" : state.partner ? "partner" : state.user ? "driver" : "",
+      view: state.view,
+      adminView: state.adminView,
+      partnerView: state.partnerView,
+      insuranceStatusFilter: state.insuranceStatusFilter,
+      messageReadFilter: state.messageReadFilter,
+      loanStatusFilter: state.loanStatusFilter,
+      onboardingFilter: state.onboardingFilter
+    };
+  }
+
+  function saveViewState() {
+    if (!state.user && !state.admin && !state.partner) return;
+    localStorage.setItem("afide-view-state", JSON.stringify(currentViewState()));
+  }
+
+  function restoreViewState(type) {
+    try {
+      const saved = JSON.parse(localStorage.getItem("afide-view-state") || "{}");
+      if (!saved || saved.type !== type) return;
+      if (saved.view) state.view = saved.view;
+      if (saved.adminView) state.adminView = saved.adminView;
+      if (saved.partnerView) state.partnerView = saved.partnerView;
+      if (saved.insuranceStatusFilter !== undefined) state.insuranceStatusFilter = saved.insuranceStatusFilter;
+      if (saved.messageReadFilter) state.messageReadFilter = saved.messageReadFilter;
+      if (saved.loanStatusFilter !== undefined) state.loanStatusFilter = saved.loanStatusFilter;
+      if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
+    } catch {}
+  }
+
   function clearSession() {
     localStorage.removeItem("afide-session");
+    localStorage.removeItem("afide-view-state");
   }
 
   function restoreSession() {
@@ -281,18 +314,21 @@
         state.adminProfile = saved.adminProfile || { name: "最高管理員", is_super_admin: true, permissions: { all: true } };
         state.user = null;
         state.partner = null;
+        restoreViewState("admin");
         return;
       }
       if (saved.type === "partner" && saved.user) {
         state.partner = saved.user;
         state.user = null;
         state.admin = false;
+        restoreViewState("partner");
         return;
       }
       if (saved.user) {
         state.user = saved.user;
         state.partner = null;
         state.admin = false;
+        restoreViewState("driver");
       } else {
         clearSession();
       }
@@ -1115,6 +1151,7 @@
       renderLogin();
       return;
     }
+    saveViewState();
     if (state.admin) renderAdmin();
     else if (state.partner) renderPartnerPortal();
     else renderDriver();
@@ -1960,6 +1997,14 @@
     return "報價單";
   }
 
+  function insuranceTypeDisplay(item = {}) {
+    const value = String(item.insurance_type || "").trim();
+    if (item.request_type === "quote" && (!value || ["報價請求", "報價單", "批改", "批加申請", "文件請求"].includes(value))) {
+      return "強制險";
+    }
+    return value;
+  }
+
   function insuranceFinishedStatuses() {
     return ["completed", "amendment_completed", "addition_completed"];
   }
@@ -1993,14 +2038,33 @@
     `;
   }
 
+  function insuranceFileDeleteButton(item, key, index = "") {
+    if (state.partner?.partner_type === "dealer") return "";
+    return `<button class="insurance-file-remove" type="button" data-insurance-file-delete="${escapeHtml([item.id, key, index].join(":"))}" title="刪除檔案" aria-label="刪除檔案">×</button>`;
+  }
+
+  function insuranceFileChip(item, key, url, name, label, index = "") {
+    if (!url) return "";
+    return `<span class="insurance-file-chip">
+      <button class="insurance-file-link" data-preview-file="${escapeHtml(url)}" data-preview-name="${escapeHtml(name || label)}" data-preview-type="${escapeHtml(inferAttachmentType(name || label, ""))}">${escapeHtml(label || name || "附件")}</button>
+      ${insuranceFileDeleteButton(item, key, index)}
+    </span>`;
+  }
+
   function insuranceFileLink(item, prefix, label) {
     const url = item?.[`${prefix}_url`];
     const name = item?.[`${prefix}_name`] || label;
-    return url ? `<button class="insurance-file-link" data-preview-file="${escapeHtml(url)}" data-preview-name="${escapeHtml(name)}" data-preview-type="${escapeHtml(inferAttachmentType(name, ""))}">${label}</button>` : "";
+    return insuranceFileChip(item, prefix, url, name, label);
   }
 
-  function jsonFileLinks(value, label) {
-    return (Array.isArray(value) ? value : []).map((file, index) => `<button class="insurance-file-link" data-preview-file="${escapeHtml(file.url || "")}" data-preview-name="${escapeHtml(file.name || `${label}${index + 1}`)}" data-preview-type="${escapeHtml(file.type || "")}">${escapeHtml(file.name || `${label}${index + 1}`)}</button>`).join("");
+  function jsonFileLinks(item, key, label) {
+    if (Array.isArray(item)) {
+      const files = item;
+      const fallbackLabel = key || "附件";
+      return files.map((file, index) => `<button class="insurance-file-link" data-preview-file="${escapeHtml(file.url || "")}" data-preview-name="${escapeHtml(file.name || `${fallbackLabel}${index + 1}`)}" data-preview-type="${escapeHtml(file.type || "")}">${escapeHtml(file.name || `${fallbackLabel}${index + 1}`)}</button>`).join("");
+    }
+    const files = Array.isArray(item?.[key]) ? item[key] : [];
+    return files.map((file, index) => insuranceFileChip(item, key, file.url || "", file.name || `${label}${index + 1}`, file.name || `${label}${index + 1}`, index)).join("");
   }
 
   function driverJsonFileLinks(value, label) {
@@ -2018,10 +2082,40 @@
     const dealerCanSeeFinal = ["quote", "addition", "document"].includes(item.request_type) && ["completed", "addition_completed", "document_received"].includes(item.status);
     const files = [];
     if (!isDealer || dealerCanSeeQuote) files.push(insuranceFileLink(item, "quote", "\u5831\u50f9\u55ae"));
-    if (!isDealer) files.push(jsonFileLinks(item.quote_request_files, "報價需求附件"), jsonFileLinks(item.license_files, "\u99d5\u7167"), jsonFileLinks(item.amendment_files, "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
+    if (!isDealer) files.push(jsonFileLinks(item, "quote_request_files", "報價需求附件"), jsonFileLinks(item, "license_files", "\u99d5\u7167"), jsonFileLinks(item, "amendment_files", "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
     if (!isDealer || dealerCanSeeFinal) files.push(insuranceFileLink(item, "policy", "\u4fdd\u55ae"), insuranceFileLink(item, "receipt", "\u6536\u64da"), insuranceFileLink(item, "document_policy", "\u88dc\u767c\u4fdd\u55ae"), insuranceFileLink(item, "document_receipt", "\u88dc\u767c\u6536\u64da"));
     const clean = files.filter(Boolean);
     return clean.length ? `<div class="insurance-files">${clean.join("")}</div>` : "";
+  }
+
+  async function deleteInsuranceFile(requestId, key, indexText = "") {
+    const item = (state.data.insurance_requests || []).find((row) => String(row.id) === String(requestId));
+    if (!item || !key) {
+      await showAlert("找不到要刪除的檔案，請重新整理後再試一次。", "刪除失敗");
+      return;
+    }
+    const confirmed = await showConfirm("確定要刪除此附件連結嗎？刪除後案件內將不再顯示此檔案。", "刪除附件");
+    if (!confirmed) return;
+    const patch = {};
+    if (["quote_request_files", "license_files", "amendment_files"].includes(key)) {
+      const files = Array.isArray(item[key]) ? [...item[key]] : [];
+      const index = Number(indexText);
+      if (!Number.isInteger(index) || index < 0 || index >= files.length) {
+        await showAlert("找不到要刪除的檔案，請重新整理後再試一次。", "刪除失敗");
+        return;
+      }
+      files.splice(index, 1);
+      patch[key] = files;
+    } else {
+      patch[`${key}_url`] = null;
+      patch[`${key}_name`] = null;
+    }
+    try {
+      await update("insurance_requests", item.id, patch);
+      render();
+    } catch (error) {
+      await showAlert(error.message || error, "刪除失敗");
+    }
   }
 
   function insuranceRequestActions(item, editable) {
@@ -2069,13 +2163,14 @@
     const partner = (state.data.insurance_partners || []).find((row) => row.id === item.dealer_partner_id);
     const isDealer = state.partner?.partner_type === "dealer";
     const typeLabel = insuranceRequestTypeLabel(item);
+    const insuranceType = insuranceTypeDisplay(item);
     const specParts = [item.coverage_spec, item.assigned_insurance_company].filter(Boolean);
     return `
       <article class="insurance-request-row insurance-stage-${escapeHtml(item.status)} ${isDealer ? "dealer-insurance-row" : ""}">
         <div class="insurance-row-main">
           <strong class="insurance-plate">${escapeHtml(item.plate_no || "未選車牌")}</strong>
           <div class="insurance-row-identity">
-            <b>${escapeHtml(typeLabel)}${item.insurance_type ? `｜${escapeHtml(item.insurance_type)}` : ""}${specParts.length ? `｜${escapeHtml(specParts.join("｜"))}` : ""}</b>
+            <b>${escapeHtml(typeLabel)}${insuranceType ? `｜${escapeHtml(insuranceType)}` : ""}${specParts.length ? `｜${escapeHtml(specParts.join("｜"))}` : ""}</b>
             <small>${escapeHtml(partner?.name || "未指定車商")}${item.lienholder ? `｜抵押權人 ${escapeHtml(item.lienholder)}` : ""}</small>
           </div>
           ${insuranceStatusBadge(item.status)}
@@ -3876,7 +3971,7 @@
         if (record.request_type === "amendment") record.insurance_type = "批改";
         else if (record.request_type === "addition") record.insurance_type = "批加申請";
         else if (record.request_type === "document") record.insurance_type = "文件請求";
-        else if (record.request_type === "quote") record.insurance_type = "報價請求";
+        else if (record.request_type === "quote") record.insurance_type = "強制險";
         else delete record.insurance_type;
       }
       if ("quote_amount" in record) record.quote_amount = Number(record.quote_amount || 0) || null;
@@ -5477,8 +5572,14 @@
       render();
     }
     if (target.dataset.action === "refresh-insurance") {
-      await loadAll();
-      render();
+      e.preventDefault();
+      try {
+        await loadAll();
+        render();
+      } catch (error) {
+        await showAlert(error.message || error, "重新整理失敗");
+      }
+      return;
     }
     if (target.dataset.action === "refresh-storage") {
       await loadStorageUsage();
@@ -5620,6 +5721,12 @@
       const [id, status] = target.dataset.insuranceStatus.split(":");
       await update("insurance_requests", id, { status });
       render();
+    }
+    if (target.dataset.insuranceFileDelete) {
+      e.preventDefault();
+      const [id, key, index] = target.dataset.insuranceFileDelete.split(":");
+      await deleteInsuranceFile(id, key, index);
+      return;
     }
     if (target.dataset.messageFilter) {
       state.messageReadFilter = target.dataset.messageFilter;
