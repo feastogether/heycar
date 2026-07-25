@@ -3714,6 +3714,175 @@ tr:last-child td { border-bottom: 0; }
   padding-top: 10px;
   border-top: 1px solid #eef2f6;
 }
+.evaluation-builder {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.evaluation-score-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) 96px 110px minmax(180px, 1fr);
+  align-items: end;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.evaluation-score-row > div {
+  display: grid;
+  gap: 4px;
+}
+.evaluation-score-row strong {
+  font-size: 15px;
+  font-weight: 950;
+}
+.evaluation-score-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.evaluation-score-row label {
+  display: grid;
+  gap: 5px;
+}
+.evaluation-score-row input[readonly] {
+  background: #f8fafc;
+  color: var(--muted);
+}
+.evaluation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.vehicle-service-history {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fff, #fbfdff);
+}
+.vehicle-service-history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.vehicle-service-history-head > div {
+  display: grid;
+  gap: 3px;
+}
+.vehicle-service-history-head strong {
+  font-size: 16px;
+  font-weight: 950;
+}
+.vehicle-service-history-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.vehicle-service-history-list {
+  display: grid;
+  gap: 8px;
+}
+.vehicle-service-history-row {
+  display: grid;
+  grid-template-columns: 98px 74px minmax(120px, 1fr) 100px 100px auto;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #eef2f6;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+}
+.vehicle-service-history-row b {
+  justify-self: start;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 950;
+}
+.vehicle-service-history-row b.maintenance {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.vehicle-service-history-row b.repair {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.vehicle-service-history-row strong {
+  white-space: nowrap;
+}
+.compact-empty {
+  padding: 18px;
+}
+.service-detail-modal {
+  width: min(820px, calc(100vw - 28px));
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+}
+.service-detail-hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px;
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 8% 0%, rgba(31,122,140,.12), transparent 18rem),
+    linear-gradient(135deg, #fff, #f8fafc);
+}
+.service-detail-hero small {
+  display: inline-block;
+  margin-bottom: 6px;
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 950;
+}
+.service-detail-hero p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+.service-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  padding: 16px 22px;
+}
+.service-detail-grid div,
+.service-detail-section {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  padding: 12px;
+}
+.service-detail-grid small,
+.service-detail-section small {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+.service-detail-grid strong {
+  font-size: 15px;
+  font-weight: 950;
+}
+.service-detail-section {
+  margin: 0 22px 10px;
+}
+.service-detail-section p {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.65;
+}
 .part-match-modal {
   width: min(760px, calc(100vw - 28px));
   overflow: hidden;
@@ -3831,6 +4000,13 @@ tr:last-child td { border-bottom: 0; }
   .single-driver-picker .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-driver-history-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-driver-history-remove { justify-self: start; }
+  .evaluation-builder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .evaluation-score-row { grid-template-columns: 1fr 92px 100px; }
+  .evaluation-score-row label:last-child { grid-column: 1 / -1; }
+  .vehicle-service-history-row { grid-template-columns: 92px 70px minmax(0, 1fr) auto; }
+  .vehicle-service-history-row span:nth-of-type(3),
+  .vehicle-service-history-row strong { display: none; }
+  .service-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .broadcast-grid { grid-template-columns: 1fr; }
   .flight-search { grid-template-columns: 1fr 1fr; }
   .flight-search input[name="flight"], .flight-search button { grid-column: 1 / -1; }
@@ -3893,6 +4069,19 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-driver-history-panel summary { align-items: flex-start; flex-direction: column; }
   .vehicle-driver-history-row { grid-template-columns: 1fr; }
   .vehicle-driver-history-actions { align-items: flex-start; flex-direction: column; }
+  .evaluation-builder { grid-template-columns: 1fr; }
+  .evaluation-score-row { grid-template-columns: 1fr; align-items: stretch; }
+  .evaluation-actions { justify-content: stretch; }
+  .evaluation-actions > * { flex: 1 1 100%; }
+  .vehicle-service-history-head { align-items: flex-start; flex-direction: column; }
+  .vehicle-service-history-row { grid-template-columns: 1fr auto; }
+  .vehicle-service-history-row span:first-child,
+  .vehicle-service-history-row b { grid-row: 1; }
+  .vehicle-service-history-row span:nth-of-type(2) { grid-column: 1 / -1; }
+  .vehicle-service-history-row button { grid-column: 1 / -1; }
+  .service-detail-hero { padding: 18px; }
+  .service-detail-grid { grid-template-columns: 1fr; padding: 14px 18px; }
+  .service-detail-section { margin-inline: 18px; }
   .loan-detail-hero { padding: 18px; }
   .loan-detail-body { padding: 16px 18px 18px; }
   .loan-detail-summary,

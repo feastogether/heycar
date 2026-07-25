@@ -382,7 +382,7 @@ function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
     "payment_slip_url", "payment_slip_name",
     "license_files", "amendment_files", "quote_request_files"
   );
-  if (!dealerCanSeeQuote) hide("quote_url", "quote_name");
+  if (!dealerCanSeeQuote) hide("quote_url", "quote_name", "quote_files");
   if (!dealerCanSeePolicy) hide("policy_url", "policy_name", "document_policy_url", "document_policy_name");
   if (!dealerCanSeeReceipt) hide("receipt_url", "receipt_name", "document_receipt_url", "document_receipt_name");
   return output;
@@ -893,7 +893,7 @@ Deno.serve(async (req) => {
         } else if (partner.partner_type === "broker") {
           const allowed = [
             "status", "quote_amount", "broker_notes", "broker_reply",
-            "quote_url", "quote_name",
+            "quote_url", "quote_name", "quote_files",
             "application_url", "application_name",
             "amendment_stamped_url", "amendment_stamped_name",
             "stamped_application_url", "stamped_application_name",

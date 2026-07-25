@@ -155,6 +155,7 @@ alter table public.maintenance_notifications add column if not exists service_ti
 alter table public.calendar_events add column if not exists vendor text;
 alter table public.calendar_events add column if not exists maintenance_notification_id uuid references public.maintenance_notifications(id) on delete set null;
 alter table public.insurance_requests add column if not exists quote_request_files jsonb not null default '[]'::jsonb;
+alter table public.insurance_requests add column if not exists quote_files jsonb not null default '[]'::jsonb;
 
 create table if not exists public.login_audit_logs (
   id uuid primary key default gen_random_uuid(),

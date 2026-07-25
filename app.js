@@ -2080,8 +2080,11 @@
     const isDealer = state.partner?.partner_type === "dealer";
     const dealerCanSeeQuote = item.request_type === "quote" && ["dealer_review", "stamping", "awaiting_policy", "completed"].includes(item.status);
     const dealerCanSeeFinal = ["quote", "addition", "document"].includes(item.request_type) && ["completed", "addition_completed", "document_received"].includes(item.status);
+    const quoteFileGroup = Array.isArray(item.quote_files) && item.quote_files.length
+      ? jsonFileLinks(item, "quote_files", "報價單")
+      : insuranceFileLink(item, "quote", "\u5831\u50f9\u55ae");
     const files = [];
-    if (!isDealer || dealerCanSeeQuote) files.push(insuranceFileLink(item, "quote", "\u5831\u50f9\u55ae"));
+    if (!isDealer || dealerCanSeeQuote) files.push(quoteFileGroup);
     if (!isDealer) files.push(jsonFileLinks(item, "quote_request_files", "報價需求附件"), jsonFileLinks(item, "license_files", "\u99d5\u7167"), jsonFileLinks(item, "amendment_files", "\u6279\u6539\u7533\u8acb\u66f8"), insuranceFileLink(item, "application", "\u8981\u4fdd\u66f8"), insuranceFileLink(item, "stamped_application", "\u8981\u4fdd\u66f8(\u5df2\u7528\u5370)"), insuranceFileLink(item, "amendment_stamped", "\u6279\u6539\u7528\u5370\u5b8c\u6210"), insuranceFileLink(item, "payment_slip", "\u5237\u5361\u55ae"));
     if (!isDealer || dealerCanSeeFinal) files.push(insuranceFileLink(item, "policy", "\u4fdd\u55ae"), insuranceFileLink(item, "receipt", "\u6536\u64da"), insuranceFileLink(item, "document_policy", "\u88dc\u767c\u4fdd\u55ae"), insuranceFileLink(item, "document_receipt", "\u88dc\u767c\u6536\u64da"));
     const clean = files.filter(Boolean);
@@ -2097,7 +2100,7 @@
     const confirmed = await showConfirm("確定要刪除此附件連結嗎？刪除後案件內將不再顯示此檔案。", "刪除附件");
     if (!confirmed) return;
     const patch = {};
-    if (["quote_request_files", "license_files", "amendment_files"].includes(key)) {
+    if (["quote_files", "quote_request_files", "license_files", "amendment_files"].includes(key)) {
       const files = Array.isArray(item[key]) ? [...item[key]] : [];
       const index = Number(indexText);
       if (!Number.isInteger(index) || index < 0 || index >= files.length) {
@@ -2648,6 +2651,7 @@
       marquee: ["messages"],
       emergencyEvents: ["messages"],
       driverHelperArticles: ["messages"],
+      driverEvaluations: ["drivers"],
       loginSlogans: ["messages"],
       driverLinks: ["messages"],
       payments: ["finance"]
@@ -2661,6 +2665,7 @@
     vehicles: "車輛管理",
     vehicleLoans: "車輛租借",
     driverOnboarding: "上線管理",
+    driverEvaluations: "評核表單",
     serviceRecords: "車輛履歷",
     insuranceCenter: "保險中心",
     insurancePartners: "廠商管理",
@@ -2683,7 +2688,7 @@
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "driverOnboarding", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "bom", "storage"]]
@@ -2717,6 +2722,7 @@
       ["loginHistory", "登入紀錄", "🕘", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
+      ["driverEvaluations", "評核表單", "📝", "driverEvaluations"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
@@ -2746,6 +2752,7 @@
       loginHistory: adminLoginHistory,
       drivers: adminDrivers,
       driverOnboarding: adminDriverOnboarding,
+      driverEvaluations: adminDriverEvaluations,
       vehicleTypes: adminVehicleTypes,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
@@ -2806,6 +2813,205 @@
       </form>
       ${driverManagementRows()}
     `;
+  }
+
+  function adminDriverEvaluations() {
+    const drivers = [...(state.data.drivers || [])].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
+    return `
+      <div class="section-head">
+        <div>
+          <h2>評核表單</h2>
+          <small>依 CS-08-V2 亞菲得車隊司機評核表格式建立，可直接列印或另存 PDF。</small>
+        </div>
+      </div>
+      <form id="driverEvaluationForm" class="evaluation-builder panel">
+        <div class="form-section-title field full">基本資料</div>
+        <div class="field">
+          <label>選擇司機</label>
+          <select name="driver_id" data-evaluation-driver-select>
+            <option value="">請選擇司機</option>
+            ${drivers.map((driver) => `<option value="${driver.id}">${escapeHtml(driver.name || "-")}｜${escapeHtml(driver.phone || "-")}</option>`).join("")}
+          </select>
+        </div>
+        ${input("evaluation_date", "評核日期", today(), "date", true)}
+        ${input("driver_name", "司機姓名", "", "text", true)}
+        ${input("phone", "聯絡電話", "", "tel")}
+        ${input("license_no", "駕照號碼／身分證", "", "text")}
+        ${input("vehicle_plate", "車號", "", "text")}
+        ${input("service_area", "服務區域", "", "text")}
+        ${input("evaluator", "評核人員", state.adminProfile?.name || "", "text")}
+        ${input("route_name", "評核路線／任務", "", "text")}
+        <div class="form-section-title field full">評核項目</div>
+        ${evaluationScoreField("appearance", "儀容服裝", "襯衫、領帶、識別與整潔度", 10)}
+        ${evaluationScoreField("etiquette", "服務禮節", "問候、開門、行李協助與乘客互動", 20)}
+        ${evaluationScoreField("driving", "駕駛安全", "起步、轉彎、跟車距離、煞車與乘坐舒適度", 25)}
+        ${evaluationScoreField("route", "路線掌握", "接送點、航班時間、導航與應變", 15)}
+        ${evaluationScoreField("vehicle", "車輛整備", "內外清潔、物品備品、車況與油電量", 15)}
+        ${evaluationScoreField("communication", "回報紀律", "任務回報、異常通報與群組訊息配合", 15)}
+        ${text("strengths", "優點紀錄", "")}
+        ${text("improvements", "待改善事項", "")}
+        ${text("summary", "總評與處置建議", "")}
+        <div class="evaluation-actions field full">
+          <a class="ghost-btn" href="./assets/driver-evaluation-template.pdf" target="_blank" rel="noreferrer">查看原始範本</a>
+          <button class="ghost-btn" type="button" data-action="reset-evaluation-form">清空</button>
+          <button class="primary-btn" type="button" data-action="print-driver-evaluation">產生列印 PDF</button>
+        </div>
+      </form>
+    `;
+  }
+
+  function evaluationScoreField(name, title, description, maxScore) {
+    return `<div class="evaluation-score-row field full">
+      <div>
+        <strong>${escapeHtml(title)}</strong>
+        <small>${escapeHtml(description)}</small>
+      </div>
+      <label>配分<input name="${name}_max" type="number" value="${maxScore}" readonly></label>
+      <label>得分<input name="${name}_score" type="number" min="0" max="${maxScore}" step="1" value=""></label>
+      <label>備註<input name="${name}_note" type="text" value=""></label>
+    </div>`;
+  }
+
+  function fillEvaluationDriver(selectBox) {
+    const form = selectBox?.closest("form");
+    const driver = (state.data.drivers || []).find((item) => String(item.id) === String(selectBox.value));
+    if (!form || !driver) return;
+    const activeVehicle = (state.data.vehicles || []).find((vehicle) => {
+      const records = vehicleActiveDriverRecords(vehicle);
+      return records.some((record) => String(record.driver_id || "") === String(driver.id) || record.driver_name === driver.name);
+    });
+    const values = {
+      driver_name: driver.name || "",
+      phone: driver.phone || "",
+      license_no: driver.national_id || driver.license_no || "",
+      vehicle_plate: activeVehicle?.plate_no || driver.assigned_vehicle_plate || "",
+      service_area: driver.service_area || driver.region || "",
+      evaluator: form.querySelector('[name="evaluator"]')?.value || state.adminProfile?.name || ""
+    };
+    Object.entries(values).forEach(([name, value]) => {
+      const inputEl = form.querySelector(`[name="${name}"]`);
+      if (inputEl) inputEl.value = value;
+    });
+  }
+
+  function resetDriverEvaluationForm() {
+    const form = document.getElementById("driverEvaluationForm");
+    if (!form) return;
+    form.reset();
+    const dateInput = form.querySelector('[name="evaluation_date"]');
+    if (dateInput) dateInput.value = today();
+    const evaluatorInput = form.querySelector('[name="evaluator"]');
+    if (evaluatorInput) evaluatorInput.value = state.adminProfile?.name || "";
+  }
+
+  function evaluationFormPayload(form) {
+    const values = Object.fromEntries(new FormData(form).entries());
+    const sections = [
+      ["appearance", "儀容服裝"],
+      ["etiquette", "服務禮節"],
+      ["driving", "駕駛安全"],
+      ["route", "路線掌握"],
+      ["vehicle", "車輛整備"],
+      ["communication", "回報紀律"]
+    ].map(([key, label]) => ({
+      key,
+      label,
+      max: Number(values[`${key}_max`] || 0),
+      score: Number(values[`${key}_score`] || 0),
+      note: values[`${key}_note`] || ""
+    }));
+    const total = sections.reduce((sum, item) => sum + item.score, 0);
+    const maxTotal = sections.reduce((sum, item) => sum + item.max, 0);
+    return { values, sections, total, maxTotal };
+  }
+
+  function evaluationPrintHtml(payload) {
+    const { values, sections, total, maxTotal } = payload;
+    const resultText = total >= 80 ? "合格" : "待複評";
+    const row = (label, value, label2, value2) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value || "")}</td><th>${escapeHtml(label2)}</th><td>${escapeHtml(value2 || "")}</td></tr>`;
+    return `<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>CS-08-V2 亞菲得車隊司機評核表</title>
+  <style>
+    @page { size: A4; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #101828; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; font-size: 12px; }
+    .sheet { width: 190mm; min-height: 277mm; margin: 0 auto; padding: 8mm; border: 2px solid #111827; }
+    .doc-head { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 8px; }
+    h1 { margin: 0; text-align: center; font-size: 24px; letter-spacing: 2px; }
+    .doc-code { border: 1px solid #111827; padding: 6px 10px; line-height: 1.5; min-width: 42mm; }
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    th, td { border: 1px solid #111827; padding: 6px 7px; vertical-align: middle; }
+    th { width: 21mm; background: #f3f4f6; font-weight: 900; text-align: center; }
+    .section-title { margin: 8px 0 0; padding: 5px 8px; background: #111827; color: white; font-weight: 900; }
+    .score-table th:nth-child(1) { width: 32mm; }
+    .score-table th:nth-child(2), .score-table th:nth-child(3) { width: 18mm; }
+    .score-table td:nth-child(2), .score-table td:nth-child(3) { text-align: center; font-weight: 800; }
+    .textarea-box { min-height: 24mm; white-space: pre-wrap; line-height: 1.65; }
+    .summary-row { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #111827; border-top: 0; }
+    .summary-row div { padding: 8px; border-right: 1px solid #111827; min-height: 26mm; }
+    .summary-row div:last-child { border-right: 0; }
+    .total-line { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid #111827; border-top: 0; padding: 8px 10px; font-size: 15px; font-weight: 900; }
+    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 12mm; gap: 8mm; }
+    .signatures span { display: block; border-top: 1px solid #111827; padding-top: 6px; text-align: center; }
+    .print-actions { position: fixed; right: 16px; top: 16px; display: flex; gap: 8px; }
+    .print-actions button { border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 900; cursor: pointer; }
+    .print-actions .primary { background: #ef3f35; color: white; }
+    @media print { .print-actions { display: none; } .sheet { border-color: #111827; } }
+  </style>
+</head>
+<body>
+  <div class="print-actions"><button onclick="window.close()">關閉</button><button class="primary" onclick="window.print()">列印 / 另存 PDF</button></div>
+  <main class="sheet">
+    <header class="doc-head">
+      <div><h1>亞菲得車隊司機評核表</h1></div>
+      <div class="doc-code">文件編號：CS-08-V2<br>評核日期：${escapeHtml(fmtDate(values.evaluation_date))}</div>
+    </header>
+    <div class="section-title">一、受評人基本資料</div>
+    <table>
+      ${row("姓名", values.driver_name, "聯絡電話", values.phone)}
+      ${row("駕照號碼", values.license_no, "車號", values.vehicle_plate)}
+      ${row("服務區域", values.service_area, "評核人員", values.evaluator)}
+      ${row("評核路線／任務", values.route_name, "評核結果", resultText)}
+    </table>
+    <div class="section-title">二、評核項目</div>
+    <table class="score-table">
+      <tr><th>項目</th><th>配分</th><th>得分</th><th>備註</th></tr>
+      ${sections.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td>${item.max}</td><td>${item.score || ""}</td><td>${escapeHtml(item.note || "")}</td></tr>`).join("")}
+    </table>
+    <div class="total-line"><span>總分：${total} / ${maxTotal}</span><span>評核判定：${escapeHtml(resultText)}</span></div>
+    <div class="section-title">三、評核紀錄</div>
+    <table>
+      <tr><th>優點紀錄</th><td><div class="textarea-box">${escapeHtml(values.strengths || "")}</div></td></tr>
+      <tr><th>待改善事項</th><td><div class="textarea-box">${escapeHtml(values.improvements || "")}</div></td></tr>
+      <tr><th>總評與處置建議</th><td><div class="textarea-box">${escapeHtml(values.summary || "")}</div></td></tr>
+    </table>
+    <div class="summary-row">
+      <div><strong>主管覆核</strong></div>
+      <div><strong>評核人員</strong></div>
+      <div><strong>受評司機</strong></div>
+    </div>
+    <div class="signatures"><span>車隊主管簽章</span><span>評核人員簽章</span><span>司機簽章</span></div>
+  </main>
+</body>
+</html>`;
+  }
+
+  async function printDriverEvaluation() {
+    const form = document.getElementById("driverEvaluationForm");
+    if (!form) return;
+    if (!form.reportValidity()) return;
+    const popup = window.open("", "_blank", "width=980,height=900");
+    if (!popup) {
+      await showAlert("瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。", "無法開啟列印");
+      return;
+    }
+    popup.document.open();
+    popup.document.write(evaluationPrintHtml(evaluationFormPayload(form)));
+    popup.document.close();
+    popup.focus();
   }
 
   const onboardingStepDefs = [
@@ -3234,6 +3440,80 @@
       .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
   }
 
+  function serviceRecordDisplayType(item = {}) {
+    const type = String(item.record_type || "");
+    if (type.includes("保養")) return "保養";
+    if (type.includes("維修") || type.includes("修復")) return "維修";
+    return type || "其他";
+  }
+
+  function serviceRecordsForVehicle(vehicle = {}) {
+    return [...(state.data.vehicle_service_records || [])]
+      .filter((item) => (vehicle.id && item.vehicle_id === vehicle.id) || (vehicle.plate_no && item.plate_no === vehicle.plate_no))
+      .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
+  }
+
+  function vehicleServiceHistoryPanel(vehicle = {}) {
+    const records = serviceRecordsForVehicle(vehicle).slice(0, 12);
+    return `<section class="vehicle-service-history field full">
+      <div class="vehicle-service-history-head">
+        <div>
+          <strong>車輛履歷</strong>
+          <small>顯示此車最近 12 筆保養／維修紀錄</small>
+        </div>
+        <button class="soft-btn" type="button" data-modal="serviceRecord">新增履歷</button>
+      </div>
+      ${records.length ? `<div class="vehicle-service-history-list">
+        ${records.map((item) => `<article class="vehicle-service-history-row">
+          <span>${escapeHtml(fmtDate(item.service_date))}</span>
+          <b class="${serviceRecordDisplayType(item) === "維修" ? "repair" : "maintenance"}">${escapeHtml(serviceRecordDisplayType(item))}</b>
+          <span>${escapeHtml(item.vendor || "-")}</span>
+          <span>${item.odometer ? `${Number(item.odometer).toLocaleString()} km` : "-"}</span>
+          <strong>$${Number(item.total_cost || 0).toLocaleString()}</strong>
+          <button class="soft-btn" type="button" data-service-record-detail="${escapeHtml(item.id)}">檢視</button>
+        </article>`).join("")}
+      </div>` : `<div class="empty compact-empty">目前沒有此車的履歷紀錄</div>`}
+    </section>`;
+  }
+
+  function openServiceRecordDetail(id) {
+    const item = (state.data.vehicle_service_records || []).find((row) => String(row.id) === String(id));
+    if (!item) {
+      showAlert("找不到這筆車輛履歷，請重新整理後再試一次。", "履歷不存在");
+      return;
+    }
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop service-detail-backdrop";
+    modal.innerHTML = `<div class="modal service-detail-modal">
+      <div class="loan-detail-hero service-detail-hero">
+        <div>
+          <small>${escapeHtml(item.plate_no || vehiclePlate(item.vehicle_id) || "車輛履歷")}</small>
+          <h3>${escapeHtml(serviceRecordDisplayType(item))}｜${escapeHtml(fmtDate(item.service_date))}</h3>
+          <p>${escapeHtml(item.vendor || "未指定保修廠")}</p>
+        </div>
+        <button class="icon-close-btn" data-close-modal aria-label="關閉"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="service-detail-grid">
+        <div><small>車牌</small><strong>${escapeHtml(item.plate_no || vehiclePlate(item.vehicle_id))}</strong></div>
+        <div><small>類型</small><strong>${escapeHtml(item.record_type || "-")}</strong></div>
+        <div><small>里程</small><strong>${item.odometer ? `${Number(item.odometer).toLocaleString()} km` : "-"}</strong></div>
+        <div><small>總金額</small><strong>$${Number(item.total_cost || 0).toLocaleString()}</strong></div>
+        <div><small>工資</small><strong>$${Number(item.labor_cost || 0).toLocaleString()}</strong></div>
+        <div><small>零件費</small><strong>$${Number(item.parts_cost || 0).toLocaleString()}</strong></div>
+        <div><small>其他費用</small><strong>$${Number(item.other_cost || 0).toLocaleString()}</strong></div>
+        <div><small>停駛時數</small><strong>${item.downtime_hours || "-"}</strong></div>
+      </div>
+      <div class="service-detail-section"><small>送修原因／駕駛反映</small><p>${escapeHtml(item.complaint || "-")}</p></div>
+      <div class="service-detail-section"><small>檢查與故障診斷</small><p>${escapeHtml(item.diagnosis || "-")}</p></div>
+      <div class="service-detail-section"><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div>
+      <div class="service-detail-section"><small>實際維修／保養內容</small><p>${escapeHtml(item.actual_work_performed || "-")}</p></div>
+      <div class="service-detail-section"><small>更換零組件</small>${servicePartsSummary(item)}</div>
+      <div class="service-detail-section"><small>保固資訊／備註</small><p>${escapeHtml([item.warranty_info, item.notes].filter(Boolean).join("\n") || "-")}</p></div>
+      <div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button><button class="primary-btn" data-modal="serviceRecord" data-id="${escapeHtml(item.id)}">編輯履歷</button></div>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
   function adminFeedbacks() {
     const items = [...(state.data.feedbacks || [])].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
     return `
@@ -3520,7 +3800,9 @@
     return (state.data.insurance_requests || [])
       .filter((item) => item.vehicle_id === vehicle.id || (vehicle.plate_no && item.plate_no === vehicle.plate_no))
       .flatMap((item) => [
-        item.quote_url ? { url: item.quote_url, name: item.quote_name || `${vehicle.plate_no} 報價單`, type: "", group: "保險報價" } : null,
+        ...(Array.isArray(item.quote_files) && item.quote_files.length
+          ? item.quote_files.map((file, index) => ({ url: file.url, name: file.name || `${vehicle.plate_no} 報價單${index + 1}`, type: file.type || "", group: "保險報價" }))
+          : [item.quote_url ? { url: item.quote_url, name: item.quote_name || `${vehicle.plate_no} 報價單`, type: "", group: "保險報價" } : null]),
         item.policy_url ? { url: item.policy_url, name: item.policy_name || `${vehicle.plate_no} 保單`, type: "", group: "保單" } : null,
         item.receipt_url ? { url: item.receipt_url, name: item.receipt_name || `${vehicle.plate_no} 收據`, type: "", group: "收據" } : null,
         item.document_policy_url ? { url: item.document_policy_url, name: item.document_policy_name || `${vehicle.plate_no} 補發保單`, type: "", group: "補發保單" } : null,
@@ -3975,11 +4257,16 @@
         else delete record.insurance_type;
       }
       if ("quote_amount" in record) record.quote_amount = Number(record.quote_amount || 0) || null;
-      ["license_files", "amendment_files", "quote_request_files"].forEach((key) => {
+      ["license_files", "amendment_files", "quote_request_files", "quote_files"].forEach((key) => {
         if (typeof record[key] === "string") {
           try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
         }
       });
+      if (Array.isArray(record.quote_files) && record.quote_files.length && !record.quote_url) {
+        const firstQuoteFile = record.quote_files.find((file) => file?.url) || record.quote_files[0];
+        record.quote_url = firstQuoteFile?.url || "";
+        record.quote_name = firstQuoteFile?.name || "報價單";
+      }
     }
     if (tableName === "driver_links") {
       record.active = record.active === "true";
@@ -4562,6 +4849,7 @@
       ${input("roadside_assistance_phone", "道路救援電話", insuranceCompanyPhone(v.voluntary_insurance_company || v.insurance_company) || v.roadside_assistance_phone, "tel")}
       <div class="form-section-title field full">車輛文件</div>
       ${vehicleRegistrationField(v)}
+      ${vehicleServiceHistoryPanel(v)}
       ${text("notes", "備註", v.notes)}
     `;
   }
@@ -5007,7 +5295,7 @@
   }
 
   function insuranceQuoteForm(item) {
-    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆／補件備註", item.broker_reply) + insuranceDocumentField(item, "quote", "報價單", false) + insuranceDocumentField(item, "application", "要保書", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
+    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆／補件備註", item.broker_reply) + multiAttachmentField(item, "quote_files", "報價單") + insuranceDocumentField(item, "application", "要保書", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
   }
 
   function insuranceAdditionQuoteForm(item) {
@@ -5376,6 +5664,19 @@
     }
     if (target?.dataset.action === "edit-onboarding-driver") {
       openModal("driver", target.dataset.id);
+      return;
+    }
+    if (target?.dataset.serviceRecordDetail) {
+      e.preventDefault();
+      openServiceRecordDetail(target.dataset.serviceRecordDetail);
+      return;
+    }
+    if (target?.dataset.action === "reset-evaluation-form") {
+      resetDriverEvaluationForm();
+      return;
+    }
+    if (target?.dataset.action === "print-driver-evaluation") {
+      await printDriverEvaluation();
       return;
     }
     if (target?.dataset.modal) {
@@ -6024,6 +6325,11 @@
       if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
       return;
     }
+    const evaluationDriverSelect = e.target.closest("[data-evaluation-driver-select]");
+    if (evaluationDriverSelect) {
+      fillEvaluationDriver(evaluationDriverSelect);
+      return;
+    }
     const loginToggle = e.target.closest("[data-driver-login]");
     if (loginToggle) {
       await update("drivers", loginToggle.dataset.driverLogin, { login_enabled: loginToggle.checked });
@@ -6196,6 +6502,9 @@
         }
         hidden.value = JSON.stringify(files);
         if (status) status.textContent = `已附加 ${files.length} 個檔案`;
+        const list = field?.querySelector(".attachment-link");
+        const label = field?.querySelector("label")?.textContent || multiInput.dataset.documentLabel || "檔案";
+        if (list) list.innerHTML = jsonFileLinks(files, label);
       } catch (error) {
         if (status) status.textContent = "上傳失敗";
         await showAlert(error.message || error, "上傳失敗");
