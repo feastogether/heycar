@@ -3759,6 +3759,30 @@ tr:last-child td { border-bottom: 0; }
   padding-top: 12px;
   border-top: 1px solid var(--line);
 }
+.evaluation-check-group {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+}
+.evaluation-check-group > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 8px;
+}
+.evaluation-check-group .field {
+  margin: 0;
+}
+.evaluation-check-group .check-field {
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #eef2f6;
+  border-radius: 999px;
+  background: #f8fafc;
+  font-size: 13px;
+  white-space: nowrap;
+}
 .vehicle-service-history {
   display: grid;
   gap: 12px;

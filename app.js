@@ -2821,54 +2821,119 @@
       <div class="section-head">
         <div>
           <h2>評核表單</h2>
-          <small>依 CS-08-V2 亞菲得車隊司機評核表格式建立，可直接列印或另存 PDF。</small>
+          <small>將 CS-08-V2 亞菲得車隊司機評核表數位化，填寫後可列印或另存 PDF。</small>
         </div>
       </div>
       <form id="driverEvaluationForm" class="evaluation-builder panel">
-        <div class="form-section-title field full">基本資料</div>
+        <div class="form-section-title field full">面訪基本資料</div>
         <div class="field">
-          <label>選擇司機</label>
+          <label>帶入既有司機資料</label>
           <select name="driver_id" data-evaluation-driver-select>
-            <option value="">請選擇司機</option>
+            <option value="">不帶入，手動填寫</option>
             ${drivers.map((driver) => `<option value="${driver.id}">${escapeHtml(driver.name || "-")}｜${escapeHtml(driver.phone || "-")}</option>`).join("")}
           </select>
         </div>
-        ${input("evaluation_date", "評核日期", today(), "date", true)}
-        ${input("driver_name", "司機姓名", "", "text", true)}
-        ${input("phone", "聯絡電話", "", "tel")}
-        ${input("license_no", "駕照號碼／身分證", "", "text")}
-        ${input("vehicle_plate", "車號", "", "text")}
+        ${input("referrer", "推薦人", "", "text")}
+        ${input("interview_date", "面訪日期", today(), "date")}
+        ${input("driver_name", "姓名", "", "text", true)}
+        ${input("national_id", "身分證字號", "", "text")}
+        ${select("gender", "性別", "", [["", "未填寫"], ["男", "男"], ["女", "女"]])}
+        ${input("birth_date", "出生日期", "", "date")}
+        ${input("phone", "連絡電話", "", "tel")}
+        ${select("marital_status", "婚姻狀況", "", [["", "未填寫"], ["已婚", "已婚"], ["未婚", "未婚"]])}
+        ${input("address", "居住地址", "", "text")}
+        ${input("email", "信箱", "", "email")}
         ${input("service_area", "服務區域", "", "text")}
-        ${input("evaluator", "評核人員", state.adminProfile?.name || "", "text")}
-        ${input("route_name", "評核路線／任務", "", "text")}
-        <div class="form-section-title field full">評核項目</div>
-        ${evaluationScoreField("appearance", "儀容服裝", "襯衫、領帶、識別與整潔度", 10)}
-        ${evaluationScoreField("etiquette", "服務禮節", "問候、開門、行李協助與乘客互動", 20)}
-        ${evaluationScoreField("driving", "駕駛安全", "起步、轉彎、跟車距離、煞車與乘坐舒適度", 25)}
-        ${evaluationScoreField("route", "路線掌握", "接送點、航班時間、導航與應變", 15)}
-        ${evaluationScoreField("vehicle", "車輛整備", "內外清潔、物品備品、車況與油電量", 15)}
-        ${evaluationScoreField("communication", "回報紀律", "任務回報、異常通報與群組訊息配合", 15)}
-        ${text("strengths", "優點紀錄", "")}
-        ${text("improvements", "待改善事項", "")}
-        ${text("summary", "總評與處置建議", "")}
+        ${select("has_car", "自有車輛", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${input("vehicle_plate", "車號", "", "text")}
+        ${select("license_type", "駕照種類", "", [["", "未填寫"], ["職業駕照", "職業駕照"], ["一般駕照", "一般駕照"]])}
+        ${select("parking_type", "家中停車位", "", [["", "未填寫"], ["無", "無"], ["機械", "機械"], ["平面", "平面"]])}
+        ${select("language", "語言", "", [["", "未填寫"], ["英", "英"], ["日", "日"], ["其他", "其他"]])}
+        ${input("language_other", "其他語言", "", "text")}
+        ${select("smoking", "是否抽菸", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
+        ${select("drinking", "是否酗酒", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
+        ${select("betel_nut", "是否吃檳榔", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
+        ${select("major_violation", "曾有重大違規", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
+        <div class="form-section-title field full">家庭狀況</div>
+        ${evaluationFamilyFields(1)}
+        ${evaluationFamilyFields(2)}
+        <div class="form-section-title field full">學歷與經歷</div>
+        ${input("school_name", "學校名稱", "", "text")}
+        ${input("department", "科系", "", "text")}
+        ${input("study_period", "就讀期間", "", "text")}
+        ${select("graduation_status", "畢肄業", "", [["", "未填寫"], ["畢業", "畢業"], ["肄業", "肄業"]])}
+        ${evaluationWorkFields(1)}
+        ${evaluationWorkFields(2)}
+        <div class="form-section-title field full">經濟狀況與專長</div>
+        ${input("income_source", "目前主要收入來源", "", "text")}
+        ${input("monthly_income", "收入金額／月", "", "number")}
+        ${input("trips_per_week", "趟數／週", "", "number")}
+        ${input("monthly_expense", "每月生活開銷", "", "number")}
+        ${select("has_loan", "貸款", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${input("loan_amount", "貸款金額", "", "number")}
+        ${input("specialty", "專長", "", "text")}
+        ${select("tour_guide_license", "導遊證", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
+        ${input("emergency_name", "緊急聯絡人姓名", "", "text")}
+        ${input("emergency_relation", "緊急聯絡人關係", "", "text")}
+        ${input("emergency_phone", "緊急聯絡人電話", "", "tel")}
+        <div class="form-section-title field full">訪談內容</div>
+        ${evaluationCheckGroup("card_sources", "是否有承接其他業者卡趟客戶", ["肯驛", "和運", "格上", "全鋒", "e-go", "無"])}
+        ${input("expected_trips", "期望趟數", "", "number")}
+        ${input("expected_revenue", "期望營業額", "", "number")}
+        ${input("class_name", "班別", "", "text")}
+        ${text("interview_other", "其他", "")}
+        <div class="form-section-title field full">檢附資料</div>
+        ${evaluationCheckGroup("attached_docs", "司機資料", ["司機職業駕照", "無肇事紀錄", "身分證正反面", "良民證", "存摺影本"])}
+        <div class="form-section-title field full">評核結果</div>
+        ${input("supervisor", "督導", "", "text")}
+        ${input("assistant_manager", "副理", "", "text")}
+        ${input("general_manager", "總經理", "", "text")}
+        ${select("contract_decision", "是否簽約", "", [["", "未填寫"], ["簽約", "簽約"], ["不簽約", "不簽約"]])}
+        ${input("evaluation_date", "評核日期", today(), "date")}
+        <div class="form-section-title field full">車輛管理</div>
+        ${select("vehicle_custody_contract", "車輛保管合約", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${input("vehicle_model", "車款", "", "text")}
+        ${input("vehicle_color", "顏色", "", "text")}
+        ${select("booster_seat", "增高墊", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${select("child_seat", "安全座椅（雙向）", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${select("tracker_installed", "安裝衛星犬", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${input("expected_delivery_date", "預計交車日", "", "date")}
+        ${input("vehicle_confirmed_by", "車輛確認", "", "text")}
+        ${input("vehicle_signoff_date", "簽核日期", "", "date")}
+        <div class="form-section-title field full">行政流程</div>
+        ${input("training_date", "教育訓練日期", "", "date")}
+        ${select("service_contract", "承攬合約", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
+        ${input("online_date", "上線日期", "", "date")}
+        ${input("admin_confirmed_by", "行政確認", "", "text")}
+        ${input("admin_signoff_date", "簽核日期", "", "date")}
+        ${input("control_confirmed_by", "行控確認", "", "text")}
+        ${input("control_signoff_date", "簽核日期", "", "date")}
         <div class="evaluation-actions field full">
           <a class="ghost-btn" href="./assets/driver-evaluation-template.pdf" target="_blank" rel="noreferrer">查看原始範本</a>
           <button class="ghost-btn" type="button" data-action="reset-evaluation-form">清空</button>
-          <button class="primary-btn" type="button" data-action="print-driver-evaluation">產生列印 PDF</button>
+          <button class="primary-btn" type="button" data-action="print-driver-evaluation">輸出 PDF</button>
         </div>
       </form>
     `;
   }
 
-  function evaluationScoreField(name, title, description, maxScore) {
-    return `<div class="evaluation-score-row field full">
-      <div>
-        <strong>${escapeHtml(title)}</strong>
-        <small>${escapeHtml(description)}</small>
-      </div>
-      <label>配分<input name="${name}_max" type="number" value="${maxScore}" readonly></label>
-      <label>得分<input name="${name}_score" type="number" min="0" max="${maxScore}" step="1" value=""></label>
-      <label>備註<input name="${name}_note" type="text" value=""></label>
+  function evaluationFamilyFields(index) {
+    return input(`family_${index}_title`, `家庭成員${index}稱謂`, "", "text")
+      + input(`family_${index}_name`, `家庭成員${index}姓名`, "", "text")
+      + input(`family_${index}_age`, `家庭成員${index}年齡`, "", "number");
+  }
+
+  function evaluationWorkFields(index) {
+    return input(`work_${index}_company`, `經歷${index}公司名稱`, "", "text")
+      + input(`work_${index}_position`, `經歷${index}職務`, "", "text")
+      + input(`work_${index}_period`, `經歷${index}服務期間`, "", "text")
+      + input(`work_${index}_leave_reason`, `經歷${index}離職原因`, "", "text");
+  }
+
+  function evaluationCheckGroup(name, label, options) {
+    return `<div class="field full evaluation-check-group">
+      <label>${escapeHtml(label)}</label>
+      <div>${options.map((option) => checkbox(`${name}_${option}`, option, false)).join("")}</div>
     </div>`;
   }
 
@@ -2883,10 +2948,18 @@
     const values = {
       driver_name: driver.name || "",
       phone: driver.phone || "",
-      license_no: driver.national_id || driver.license_no || "",
+      national_id: driver.national_id || driver.license_no || "",
       vehicle_plate: activeVehicle?.plate_no || driver.assigned_vehicle_plate || "",
       service_area: driver.service_area || driver.region || "",
-      evaluator: form.querySelector('[name="evaluator"]')?.value || state.adminProfile?.name || ""
+      address: driver.address || driver.contact_address || driver.household_address || "",
+      email: driver.email || "",
+      birth_date: formDate(driver.birthday || driver.birth_date),
+      emergency_name: driver.emergency_contact || "",
+      emergency_phone: driver.emergency_phone || "",
+      training_date: formDate(driver.training_completed_at || driver.training_date),
+      online_date: formDate(driver.joined_at || driver.onboard_date),
+      vehicle_model: activeVehicle?.model || "",
+      vehicle_color: activeVehicle?.color || ""
     };
     Object.entries(values).forEach(([name, value]) => {
       const inputEl = form.querySelector(`[name="${name}"]`);
@@ -2898,102 +2971,105 @@
     const form = document.getElementById("driverEvaluationForm");
     if (!form) return;
     form.reset();
-    const dateInput = form.querySelector('[name="evaluation_date"]');
-    if (dateInput) dateInput.value = today();
-    const evaluatorInput = form.querySelector('[name="evaluator"]');
-    if (evaluatorInput) evaluatorInput.value = state.adminProfile?.name || "";
+    ["interview_date", "evaluation_date"].forEach((name) => {
+      const dateInput = form.querySelector(`[name="${name}"]`);
+      if (dateInput) dateInput.value = today();
+    });
   }
 
   function evaluationFormPayload(form) {
     const values = Object.fromEntries(new FormData(form).entries());
-    const sections = [
-      ["appearance", "儀容服裝"],
-      ["etiquette", "服務禮節"],
-      ["driving", "駕駛安全"],
-      ["route", "路線掌握"],
-      ["vehicle", "車輛整備"],
-      ["communication", "回報紀律"]
-    ].map(([key, label]) => ({
-      key,
-      label,
-      max: Number(values[`${key}_max`] || 0),
-      score: Number(values[`${key}_score`] || 0),
-      note: values[`${key}_note`] || ""
-    }));
-    const total = sections.reduce((sum, item) => sum + item.score, 0);
-    const maxTotal = sections.reduce((sum, item) => sum + item.max, 0);
-    return { values, sections, total, maxTotal };
+    return { values };
   }
 
   function evaluationPrintHtml(payload) {
-    const { values, sections, total, maxTotal } = payload;
-    const resultText = total >= 80 ? "合格" : "待複評";
-    const row = (label, value, label2, value2) => `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value || "")}</td><th>${escapeHtml(label2)}</th><td>${escapeHtml(value2 || "")}</td></tr>`;
+    const { values } = payload;
+    const yesNo = (value, yes, no) => `${value === yes ? "☑" : "□"}${yes}　${value === no ? "☑" : "□"}${no}`;
+    const choice = (name, options) => options.map((option) => `${values[name] === option || values[`${name}_${option}`] === "true" ? "☑" : "□"}${escapeHtml(option)}`).join("　");
     return `<!doctype html>
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
   <title>CS-08-V2 亞菲得車隊司機評核表</title>
   <style>
-    @page { size: A4; margin: 10mm; }
+    @page { size: A4; margin: 7mm; }
     * { box-sizing: border-box; }
-    body { margin: 0; color: #101828; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; font-size: 12px; }
-    .sheet { width: 190mm; min-height: 277mm; margin: 0 auto; padding: 8mm; border: 2px solid #111827; }
-    .doc-head { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; border-bottom: 2px solid #111827; padding-bottom: 8px; margin-bottom: 8px; }
-    h1 { margin: 0; text-align: center; font-size: 24px; letter-spacing: 2px; }
-    .doc-code { border: 1px solid #111827; padding: 6px 10px; line-height: 1.5; min-width: 42mm; }
+    body { margin: 0; color: #111827; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; font-size: 11px; }
+    .sheet { width: 196mm; min-height: 283mm; margin: 0 auto; padding: 4mm; background: white; }
+    .top-code { text-align: right; font-size: 10px; }
+    .doc-head { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 2mm; }
+    h1 { margin: 0; text-align: center; font-size: 24px; text-decoration: underline; letter-spacing: 2px; }
+    .meta-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+    .line-value { display: inline-block; min-width: 32mm; border-bottom: 1px solid #111827; min-height: 14px; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th, td { border: 1px solid #111827; padding: 6px 7px; vertical-align: middle; }
-    th { width: 21mm; background: #f3f4f6; font-weight: 900; text-align: center; }
-    .section-title { margin: 8px 0 0; padding: 5px 8px; background: #111827; color: white; font-weight: 900; }
-    .score-table th:nth-child(1) { width: 32mm; }
-    .score-table th:nth-child(2), .score-table th:nth-child(3) { width: 18mm; }
-    .score-table td:nth-child(2), .score-table td:nth-child(3) { text-align: center; font-weight: 800; }
-    .textarea-box { min-height: 24mm; white-space: pre-wrap; line-height: 1.65; }
-    .summary-row { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #111827; border-top: 0; }
-    .summary-row div { padding: 8px; border-right: 1px solid #111827; min-height: 26mm; }
-    .summary-row div:last-child { border-right: 0; }
-    .total-line { display: flex; justify-content: space-between; gap: 12px; align-items: center; border: 1px solid #111827; border-top: 0; padding: 8px 10px; font-size: 15px; font-weight: 900; }
-    .signatures { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 12mm; gap: 8mm; }
-    .signatures span { display: block; border-top: 1px solid #111827; padding-top: 6px; text-align: center; }
+    th, td { border: 1px solid #111827; padding: 3px 5px; vertical-align: middle; height: 8.4mm; }
+    th { background: #f3f4f6; font-weight: 900; text-align: center; width: 22mm; }
+    .section-title { padding: 4px 8px; border: 1px solid #111827; border-bottom: 0; background: #d9d9d9; text-align: center; font-size: 14px; font-weight: 900; letter-spacing: 4px; }
+    .plain-title { background: #fff; font-size: 16px; }
+    .photo-cell { text-align: center; font-size: 15px; color: #374151; height: 40mm; }
+    .text-row td { height: 11mm; }
+    .tall td, .tall th { height: 15mm; }
+    .interview td { height: 10mm; line-height: 1.55; }
+    .small { font-size: 10px; }
     .print-actions { position: fixed; right: 16px; top: 16px; display: flex; gap: 8px; }
     .print-actions button { border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 900; cursor: pointer; }
     .print-actions .primary { background: #ef3f35; color: white; }
-    @media print { .print-actions { display: none; } .sheet { border-color: #111827; } }
+    @media print { .print-actions { display: none; } }
   </style>
 </head>
 <body>
   <div class="print-actions"><button onclick="window.close()">關閉</button><button class="primary" onclick="window.print()">列印 / 另存 PDF</button></div>
   <main class="sheet">
-    <header class="doc-head">
-      <div><h1>亞菲得車隊司機評核表</h1></div>
-      <div class="doc-code">文件編號：CS-08-V2<br>評核日期：${escapeHtml(fmtDate(values.evaluation_date))}</div>
-    </header>
-    <div class="section-title">一、受評人基本資料</div>
+    <div class="top-code">CS-08-V2</div>
+    <h1>亞菲得車隊司機評核表</h1>
+    <div class="meta-line"><span>推薦人：<span class="line-value">${escapeHtml(values.referrer || "")}</span></span><span>面訪日期：<span class="line-value">${escapeHtml(fmtDate(values.interview_date))}</span></span></div>
+    <div class="section-title plain-title">面　訪　表</div>
     <table>
-      ${row("姓名", values.driver_name, "聯絡電話", values.phone)}
-      ${row("駕照號碼", values.license_no, "車號", values.vehicle_plate)}
-      ${row("服務區域", values.service_area, "評核人員", values.evaluator)}
-      ${row("評核路線／任務", values.route_name, "評核結果", resultText)}
+      <tr><th>姓名</th><td>${escapeHtml(values.driver_name || "")}</td><th>身分證字號</th><td>${escapeHtml(values.national_id || "")}</td><th>性別</th><td>${choice("gender", ["男", "女"])}</td><td class="photo-cell" rowspan="7">（照片）</td></tr>
+      <tr><th>出生日期</th><td>${escapeHtml(fmtDate(values.birth_date))}</td><th>連絡電話</th><td>${escapeHtml(values.phone || "")}</td><th>婚姻狀況</th><td>${choice("marital_status", ["已婚", "未婚"])}</td></tr>
+      <tr><th>居住地址</th><td colspan="5">${escapeHtml(values.address || "")}</td></tr>
+      <tr><th>信箱</th><td colspan="3">${escapeHtml(values.email || "")}</td><th>服務區域</th><td>${escapeHtml(values.service_area || "")}</td></tr>
+      <tr><th>自有車輛</th><td>${yesNo(values.has_car, "有", "無")}</td><th>車號</th><td>${escapeHtml(values.vehicle_plate || "")}</td><th>駕照種類</th><td>${choice("license_type", ["職業駕照", "一般駕照"])}</td></tr>
+      <tr><th>家中停車位</th><td colspan="3">${choice("parking_type", ["無", "機械", "平面"])}</td><th>語言</th><td>${choice("language", ["英", "日", "其他"])} ${escapeHtml(values.language_other || "")}</td></tr>
+      <tr><th>是否抽菸</th><td>${yesNo(values.smoking, "是", "否")}</td><th>是否酗酒</th><td>${yesNo(values.drinking, "是", "否")}</td><th>是否吃檳榔</th><td>${yesNo(values.betel_nut, "是", "否")}</td></tr>
+      <tr><th>曾有重大違規</th><td colspan="6">${yesNo(values.major_violation, "是", "否")}</td></tr>
     </table>
-    <div class="section-title">二、評核項目</div>
-    <table class="score-table">
-      <tr><th>項目</th><th>配分</th><th>得分</th><th>備註</th></tr>
-      ${sections.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td>${item.max}</td><td>${item.score || ""}</td><td>${escapeHtml(item.note || "")}</td></tr>`).join("")}
-    </table>
-    <div class="total-line"><span>總分：${total} / ${maxTotal}</span><span>評核判定：${escapeHtml(resultText)}</span></div>
-    <div class="section-title">三、評核紀錄</div>
     <table>
-      <tr><th>優點紀錄</th><td><div class="textarea-box">${escapeHtml(values.strengths || "")}</div></td></tr>
-      <tr><th>待改善事項</th><td><div class="textarea-box">${escapeHtml(values.improvements || "")}</div></td></tr>
-      <tr><th>總評與處置建議</th><td><div class="textarea-box">${escapeHtml(values.summary || "")}</div></td></tr>
+      <tr><th rowspan="3">家庭狀況</th><th>稱謂</th><th>姓名</th><th>年齡</th><th>稱謂</th><th>姓名</th><th>年齡</th></tr>
+      <tr><td>${escapeHtml(values.family_1_title || "")}</td><td>${escapeHtml(values.family_1_name || "")}</td><td>${escapeHtml(values.family_1_age || "")}</td><td>${escapeHtml(values.family_2_title || "")}</td><td>${escapeHtml(values.family_2_name || "")}</td><td>${escapeHtml(values.family_2_age || "")}</td></tr>
+      <tr><td colspan="6"></td></tr>
+      <tr><th rowspan="2">學歷</th><th colspan="2">學校名稱</th><th>科系</th><th>就讀期間</th><th colspan="2">畢肄業</th></tr>
+      <tr><td colspan="2">${escapeHtml(values.school_name || "")}</td><td>${escapeHtml(values.department || "")}</td><td>${escapeHtml(values.study_period || "")}</td><td colspan="2">${choice("graduation_status", ["畢業", "肄業"])}</td></tr>
+      <tr><th rowspan="3">經歷</th><th colspan="2">公司名稱</th><th>職務</th><th>服務期間</th><th colspan="2">離職原因</th></tr>
+      <tr><td colspan="2">${escapeHtml(values.work_1_company || "")}</td><td>${escapeHtml(values.work_1_position || "")}</td><td>${escapeHtml(values.work_1_period || "")}</td><td colspan="2">${escapeHtml(values.work_1_leave_reason || "")}</td></tr>
+      <tr><td colspan="2">${escapeHtml(values.work_2_company || "")}</td><td>${escapeHtml(values.work_2_position || "")}</td><td>${escapeHtml(values.work_2_period || "")}</td><td colspan="2">${escapeHtml(values.work_2_leave_reason || "")}</td></tr>
+      <tr><th>經濟狀況</th><td colspan="2">${escapeHtml(values.income_source || "")}</td><td>收入/月：${escapeHtml(values.monthly_income || "")}</td><td>趟數/週：${escapeHtml(values.trips_per_week || "")}</td><td>生活開銷：${escapeHtml(values.monthly_expense || "")}</td><td>貸款：${yesNo(values.has_loan, "有", "無")} ${escapeHtml(values.loan_amount || "")}</td></tr>
+      <tr><th>專長</th><td colspan="5">${escapeHtml(values.specialty || "")}</td><td>導遊證 ${yesNo(values.tour_guide_license, "是", "否")}</td></tr>
+      <tr><th>緊急聯絡人</th><td colspan="2">姓名：${escapeHtml(values.emergency_name || "")}</td><td colspan="2">關係：${escapeHtml(values.emergency_relation || "")}</td><td colspan="2">電話：${escapeHtml(values.emergency_phone || "")}</td></tr>
     </table>
-    <div class="summary-row">
-      <div><strong>主管覆核</strong></div>
-      <div><strong>評核人員</strong></div>
-      <div><strong>受評司機</strong></div>
-    </div>
-    <div class="signatures"><span>車隊主管簽章</span><span>評核人員簽章</span><span>司機簽章</span></div>
+    <div class="section-title">以下由面訪主管填寫</div>
+    <table class="interview">
+      <tr><th rowspan="3">訪談內容</th><td colspan="6">1.是否有承接其他業者卡趟客戶：${choice("card_sources", ["肯驛", "和運", "格上", "全鋒", "e-go", "無"])}</td></tr>
+      <tr><td colspan="2">2.期望趟數：${escapeHtml(values.expected_trips || "")}</td><td colspan="2">期望營業額：${escapeHtml(values.expected_revenue || "")}</td><td colspan="2">班別：${escapeHtml(values.class_name || "")}</td></tr>
+      <tr><td colspan="6">3.其他：${escapeHtml(values.interview_other || "")}</td></tr>
+      <tr><th rowspan="2">檢附資料</th><td colspan="6" style="text-align:center;background:#d9d9d9;font-weight:900;">司機資料</td></tr>
+      <tr><td colspan="6">${choice("attached_docs", ["司機職業駕照", "無肇事紀錄", "身分證正反面", "良民證", "存摺影本"])}</td></tr>
+    </table>
+    <div class="section-title">評　核　結　果</div>
+    <table class="tall">
+      <tr><th>督導</th><th>副理</th><th>總經理</th><th>是否簽約</th><th>評核日期</th></tr>
+      <tr><td>${escapeHtml(values.supervisor || "")}</td><td>${escapeHtml(values.assistant_manager || "")}</td><td>${escapeHtml(values.general_manager || "")}</td><td>${choice("contract_decision", ["簽約", "不簽約"])}</td><td>${escapeHtml(fmtDate(values.evaluation_date))}</td></tr>
+    </table>
+    <div class="section-title">車輛管理</div>
+    <table>
+      <tr><th>車輛保管合約</th><th>車款</th><th>車號</th><th>顏色</th><th>增高墊</th><th>安全座椅(雙向)</th><th>安裝衛星犬</th><th>預計交車日</th><th>車輛確認</th><th>簽核日期</th></tr>
+      <tr><td>${yesNo(values.vehicle_custody_contract, "有", "無")}</td><td>${escapeHtml(values.vehicle_model || "")}</td><td>${escapeHtml(values.vehicle_plate || "")}</td><td>${escapeHtml(values.vehicle_color || "")}</td><td>${yesNo(values.booster_seat, "有", "無")}</td><td>${yesNo(values.child_seat, "有", "無")}</td><td>${yesNo(values.tracker_installed, "有", "無")}</td><td>${escapeHtml(fmtDate(values.expected_delivery_date))}</td><td>${escapeHtml(values.vehicle_confirmed_by || "")}</td><td>${escapeHtml(fmtDate(values.vehicle_signoff_date))}</td></tr>
+    </table>
+    <div class="section-title">行政流程</div>
+    <table>
+      <tr><th>教育訓練日期</th><th>承攬合約</th><th>上線日期</th><th>行政確認</th><th>簽核日期</th><th>行控確認</th><th>簽核日期</th></tr>
+      <tr><td>${escapeHtml(fmtDate(values.training_date))}</td><td>${yesNo(values.service_contract, "有", "無")}</td><td>${escapeHtml(fmtDate(values.online_date))}</td><td>${escapeHtml(values.admin_confirmed_by || "")}</td><td>${escapeHtml(fmtDate(values.admin_signoff_date))}</td><td>${escapeHtml(values.control_confirmed_by || "")}</td><td>${escapeHtml(fmtDate(values.control_signoff_date))}</td></tr>
+    </table>
   </main>
 </body>
 </html>`;
