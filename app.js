@@ -1204,6 +1204,10 @@
     return `<div class="app-loading-overlay">${cuteCarLoader(state.loadingText || "資料載入中", "請稍候，系統正在更新畫面")}</div>`;
   }
 
+  function renderBootLoading(text = "正在載入系統資料") {
+    app.innerHTML = `<div class="login-wrap boot-loading-wrap">${cuteCarLoader(text, "請稍候，正在同步最新資料")}</div>`;
+  }
+
   async function withAppLoading(text, task) {
     state.appLoading = true;
     state.loadingText = text;
@@ -2832,7 +2836,8 @@
 
   function adminDrivers() {
     const filters = ["全部", "跑趟中", "停派中", "待上線", "已離職", "留停中", "其他"];
-    const counts = state.data.drivers.reduce((result, driver) => {
+    const drivers = state.data.drivers || [];
+    const counts = drivers.reduce((result, driver) => {
       result[driver.driver_status || "待上線"] = (result[driver.driver_status || "待上線"] || 0) + 1;
       return result;
     }, {});
@@ -2840,7 +2845,7 @@
       <div class="section-head"><h2>駕駛管理</h2><div class="actions"><button class="ghost-btn" data-export="drivers">匯出 Excel</button><button class="primary-btn" data-modal="driver">新增駕駛</button></div></div>
       <div class="driver-filter-bar" aria-label="駕駛狀態篩選">
         <span>狀態篩選</span>
-        ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? state.data.drivers.length : (counts[status] || 0)}</b></button>`).join("")}
+        ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? drivers.length : (counts[status] || 0)}</b></button>`).join("")}
       </div>
       <form id="driverSearchForm" class="driver-search-bar">
         <input name="search" type="search" value="${escapeHtml(state.driverSearch || "")}" placeholder="\u641c\u5c0b\u59d3\u540d\u3001\u96fb\u8a71\u3001\u8eca\u724c\u3001\u5340\u57df\u6216\u7de8\u7d44">
@@ -6656,7 +6661,7 @@
   if (state.apiSession || state.user || state.admin || state.partner) {
     state.appLoading = true;
     state.loadingText = "正在載入系統資料";
-    render();
+    renderBootLoading(state.loadingText);
   } else {
     renderLogin();
   }
