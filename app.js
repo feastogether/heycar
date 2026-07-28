@@ -61,6 +61,8 @@
     error: "",
     apiSession: "",
     loginLoading: false,
+    appLoading: false,
+    loadingText: "",
     loginSlogansLoaded: false,
     lineProfile: null,
     lineReady: false,
@@ -1180,6 +1182,41 @@
     return name.length > 2 ? name.slice(-2) : name;
   }
 
+  function cuteCarLoader(title = "資料載入中", subtitle = "正在整理車隊資料", extraClass = "") {
+    return `<div class="cute-car-loader ${extraClass}" role="status" aria-live="polite">
+      <div class="cute-car-scene" aria-hidden="true">
+        <div class="cute-car-road"><span></span><span></span><span></span></div>
+        <div class="cute-car">
+          <span class="cute-car-body"></span>
+          <span class="cute-car-window"></span>
+          <span class="cute-car-light"></span>
+          <span class="cute-car-wheel wheel-left"></span>
+          <span class="cute-car-wheel wheel-right"></span>
+        </div>
+      </div>
+      <strong>${escapeHtml(title)}</strong>
+      ${subtitle ? `<small>${escapeHtml(subtitle)}</small>` : ""}
+    </div>`;
+  }
+
+  function appLoadingMarkup() {
+    if (!state.appLoading) return "";
+    return `<div class="app-loading-overlay">${cuteCarLoader(state.loadingText || "資料載入中", "請稍候，系統正在更新畫面")}</div>`;
+  }
+
+  async function withAppLoading(text, task) {
+    state.appLoading = true;
+    state.loadingText = text;
+    render();
+    try {
+      return await task();
+    } finally {
+      state.appLoading = false;
+      state.loadingText = "";
+      render();
+    }
+  }
+
   function layout(content) {
     if (state.admin) {
       app.innerHTML = `
@@ -1199,6 +1236,7 @@
             </div>
           </header>
           <main class="main admin-main">${content}</main>
+          ${appLoadingMarkup()}
         </div>
       `;
       loadAirportWeather();
@@ -1225,6 +1263,7 @@
             </div>
           </header>
           <main class="main admin-main">${content}</main>
+          ${appLoadingMarkup()}
         </div>
       `;
       loadAirportWeather();
@@ -1246,6 +1285,7 @@
         </header>
         ${renderMarquee()}
         <main class="main">${content}</main>
+        ${appLoadingMarkup()}
       </div>
     `;
     loadAirportWeather();
@@ -1294,16 +1334,12 @@
                 <input name="login" autocomplete="off" inputmode="numeric" required ${state.loginLoading ? "disabled" : ""}>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
-                ${state.loginLoading ? `<span class="login-spinner" aria-hidden="true"></span><span>${loadingText}</span>` : "登入"}
+                ${state.loginLoading ? `<span class="mini-car-loader" aria-hidden="true"></span><span>${loadingText}</span>` : "登入"}
               </button>
             </form>
             ${state.loginLoading ? `
               <div class="login-loading-panel" role="status" aria-live="polite">
-                <div class="login-loading-row">
-                  <span>${loadingText}</span>
-                  <strong>請稍候</strong>
-                </div>
-                <div class="login-progress"><span></span></div>
+                ${cuteCarLoader(loadingText, "正在確認登入代碼", "login-car-loader")}
               </div>
             ` : ""}
             ${state.lineBindingMessage ? `<div class="login-line-note">${escapeHtml(state.lineBindingMessage)}</div>` : ""}
@@ -4505,14 +4541,21 @@
   }
 
   function driverDocumentField(item, prefix, label) {
+    const uploaded = Boolean(item?.[`${prefix}_url`]);
+    const fileName = item?.[`${prefix}_name`] || label;
     return `<div class="driver-file-box attachment-field">
-      <label>${label}</label>
+      <div class="driver-file-box-head">
+        <label>${label}</label>
+        <span data-attachment-status>${uploaded ? "已上傳" : "未上傳"}</span>
+      </div>
       <input type="hidden" name="${prefix}_url" value="${escapeHtml(item?.[`${prefix}_url`] || "")}" data-attachment-url>
       <input type="hidden" name="${prefix}_name" value="${escapeHtml(item?.[`${prefix}_name`] || "")}" data-attachment-name>
-      <div class="driver-file-drop">
+      <label class="driver-file-drop">
         <input type="file" data-attachment-upload data-driver-document="${prefix}" data-document-label="${escapeHtml(label)}">
-        <span data-attachment-status>${item?.[`${prefix}_url`] ? `已上傳：${escapeHtml(item?.[`${prefix}_name`] || label)}` : "點選上傳"}</span>
-      </div>
+        <span class="driver-file-drop-icon">+</span>
+        <strong>${uploaded ? "重新上傳" : "點選上傳"}</strong>
+        <small>${uploaded ? escapeHtml(fileName) : "支援圖片與 PDF"}</small>
+      </label>
       <div class="driver-file-actions">
         ${item?.[`${prefix}_url`] ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(item[`${prefix}_url`])}" data-preview-name="${escapeHtml(item[`${prefix}_name`] || label)}" data-preview-type="">查看</button><button class="danger-btn" type="button" data-driver-file-clear>刪除檔案</button>` : ""}
       </div>
@@ -4577,13 +4620,18 @@
   function driverMultiDocumentField(item, name, label) {
     const files = Array.isArray(item?.[name]) ? item[name] : [];
     return `<div class="driver-file-box attachment-field driver-file-box-wide">
-      <label>${label}</label>
-      <input type="hidden" name="${name}" value="${escapeHtml(JSON.stringify(files))}" data-multi-attachment-json>
-      <div class="driver-file-drop">
-        <input type="file" multiple data-driver-multi-document data-document-label="${escapeHtml(label)}">
-        <span data-attachment-status>${files.length ? `已上傳 ${files.length} 個檔案` : "可多選上傳"}</span>
+      <div class="driver-file-box-head">
+        <label>${label}</label>
+        <span data-attachment-status>${files.length ? `已上傳 ${files.length} 個` : "未上傳"}</span>
       </div>
-      <div class="attachment-link" data-driver-multi-list>${driverJsonFileLinks(files, label)}</div>
+      <input type="hidden" name="${name}" value="${escapeHtml(JSON.stringify(files))}" data-multi-attachment-json>
+      <label class="driver-file-drop">
+        <input type="file" multiple data-driver-multi-document data-document-label="${escapeHtml(label)}">
+        <span class="driver-file-drop-icon">+</span>
+        <strong>上傳身分證檔案</strong>
+        <small>可一次選擇正面與反面</small>
+      </label>
+      <div class="driver-file-list" data-driver-multi-list>${driverJsonFileLinks(files, label)}</div>
     </div>`;
   }
 
@@ -5951,15 +5999,18 @@
     if (target.dataset.action === "refresh-insurance") {
       e.preventDefault();
       try {
-        await loadAll();
-        render();
+        await withAppLoading("正在重新整理保險資料", async () => {
+          await loadAll();
+        });
       } catch (error) {
         await showAlert(error.message || error, "重新整理失敗");
       }
       return;
     }
     if (target.dataset.action === "refresh-storage") {
-      await loadStorageUsage();
+      await withAppLoading("正在讀取儲存空間", async () => {
+        await loadStorageUsage();
+      });
     }
     if (target.dataset.action === "clear-storage-filter") {
       state.storageSearch = "";
@@ -5998,8 +6049,9 @@
       render();
     }
     if (target.dataset.action === "refresh-login-history") {
-      await loadAll();
-      render();
+      await withAppLoading("正在重新整理登入紀錄", async () => {
+        await loadAll();
+      });
     }
     if (target.dataset.loanFilter !== undefined) {
       state.loanStatusFilter = target.dataset.loanFilter;
@@ -6601,12 +6653,23 @@
   });
 
   restoreSession();
+  if (state.apiSession || state.user || state.admin || state.partner) {
+    state.appLoading = true;
+    state.loadingText = "正在載入系統資料";
+    render();
+  } else {
+    renderLogin();
+  }
   (async function boot() {
     try {
       await loadAll();
+      state.appLoading = false;
+      state.loadingText = "";
       render();
       if (!state.apiSession) await initLiffAutoLogin();
     } catch (err) {
+      state.appLoading = false;
+      state.loadingText = "";
       state.error = String(err.message || err).includes("登入已逾時") || String(err.message || err).includes("SESSION_EXPIRED") ? "" : (err.message || String(err));
       state.user = null;
       state.partner = null;
