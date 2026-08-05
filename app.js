@@ -761,6 +761,32 @@
     return (state.data.insurance_partners || []).find((item) => item.id === id) || null;
   }
 
+  function preferredPartnerSort(a, b) {
+    const aName = String(a?.name || a || "");
+    const bName = String(b?.name || b || "");
+    const preferred = "亞菲得股份有限公司";
+    if (aName === preferred && bName !== preferred) return -1;
+    if (bName === preferred && aName !== preferred) return 1;
+    return aName.localeCompare(bName, "zh-Hant");
+  }
+
+  function dealerPartners() {
+    return [...(state.data.insurance_partners || [])]
+      .filter((item) => item.partner_type === "dealer" && item.active !== false)
+      .sort(preferredPartnerSort);
+  }
+
+  function dealerPartnerOptions(selected = "", includeBlankLabel = "未指定") {
+    const current = selected && !dealerPartners().some((item) => item.id === selected)
+      ? (state.data.insurance_partners || []).find((item) => item.id === selected)
+      : null;
+    return [
+      ["", includeBlankLabel],
+      ...(current ? [[current.id, `${current.name || "舊資料"}（舊資料）`]] : []),
+      ...dealerPartners().map((item) => [item.id, item.name])
+    ];
+  }
+
   function partnerTypeName(type) {
     return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠", insurance_company: "保險公司" })[type] || type || "-";
   }
@@ -1184,6 +1210,7 @@
 
   function cuteCarLoader(title = "資料載入中", subtitle = "正在整理車隊資料", extraClass = "") {
     return `<div class="cute-car-loader ${extraClass}" role="status" aria-live="polite">
+      <div class="cute-plane-flyby" aria-hidden="true">✈</div>
       <div class="cute-car-scene" aria-hidden="true">
         <div class="cute-car-road"><span></span><span></span><span></span></div>
         <div class="cute-car">
@@ -1338,7 +1365,7 @@
                 <input name="login" autocomplete="off" inputmode="numeric" required ${state.loginLoading ? "disabled" : ""}>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
-                ${state.loginLoading ? `<span class="mini-car-loader" aria-hidden="true"></span><span>${loadingText}</span>` : "登入"}
+                ${state.loginLoading ? `<span>${loadingText}</span>` : "登入"}
               </button>
             </form>
             ${state.loginLoading ? `
@@ -3151,6 +3178,25 @@
     return {};
   }
 
+  function adminUserOptions(selected = "") {
+    const users = [...(state.data.admin_users || [])]
+      .filter((user) => user.active !== false)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
+    const current = selected && !users.some((user) => user.id === selected)
+      ? (state.data.admin_users || []).find((user) => user.id === selected)
+      : null;
+    return [
+      ["", "未指定"],
+      ...(current ? [[current.id, `${current.name || "舊資料"}（舊資料）`]] : []),
+      ...users.map((user) => [user.id, user.name || "未命名"])
+    ];
+  }
+
+  function adminUserName(id) {
+    if (!id) return "";
+    return (state.data.admin_users || []).find((user) => user.id === id)?.name || "";
+  }
+
   function onboardingDone(progress, key) {
     return key === "new_driver" || Boolean(progress?.[key]);
   }
@@ -3187,6 +3233,7 @@
     const doneCount = onboardingStepDefs.filter(([key]) => onboardingDone(progress, key)).length;
     const percent = Math.round((doneCount / onboardingStepDefs.length) * 100);
     const currentStep = [...onboardingStepDefs].reverse().find(([key]) => onboardingDone(progress, key))?.[1] || "新司機";
+    const responsibleName = progress.responsible_name || adminUserName(progress.responsible_user_id);
     return `
       <article class="onboarding-row ${onboardingIsCompleted(driver) ? "is-completed" : ""}">
         <div class="onboarding-driver">
@@ -3194,6 +3241,8 @@
           <div>
             <strong>${escapeHtml(driver.name || "未命名司機")}</strong>
             <span>${escapeHtml(driver.phone || "-")}</span>
+            <span>所屬車商：${escapeHtml(driverDealerName(driver))}</span>
+            <span>負責人員：${escapeHtml(responsibleName || "未指定")}</span>
           </div>
         </div>
         <div class="onboarding-progress">
@@ -3418,6 +3467,7 @@
           </div>
           <div class="actions">
             <button class="soft-btn" data-loan-detail="${item.id}">查看</button>
+            ${state.adminProfile?.is_super_admin ? `<button class="soft-btn" data-modal="vehicleLoan" data-id="${item.id}">編輯</button>` : ""}
             ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">同意借車</button>` : ""}
             ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">登記還車</button>` : ""}
             ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">確認結案</button>` : ""}
@@ -3661,7 +3711,7 @@
     const statuses = [...new Set(state.data.vehicles.map((item) => item.status).filter(Boolean))].sort();
     const regions = [...new Set(state.data.vehicles.map((item) => item.vehicle_region).filter(Boolean))].sort();
     const fuels = [...new Set(state.data.vehicles.map((item) => item.fuel_type).filter(Boolean))].sort();
-    const dealers = (state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer" && item.active !== false);
+    const dealers = dealerPartners();
     return `
       <div class="vehicle-toolbar">
         <div><h2>車輛管理</h2><small>共 ${vehicles.length} 輛符合條件</small></div>
@@ -4242,6 +4292,8 @@
           vehicle_plate: record.onboarding_vehicle_plate || "",
           delivery_at: record.onboarding_delivery_at || "",
           completed_at: record.onboarding_completed_at || "",
+          responsible_user_id: record.onboarding_responsible_user_id || "",
+          responsible_name: adminUserName(record.onboarding_responsible_user_id) || record.onboarding_responsible_name || "",
           notes: record.onboarding_notes || ""
         };
         record.onboarding_progress = progress;
@@ -4253,6 +4305,8 @@
           "onboarding_vehicle_confirmed_at",
           "onboarding_vehicle_plate",
           "onboarding_delivery_at",
+          "onboarding_responsible_user_id",
+          "onboarding_responsible_name",
           "onboarding_notes"
         ].forEach((key) => delete record[key]);
       }
@@ -4304,9 +4358,9 @@
     }
     if (tableName === "vehicle_loans") {
       record.vehicle_id = record.vehicle_id || null;
-      record.borrow_at = taipeiLocalDateTimeToIso(record.borrow_at);
-      record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
-      record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
+      if ("borrow_at" in record) record.borrow_at = taipeiLocalDateTimeToIso(record.borrow_at);
+      if ("return_at" in record) record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
+      if ("actual_return_at" in record) record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
       record.status = record.status || "pending_approval";
     }
     if (tableName === "key_access_codes") {
@@ -4421,6 +4475,8 @@
       vehicle_plate: record.onboarding_vehicle_plate || "",
       delivery_at: record.onboarding_delivery_at || "",
       completed_at: record.onboarding_completed_at || "",
+      responsible_user_id: record.onboarding_responsible_user_id || "",
+      responsible_name: adminUserName(record.onboarding_responsible_user_id) || record.onboarding_responsible_name || "",
       notes: record.onboarding_notes || ""
     };
     return {
@@ -4618,6 +4674,8 @@
       <div class="field onboarding-field"><label>配車確認日期</label><input name="onboarding_vehicle_confirmed_at" type="date" value="${escapeHtml(formDate(progress.vehicle_confirmed_at))}"></div>
       <div class="field onboarding-field"><label>配車車號</label><input name="onboarding_vehicle_plate" value="${escapeHtml(progress.vehicle_plate || "")}" placeholder="例如 RFB-9253"></div>
       <div class="field onboarding-field"><label>交車日期</label><input name="onboarding_delivery_at" type="date" value="${escapeHtml(formDate(progress.delivery_at))}"></div>
+      ${select("onboarding_responsible_user_id", "負責人員", progress.responsible_user_id || "", adminUserOptions(progress.responsible_user_id || ""))}
+      <input type="hidden" name="onboarding_responsible_name" value="${escapeHtml(progress.responsible_name || "")}">
       <div class="field onboarding-field"><label>結案日期</label><input name="onboarding_completed_at" type="date" value="${escapeHtml(formDate(progress.completed_at || driver.onboarding_completed_at))}"></div>
       <div class="field full"><label>備註</label><textarea name="onboarding_notes">${escapeHtml(progress.notes || "")}</textarea></div>`;
   }
@@ -4709,8 +4767,7 @@
   }
 
   function fleetNames(includeAll = false) {
-    const dealerNames = (state.data.insurance_partners || [])
-      .filter((item) => item.partner_type === "dealer" && item.active !== false)
+    const dealerNames = dealerPartners()
       .map((item) => String(item.name || "").trim())
       .filter(Boolean);
     const names = [...new Set(dealerNames.length ? dealerNames : fleets)];
@@ -4839,7 +4896,7 @@
       ${input("email", "電子信箱", d.email, "email")}
       ${select("guide_license", "導遊證", d.guide_license || "", [["", "未設定"], ["有", "有"], ["無", "無"]])}
       <div class="form-section-title field full">聯絡與個人資料</div>
-      ${select("dealer_partner_id", "所屬車商", d.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
+      ${select("dealer_partner_id", "所屬車商", d.dealer_partner_id || "", dealerPartnerOptions(d.dealer_partner_id || ""))}
       ${input("region", "區域", d.region)}
       ${input("group_name", "編組", d.group_name)}
       ${select("driver_status", "狀態", d.driver_status || "待上線", [["跑趟中", "跑趟中"], ["停派中", "停派中"], ["待上線", "待上線"], ["已離職", "已離職"], ["留停中", "留停中"], ["其他", "其他"]])}
@@ -4965,7 +5022,7 @@
       ${select("status", "目前狀態", v.status || "正常", vehicleStatuses.map((s) => [s, s]))}
       ${select("lease_status", "租賃狀態", v.lease_status || "自有", vehicleLeaseStatuses.map((s) => [s, s]))}
       ${input("vehicle_region", "區域", v.vehicle_region)}
-      ${select("dealer_partner_id", "所屬車商", v.dealer_partner_id || "", [["", "未指定"], ...(state.data.insurance_partners || []).filter((item) => item.partner_type === "dealer").map((item) => [item.id, item.name])])}
+      ${select("dealer_partner_id", "所屬車商", v.dealer_partner_id || "", dealerPartnerOptions(v.dealer_partner_id || ""))}
       ${input("original_plate_owner", "原鐵牌所屬", v.original_plate_owner)}
       <div class="form-section-title field full">識別與狀態</div>
       ${vehicleDriverHistoryField(v)}
@@ -5182,7 +5239,10 @@
   }
 
   function vehicleLoanForm(item) {
-    return vehiclePlatePicker(item)
+    return `<input type="hidden" name="status" value="${escapeHtml(item.status || "pending_approval")}">
+      <input type="hidden" name="requested_by_name" value="${escapeHtml(item.requested_by_name || state.adminProfile?.name || "管理者")}">
+      <input type="hidden" name="requested_by_type" value="${escapeHtml(item.requested_by_type || "admin")}">`
+      + vehiclePlatePicker(item)
       + input("borrow_at", "借車時間", item.borrow_at ? taipeiDateTimeInput(item.borrow_at) : taipeiDateTimeInput(), "datetime-local", true)
       + input("return_at", "預計還車時間", item.return_at ? taipeiDateTimeInput(item.return_at) : "", "datetime-local", true)
       + select("purpose", "用途", item.purpose || "公務使用", [["個人借用", "個人借用"], ["公務使用", "公務使用"], ["車輛維修", "車輛維修"], ["外部單位", "外部單位"]])
@@ -5364,7 +5424,7 @@
 
   function insuranceDealerField(item = {}) {
     if (state.partner?.partner_type === "dealer") return `<input type="hidden" name="dealer_partner_id" value="${escapeHtml(state.partner.id)}">`;
-    return select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", [["", "自動帶入"], ...(state.data.insurance_partners || []).filter((partner) => partner.partner_type === "dealer").map((partner) => [partner.id, partner.name])]);
+    return select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", dealerPartnerOptions(item.dealer_partner_id || "", "自動帶入"));
   }
 
   function insuranceRequestForm(item) {

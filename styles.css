@@ -1403,6 +1403,14 @@ a { text-decoration: none; }
   padding: 18px;
   background: rgba(248, 250, 252, .72);
   backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+.boot-loading-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: hidden;
 }
 .cute-car-loader {
   width: min(320px, 92vw);
@@ -1417,6 +1425,19 @@ a { text-decoration: none; }
   color: var(--ink);
   text-align: center;
 }
+.cute-plane-flyby {
+  position: fixed;
+  left: -14vw;
+  top: 58vh;
+  z-index: 451;
+  pointer-events: none;
+  color: #1f7a8c;
+  font-size: clamp(24px, 5vw, 52px);
+  line-height: 1;
+  filter: drop-shadow(0 10px 18px rgba(31,122,140,.22));
+  transform: rotate(-12deg);
+  animation: plane-flyby 2.15s cubic-bezier(.2,.72,.25,1) infinite;
+}
 .cute-car-loader strong {
   font-size: 15px;
   font-weight: 900;
@@ -1429,7 +1450,7 @@ a { text-decoration: none; }
 .cute-car-scene {
   position: relative;
   width: 154px;
-  height: 56px;
+  height: 70px;
   overflow: hidden;
 }
 .cute-car-road {
@@ -1545,6 +1566,12 @@ a { text-decoration: none; }
 @keyframes road-run {
   from { transform: translateX(128px); }
   to { transform: translateX(-38px); }
+}
+@keyframes plane-flyby {
+  0% { transform: translate3d(-12vw, 28px, 0) rotate(-14deg); opacity: 0; }
+  12% { opacity: .95; }
+  72% { opacity: .95; }
+  100% { transform: translate3d(126vw, -44vh, 0) rotate(8deg); opacity: 0; }
 }
 @keyframes car-bounce {
   0%, 100% { transform: translateX(-50%) translateY(0); }
