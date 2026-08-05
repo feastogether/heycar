@@ -11,6 +11,8 @@
   const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
   const hasApi = Boolean(dataApiUrl);
   const app = document.getElementById("app");
+  const directDriverViews = new Set(["messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
+  const initialDriverView = requestedDriverView();
 
   const state = {
     mode: "driver",
@@ -71,6 +73,17 @@
     lastLinePushResult: null,
     unlockedSalaryPayments: new Set()
   };
+
+  function requestedDriverView() {
+    try {
+      const params = new URLSearchParams(location.search || "");
+      const raw = params.get("open") || params.get("view") || params.get("driverView") || String(location.hash || "").replace(/^#\/?/, "");
+      const normalized = raw === "flight" ? "flights" : raw;
+      return directDriverViews.has(normalized) ? normalized : "";
+    } catch {
+      return "";
+    }
+  }
 
   const tables = [
     "drivers",
@@ -300,6 +313,14 @@
     } catch {}
   }
 
+  function applyRequestedDriverView() {
+    if (!state.user || !initialDriverView) return;
+    if (canShowDriverFeature(initialDriverView)) {
+      state.view = initialDriverView;
+      state.page = 1;
+    }
+  }
+
   function clearSession() {
     localStorage.removeItem("afide-session");
     localStorage.removeItem("afide-view-state");
@@ -413,6 +434,7 @@
       state.user = result.user || null;
       saveSession("driver", state.user, result.token, null);
       await loadAll();
+      applyRequestedDriverView();
     } catch (error) {
       if (["LINE_NOT_BOUND", "LINE_USER_REQUIRED"].includes(error.message)) {
         state.lineBindingMessage = "首次使用 LINE 開啟時，請輸入手機號碼登入一次完成綁定。";
@@ -5582,6 +5604,7 @@
         saveSession(loginType, state.partner || state.user, result.token, state.adminProfile);
         await loadAll();
         state.view = "home";
+        applyRequestedDriverView();
         state.loginLoading = false;
         render();
         return;
@@ -5593,6 +5616,7 @@
       state.admin = false;
       state.adminProfile = null;
       saveSession("driver", driver, "");
+      applyRequestedDriverView();
       state.loginLoading = false;
       render();
     } catch (error) {
@@ -6718,6 +6742,7 @@
   });
 
   restoreSession();
+  applyRequestedDriverView();
   if (state.apiSession || state.user || state.admin || state.partner) {
     state.appLoading = true;
     state.loadingText = "正在載入系統資料";
