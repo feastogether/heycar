@@ -2559,6 +2559,7 @@
       item.printed_at ? fmtDateTime(item.printed_at) : `<span class="status pending">尚未列印</span>`,
       `<div class="actions">
         <button class="soft-btn" data-print-mail-label="${item.id}">列印標籤</button>
+        <button class="soft-btn" data-print-mail-sticker="${item.id}">貼紙列印</button>
         <button class="soft-btn" data-modal="mailShipment" data-id="${item.id}">編輯</button>
         <button class="danger-btn" data-delete="mail_shipments:${item.id}">刪除</button>
       </div>`
@@ -4767,6 +4768,52 @@
     return true;
   }
 
+  function printMailSticker(item) {
+    const win = window.open("", "_blank", "width=900,height=620");
+    if (!win) {
+      showAlert("瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。", "無法列印");
+      return false;
+    }
+    const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escapeHtml(mailRecipientName(item))} 貼紙標籤</title>
+      <style>
+        @page { size: 150mm 100mm; margin: 0; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #111827; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; background: #eef2f7; }
+        .print-actions { position: fixed; top: 10px; right: 10px; z-index: 3; display: flex; gap: 8px; }
+        button { border: 1px solid #d8dee8; border-radius: 10px; padding: 9px 13px; background: white; font-weight: 800; cursor: pointer; }
+        button.primary { border-color: #ef3f35; background: #ef3f35; color: white; }
+        main { width: 150mm; height: 100mm; margin: 12px auto; padding: 6mm 8mm 5mm; background: white; box-shadow: 0 20px 50px rgba(15, 23, 42, .12); overflow: hidden; }
+        .sticker { display: grid; grid-template-columns: 34mm 1fr; grid-template-areas: "zip address" "blank recipient" "blank phone" "memo memo"; column-gap: 6mm; row-gap: 4mm; align-content: start; }
+        .zip-label { color: #64748b; font-size: 8pt; font-weight: 900; letter-spacing: .06em; margin-bottom: 1.5mm; }
+        .zip { grid-area: zip; align-self: start; width: 32mm; min-height: 17mm; display: grid; place-items: center; border: 2pt solid #111827; border-radius: 2mm; font-size: 20pt; font-weight: 950; letter-spacing: .16em; line-height: 1; }
+        .address { grid-area: address; padding-top: 1mm; font-size: 16pt; font-weight: 900; line-height: 1.32; letter-spacing: .02em; word-break: break-all; }
+        .recipient { grid-area: recipient; font-size: 17pt; font-weight: 950; line-height: 1.25; }
+        .phone { grid-area: phone; font-size: 13pt; font-weight: 850; line-height: 1.25; }
+        .memo { grid-area: memo; margin-top: 2mm; padding-top: 2mm; border-top: 1px dashed #cbd5e1; color: #64748b; font-size: 9pt; font-weight: 700; white-space: pre-wrap; }
+        @media print {
+          body { background: white; }
+          main { margin: 0; box-shadow: none; }
+          .print-actions { display: none; }
+        }
+      </style></head><body>
+      <div class="print-actions"><button onclick="window.close()">關閉</button><button class="primary" onclick="window.print()">列印</button></div>
+      <main>
+        <div class="sticker">
+          <div class="zip"><div><div class="zip-label">郵遞區號</div>${escapeHtml(item.postal_code || "")}</div></div>
+          <div class="address">${escapeHtml(item.address || "")}</div>
+          <div class="recipient">${escapeHtml(mailRecipientName(item))}</div>
+          <div class="phone">${escapeHtml(item.phone || "")}</div>
+          ${item.notes ? `<div class="memo">${escapeHtml(item.notes)}</div>` : ""}
+        </div>
+      </main>
+      <script>setTimeout(() => window.print(), 300);<\/script>
+    </body></html>`;
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    return true;
+  }
+
   function linePushCheckbox() {
     return `<div class="field full line-push-field">
       <label class="check-field"><input type="hidden" name="line_push_enabled" value="false"><input name="line_push_enabled" type="checkbox" value="true" checked>同步 LINE 推播給已綁定司機</label>
@@ -6141,6 +6188,19 @@
         return;
       }
       const opened = printMailLabel(item);
+      if (opened && !item.printed_at) {
+        await update("mail_shipments", item.id, { printed_at: now() });
+        render();
+      }
+      return;
+    }
+    if (target?.dataset.printMailSticker) {
+      const item = (state.data.mail_shipments || []).find((row) => row.id === target.dataset.printMailSticker);
+      if (!item) {
+        await showAlert("找不到這筆寄件紀錄。", "列印失敗");
+        return;
+      }
+      const opened = printMailSticker(item);
       if (opened && !item.printed_at) {
         await update("mail_shipments", item.id, { printed_at: now() });
         render();
