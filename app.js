@@ -53,6 +53,7 @@
     storageSearch: "",
     storageFolderFilter: "",
     loginHistoryFilter: "",
+    mailTab: "addresses",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${today().slice(0, 7)}-01`,
@@ -2590,14 +2591,17 @@
           <small>尚未列印標籤</small>
         </article>
       </section>
-      <section class="panel">
+      <div class="message-tabs mail-tabs">
+        <button class="ghost-btn ${state.mailTab !== "history" ? "active" : ""}" data-mail-tab="addresses">地址管理 <span>${recipients.length}</span></button>
+        <button class="ghost-btn ${state.mailTab === "history" ? "active" : ""}" data-mail-tab="history">寄件歷史 <span>${shipments.length}</span></button>
+      </div>
+      ${state.mailTab !== "history" ? `<section class="panel">
         <div class="section-head"><h3>地址管理</h3><button class="primary-btn" data-modal="mailRecipient">新增地址</button></div>
         ${table(["收件人", "電話", "郵遞區號", "地址", "備註", "操作"], recipientRows, "mail-table")}
-      </section>
-      <section class="panel">
+      </section>` : `<section class="panel">
         <div class="section-head"><h3>寄件歷史</h3><button class="primary-btn" data-modal="mailShipment">新增寄件</button></div>
         ${table(["建立時間", "收件人", "地址", "寄件內容", "列印時間", "操作"], shipmentRows, "mail-table")}
-      </section>
+      </section>`}
     `;
   }
 
@@ -4352,7 +4356,13 @@
         const keyCodeMessage = tableName === "vehicle_loans" && !state.adminProfile?.is_super_admin
           ? keyAccessCodeMessage(type)
           : "";
+        const shouldPrintMailLabel = tableName === "mail_shipments" && !id;
         modal.remove();
+        if (shouldPrintMailLabel && saved) {
+          state.mailTab = "history";
+          const opened = printMailLabel(saved);
+          if (opened && !saved.printed_at) await update("mail_shipments", saved.id, { printed_at: now() });
+        }
         render();
         if (keyCodeMessage) await showAlert(keyCodeMessage, "取鑰密碼");
         if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
@@ -4681,9 +4691,10 @@
 
   function mailLabelPreviewHtml(item = {}) {
     return `
-      <strong>${escapeHtml(mailFullAddress(item) || "郵遞區號＋地址")}</strong>
+      <span class="mail-preview-zip">${escapeHtml(item.postal_code || "郵遞區號")}</span>
+      <strong>${escapeHtml(item.address || "地址")}</strong>
       <b>${escapeHtml(mailRecipientName(item) || "公司 收件人 敬收")}</b>
-      <span>${escapeHtml(item.phone || "電話")}</span>
+      <em>${escapeHtml(item.phone || "電話")}</em>
     `;
   }
 
@@ -4719,17 +4730,19 @@
     }
     const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escapeHtml(mailRecipientName(item))} 地址標籤</title>
       <style>
-        @page { size: A5 portrait; margin: 10mm; }
+        @page { size: A5 portrait; margin: 7mm 9mm; }
         * { box-sizing: border-box; }
         body { margin: 0; color: #111827; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; background: #eef2f7; }
         .print-actions { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; }
         button { border: 1px solid #d8dee8; border-radius: 10px; padding: 10px 14px; background: white; font-weight: 800; cursor: pointer; }
         button.primary { border-color: #ef3f35; background: #ef3f35; color: white; }
-        main { width: 148mm; min-height: 210mm; margin: 18px auto; padding: 14mm 12mm 0; background: white; box-shadow: 0 20px 50px rgba(15, 23, 42, .12); }
-        .address { font-size: 20pt; font-weight: 900; line-height: 1.45; letter-spacing: .02em; }
-        .recipient { margin-top: 8mm; padding-left: 22mm; font-size: 20pt; font-weight: 900; line-height: 1.45; }
-        .phone { margin-top: 5mm; font-size: 17pt; font-weight: 800; }
-        .memo { margin-top: 9mm; color: #64748b; font-size: 11pt; white-space: pre-wrap; }
+        main { width: 148mm; min-height: 210mm; margin: 12px auto; padding: 4mm 8mm 0; background: white; box-shadow: 0 20px 50px rgba(15, 23, 42, .12); }
+        .label { display: grid; gap: 4mm; align-content: start; padding-top: 0; }
+        .zip { width: fit-content; min-width: 28mm; padding: 2.6mm 4mm; border: 1.8pt solid #111827; border-radius: 2mm; font-size: 18pt; font-weight: 950; letter-spacing: .16em; text-align: center; line-height: 1; }
+        .address { font-size: 16pt; font-weight: 850; line-height: 1.38; letter-spacing: .02em; }
+        .recipient { padding-left: 18mm; font-size: 17pt; font-weight: 950; line-height: 1.35; }
+        .phone { font-size: 14pt; font-weight: 800; line-height: 1.25; }
+        .memo { margin-top: 3mm; color: #64748b; font-size: 10pt; white-space: pre-wrap; }
         @media print {
           body { background: white; }
           main { margin: 0; box-shadow: none; }
@@ -4738,10 +4751,13 @@
       </style></head><body>
       <div class="print-actions"><button onclick="window.close()">關閉</button><button class="primary" onclick="window.print()">列印</button></div>
       <main>
-        <div class="address">${escapeHtml(mailFullAddress(item))}</div>
+        <div class="label">
+        <div class="zip">${escapeHtml(item.postal_code || "")}</div>
+        <div class="address">${escapeHtml(item.address || "")}</div>
         <div class="recipient">${escapeHtml(mailRecipientName(item))}</div>
         <div class="phone">${escapeHtml(item.phone || "")}</div>
         ${item.notes ? `<div class="memo">${escapeHtml(item.notes)}</div>` : ""}
+        </div>
       </main>
       <script>setTimeout(() => window.print(), 300);<\/script>
     </body></html>`;
@@ -6093,6 +6109,11 @@
     }
     if (target?.dataset.helperCategory !== undefined) {
       state.driverHelperCategory = target.dataset.helperCategory;
+      render();
+      return;
+    }
+    if (target?.dataset.mailTab) {
+      state.mailTab = target.dataset.mailTab;
       render();
       return;
     }
