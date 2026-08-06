@@ -110,7 +110,9 @@
     "bom_parts",
     "bom_packages",
     "login_audit_logs",
-    "key_access_codes"
+    "key_access_codes",
+    "mail_recipients",
+    "mail_shipments"
   ];
 
   const insuranceStatuses = [
@@ -217,7 +219,9 @@
     bom_parts: [],
     bom_packages: [],
     login_audit_logs: [],
-    key_access_codes: []
+    key_access_codes: [],
+    mail_recipients: [],
+    mail_shipments: []
   };
 
   function uid() {
@@ -2531,6 +2535,72 @@
     `;
   }
 
+  function adminMailManagement() {
+    const recipients = [...(state.data.mail_recipients || [])].sort((a, b) =>
+      String(a.company_name || "").localeCompare(String(b.company_name || ""), "zh-Hant")
+    );
+    const shipments = [...(state.data.mail_shipments || [])].sort((a, b) =>
+      String(b.created_at || "").localeCompare(String(a.created_at || ""))
+    );
+    const recipientRows = recipients.map((item) => [
+      `<strong>${escapeHtml(mailRecipientName(item))}</strong>${item.active === false ? `<br><span class="status returned">停用</span>` : ""}`,
+      escapeHtml(item.phone || "-"),
+      escapeHtml(item.postal_code || "-"),
+      `<span class="mail-address-cell">${escapeHtml(item.address || "-")}</span>`,
+      escapeHtml(item.notes || "-"),
+      rowActions("mailRecipient", "mail_recipients", item.id)
+    ]);
+    const shipmentRows = shipments.map((item) => [
+      fmtDateTime(item.created_at),
+      `<strong>${escapeHtml(mailRecipientName(item))}</strong><br><small>${escapeHtml(item.phone || "-")}</small>`,
+      `<span class="mail-address-cell">${escapeHtml(mailFullAddress(item))}</span>`,
+      escapeHtml(item.item_title || "-"),
+      item.printed_at ? fmtDateTime(item.printed_at) : `<span class="status pending">尚未列印</span>`,
+      `<div class="actions">
+        <button class="soft-btn" data-print-mail-label="${item.id}">列印標籤</button>
+        <button class="soft-btn" data-modal="mailShipment" data-id="${item.id}">編輯</button>
+        <button class="danger-btn" data-delete="mail_shipments:${item.id}">刪除</button>
+      </div>`
+    ]);
+    return `
+      <div class="section-head admin-compact-head">
+        <div>
+          <h2>寄信管理</h2>
+          <p>管理常用收件地址，列印 A5 地址標籤並保留寄件紀錄。</p>
+        </div>
+        <div class="actions">
+          <button class="ghost-btn" data-modal="mailRecipient">新增地址</button>
+          <button class="primary-btn" data-modal="mailShipment">新增寄件</button>
+        </div>
+      </div>
+      <section class="mail-dashboard">
+        <article class="mail-stat-card">
+          <span>地址簿</span>
+          <strong>${recipients.filter((item) => item.active !== false).length}</strong>
+          <small>啟用中的收件人</small>
+        </article>
+        <article class="mail-stat-card">
+          <span>寄件紀錄</span>
+          <strong>${shipments.length}</strong>
+          <small>全部歷史寄件</small>
+        </article>
+        <article class="mail-stat-card">
+          <span>待列印</span>
+          <strong>${shipments.filter((item) => !item.printed_at).length}</strong>
+          <small>尚未列印標籤</small>
+        </article>
+      </section>
+      <section class="panel">
+        <div class="section-head"><h3>地址管理</h3><button class="primary-btn" data-modal="mailRecipient">新增地址</button></div>
+        ${table(["收件人", "電話", "郵遞區號", "地址", "備註", "操作"], recipientRows, "mail-table")}
+      </section>
+      <section class="panel">
+        <div class="section-head"><h3>寄件歷史</h3><button class="primary-btn" data-modal="mailShipment">新增寄件</button></div>
+        ${table(["建立時間", "收件人", "地址", "寄件內容", "列印時間", "操作"], shipmentRows, "mail-table")}
+      </section>
+    `;
+  }
+
   function storageFolders() {
     return [...new Set((state.storageFiles || []).map((file) => String(file.folder || file.path || "").split("/")[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "zh-Hant"));
   }
@@ -2743,7 +2813,8 @@
       driverEvaluations: ["drivers"],
       loginSlogans: ["messages"],
       driverLinks: ["messages"],
-      payments: ["finance"]
+      payments: ["finance"],
+      mailManagement: ["messages"]
     };
     return Boolean((aliases[permission] || []).some((key) => permissions[key]));
   }
@@ -2772,7 +2843,8 @@
     driverLinks: "連結管理",
     loginHistory: "登入紀錄",
     bom: "BOM表",
-    vehicleTypes: "車種管理"
+    vehicleTypes: "車種管理",
+    mailManagement: "寄信管理"
   };
 
   const adminNavDepartments = [
@@ -2780,7 +2852,7 @@
     ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
-    ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "bom", "storage"]]
+    ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage"]]
   ];
 
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
@@ -2820,6 +2892,7 @@
       ["insurancePartners", "廠商管理", "🏢", "insurancePartners"],
       ["storage", "儲存空間", "💾", "storage"],
       ["driverLinks", "連結管理", "🔗", "driverLinks"],
+      ["mailManagement", "寄信管理", "📮", "mailManagement"],
       ["bom", "BOM表", "🧩", "bom"],
       ["calendar", "共同行事曆", "📅", "calendar"],
       ["maintenanceNotifications", "保養通知", "🔔", "maintenanceNotifications"],
@@ -2860,6 +2933,7 @@
       loginSlogans: adminLoginSlogans,
       emergencyEvents: adminEmergencyEvents,
       driverLinks: adminDriverLinks,
+      mailManagement: adminMailManagement,
       bom: adminBom
     }[state.adminView]();
 
@@ -4163,6 +4237,8 @@
       marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
       driverLink: ["連結", "driver_links", driverLinkForm],
+      mailRecipient: ["地址", "mail_recipients", mailRecipientForm],
+      mailShipment: ["寄件紀錄", "mail_shipments", mailShipmentForm],
       driverHelperArticle: ["\u53f8\u6a5f\u5e6b\u624b", "driver_helper_articles", driverHelperArticleForm],
       loginSlogan: ["\u6a19\u8a9e", "login_slogans", loginSloganForm],
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
@@ -4389,6 +4465,27 @@
       record.code = String(record.code || "").replace(/\D/g, "").slice(0, 4);
       record.active = record.active !== "false" && record.active !== false;
     }
+    if (tableName === "mail_recipients") {
+      record.company_name = String(record.company_name || "").trim();
+      record.contact_name = String(record.contact_name || "").trim();
+      record.honorific = String(record.honorific || "敬收").trim() || "敬收";
+      record.phone = String(record.phone || "").trim();
+      record.address = String(record.address || "").trim();
+      record.postal_code = String(record.postal_code || taiwanPostalCode(record.address) || "").trim();
+      record.active = record.active !== "false" && record.active !== false;
+    }
+    if (tableName === "mail_shipments") {
+      const recipient = (state.data.mail_recipients || []).find((item) => item.id === record.recipient_id);
+      record.recipient_id = record.recipient_id || null;
+      record.company_name = String(record.company_name || recipient?.company_name || "").trim();
+      record.contact_name = String(record.contact_name || recipient?.contact_name || "").trim();
+      record.honorific = String(record.honorific || recipient?.honorific || "敬收").trim() || "敬收";
+      record.phone = String(record.phone || recipient?.phone || "").trim();
+      record.address = String(record.address || recipient?.address || "").trim();
+      record.postal_code = String(record.postal_code || recipient?.postal_code || taiwanPostalCode(record.address) || "").trim();
+      record.created_by_name = record.created_by_name || state.adminProfile?.name || "管理員";
+      blankToNull(record, ["recipient_id", "printed_at"]);
+    }
     if (tableName === "vehicle_service_records") {
       record.vehicle_id = record.vehicle_id || null;
       blankToNull(record, ["next_service_date"]);
@@ -4528,6 +4625,130 @@
 
   function checkbox(name, label, checked = true) {
     return `<div class="field"><label class="check-field"><input type="hidden" name="${name}" value="false"><input name="${name}" type="checkbox" value="true" ${checked ? "checked" : ""}>${label}</label></div>`;
+  }
+
+  function mailRecipientForm(item = {}) {
+    const postal = item.postal_code || taiwanPostalCode(item.address);
+    return `
+      ${input("company_name", "公司／單位", item.company_name, "text", true)}
+      ${input("contact_name", "收件人", item.contact_name, "text", true)}
+      ${input("honorific", "稱謂", item.honorific || "敬收")}
+      ${input("phone", "電話", item.phone, "tel")}
+      <div class="field"><label>郵遞區號</label><input name="postal_code" value="${escapeHtml(postal || "")}" data-postal-code placeholder="依地址自動判定"></div>
+      <div class="field full"><label>地址</label><input name="address" value="${escapeHtml(item.address || "")}" data-postal-address required placeholder="例：台中市北區華信街8號"></div>
+      ${text("notes", "備註", item.notes)}
+      ${checkbox("active", "啟用此地址", item.active !== false)}
+    `;
+  }
+
+  function mailShipmentForm(item = {}) {
+    const recipients = (state.data.mail_recipients || []).filter((recipient) => recipient.active !== false || recipient.id === item.recipient_id);
+    const selected = recipients.find((recipient) => recipient.id === item.recipient_id) || {};
+    const source = { ...selected, ...item };
+    const postal = source.postal_code || taiwanPostalCode(source.address);
+    return `
+      <div class="field full">
+        <label>選擇收件人</label>
+        <select name="recipient_id" data-mail-recipient-select>
+          <option value="">請選擇地址簿收件人</option>
+          ${recipients.map((recipient) => `<option value="${escapeHtml(recipient.id)}" ${item.recipient_id === recipient.id ? "selected" : ""}>${escapeHtml(mailRecipientName(recipient))}</option>`).join("")}
+        </select>
+      </div>
+      ${input("item_title", "寄件內容", item.item_title || "保險文件")}
+      ${input("company_name", "公司／單位", source.company_name)}
+      ${input("contact_name", "收件人", source.contact_name)}
+      ${input("honorific", "稱謂", source.honorific || "敬收")}
+      ${input("phone", "電話", source.phone, "tel")}
+      <div class="field"><label>郵遞區號</label><input name="postal_code" value="${escapeHtml(postal || "")}" data-postal-code placeholder="依地址自動判定"></div>
+      <div class="field full"><label>地址</label><input name="address" value="${escapeHtml(source.address || "")}" data-postal-address required placeholder="例：台中市北區華信街8號"></div>
+      ${text("notes", "寄件備註", item.notes)}
+      <input type="hidden" name="created_by_name" value="${escapeHtml(item.created_by_name || state.adminProfile?.name || "管理員")}">
+      <input type="hidden" name="printed_at" value="${escapeHtml(item.printed_at || "")}">
+      <div class="field full mail-label-preview">
+        <label>標籤預覽</label>
+        <div data-mail-label-preview>${mailLabelPreviewHtml(source)}</div>
+      </div>
+    `;
+  }
+
+  function mailRecipientName(item = {}) {
+    return [item.company_name, item.contact_name, item.honorific || "敬收"].filter(Boolean).join(" ");
+  }
+
+  function mailFullAddress(item = {}) {
+    return `${item.postal_code || ""}${item.address || ""}`.trim();
+  }
+
+  function mailLabelPreviewHtml(item = {}) {
+    return `
+      <strong>${escapeHtml(mailFullAddress(item) || "郵遞區號＋地址")}</strong>
+      <b>${escapeHtml(mailRecipientName(item) || "公司 收件人 敬收")}</b>
+      <span>${escapeHtml(item.phone || "電話")}</span>
+    `;
+  }
+
+  function updateMailLabelPreview(root) {
+    const preview = root?.querySelector("[data-mail-label-preview]");
+    if (!preview) return;
+    const data = Object.fromEntries(new FormData(root.closest("form") || root).entries());
+    if (!data.postal_code && data.address) data.postal_code = taiwanPostalCode(data.address);
+    preview.innerHTML = mailLabelPreviewHtml(data);
+  }
+
+  function taiwanPostalCode(address) {
+    const normalized = String(address || "").replace(/\s/g, "").replace(/臺/g, "台");
+    if (!normalized) return "";
+    const zipMap = {
+      "台北市中正區": "100", "台北市大同區": "103", "台北市中山區": "104", "台北市松山區": "105", "台北市大安區": "106", "台北市萬華區": "108", "台北市信義區": "110", "台北市士林區": "111", "台北市北投區": "112", "台北市內湖區": "114", "台北市南港區": "115", "台北市文山區": "116",
+      "新北市板橋區": "220", "新北市汐止區": "221", "新北市深坑區": "222", "新北市石碇區": "223", "新北市瑞芳區": "224", "新北市新店區": "231", "新北市永和區": "234", "新北市中和區": "235", "新北市土城區": "236", "新北市三峽區": "237", "新北市樹林區": "238", "新北市鶯歌區": "239", "新北市三重區": "241", "新北市新莊區": "242", "新北市泰山區": "243", "新北市林口區": "244", "新北市蘆洲區": "247", "新北市五股區": "248", "新北市八里區": "249", "新北市淡水區": "251", "新北市三芝區": "252", "新北市石門區": "253",
+      "桃園市中壢區": "320", "桃園市平鎮區": "324", "桃園市桃園區": "330", "桃園市龜山區": "333", "桃園市八德區": "334", "桃園市大溪區": "335", "桃園市復興區": "336", "桃園市大園區": "337", "桃園市蘆竹區": "338", "桃園市龍潭區": "325", "桃園市楊梅區": "326", "桃園市新屋區": "327", "桃園市觀音區": "328",
+      "台中市中區": "400", "台中市東區": "401", "台中市南區": "402", "台中市西區": "403", "台中市北區": "404", "台中市北屯區": "406", "台中市西屯區": "407", "台中市南屯區": "408", "台中市太平區": "411", "台中市大里區": "412", "台中市霧峰區": "413", "台中市烏日區": "414", "台中市豐原區": "420", "台中市后里區": "421", "台中市石岡區": "422", "台中市東勢區": "423", "台中市和平區": "424", "台中市新社區": "426", "台中市潭子區": "427", "台中市大雅區": "428", "台中市神岡區": "429", "台中市大肚區": "432", "台中市沙鹿區": "433", "台中市龍井區": "434", "台中市梧棲區": "435", "台中市清水區": "436", "台中市大甲區": "437", "台中市外埔區": "438", "台中市大安區": "439",
+      "台南市中西區": "700", "台南市東區": "701", "台南市南區": "702", "台南市北區": "704", "台南市安平區": "708", "台南市安南區": "709",
+      "高雄市新興區": "800", "高雄市前金區": "801", "高雄市苓雅區": "802", "高雄市鹽埕區": "803", "高雄市鼓山區": "804", "高雄市旗津區": "805", "高雄市前鎮區": "806", "高雄市三民區": "807", "高雄市楠梓區": "811", "高雄市小港區": "812", "高雄市左營區": "813",
+      "彰化縣彰化市": "500", "南投縣南投市": "540", "雲林縣斗六市": "640", "嘉義市東區": "600", "嘉義市西區": "600", "屏東縣屏東市": "900", "宜蘭縣宜蘭市": "260", "花蓮縣花蓮市": "970", "台東縣台東市": "950", "基隆市仁愛區": "200", "新竹市東區": "300", "新竹市北區": "300", "新竹市香山區": "300", "苗栗縣苗栗市": "360"
+    };
+    const matched = Object.keys(zipMap).sort((a, b) => b.length - a.length).find((key) => normalized.includes(key));
+    return matched ? zipMap[matched] : "";
+  }
+
+  function printMailLabel(item) {
+    const win = window.open("", "_blank", "width=760,height=900");
+    if (!win) {
+      showAlert("瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。", "無法列印");
+      return false;
+    }
+    const html = `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>${escapeHtml(mailRecipientName(item))} 地址標籤</title>
+      <style>
+        @page { size: A5 portrait; margin: 10mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #111827; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; background: #eef2f7; }
+        .print-actions { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; }
+        button { border: 1px solid #d8dee8; border-radius: 10px; padding: 10px 14px; background: white; font-weight: 800; cursor: pointer; }
+        button.primary { border-color: #ef3f35; background: #ef3f35; color: white; }
+        main { width: 148mm; min-height: 210mm; margin: 18px auto; padding: 14mm 12mm 0; background: white; box-shadow: 0 20px 50px rgba(15, 23, 42, .12); }
+        .address { font-size: 20pt; font-weight: 900; line-height: 1.45; letter-spacing: .02em; }
+        .recipient { margin-top: 8mm; padding-left: 22mm; font-size: 20pt; font-weight: 900; line-height: 1.45; }
+        .phone { margin-top: 5mm; font-size: 17pt; font-weight: 800; }
+        .memo { margin-top: 9mm; color: #64748b; font-size: 11pt; white-space: pre-wrap; }
+        @media print {
+          body { background: white; }
+          main { margin: 0; box-shadow: none; }
+          .print-actions { display: none; }
+        }
+      </style></head><body>
+      <div class="print-actions"><button onclick="window.close()">關閉</button><button class="primary" onclick="window.print()">列印</button></div>
+      <main>
+        <div class="address">${escapeHtml(mailFullAddress(item))}</div>
+        <div class="recipient">${escapeHtml(mailRecipientName(item))}</div>
+        <div class="phone">${escapeHtml(item.phone || "")}</div>
+        ${item.notes ? `<div class="memo">${escapeHtml(item.notes)}</div>` : ""}
+      </main>
+      <script>setTimeout(() => window.print(), 300);<\/script>
+    </body></html>`;
+    win.document.open();
+    win.document.write(html);
+    win.document.close();
+    return true;
   }
 
   function linePushCheckbox() {
@@ -5892,6 +6113,19 @@
       await printDriverEvaluation();
       return;
     }
+    if (target?.dataset.printMailLabel) {
+      const item = (state.data.mail_shipments || []).find((row) => row.id === target.dataset.printMailLabel);
+      if (!item) {
+        await showAlert("找不到這筆寄件紀錄。", "列印失敗");
+        return;
+      }
+      const opened = printMailLabel(item);
+      if (opened && !item.printed_at) {
+        await update("mail_shipments", item.id, { printed_at: now() });
+        render();
+      }
+      return;
+    }
     if (target?.dataset.modal) {
       e.preventDefault();
       openModal(target.dataset.modal, target.dataset.id);
@@ -6495,6 +6729,19 @@
       });
       return;
     }
+    const postalAddress = e.target.closest("[data-postal-address]");
+    if (postalAddress) {
+      const root = postalAddress.closest("form") || document;
+      const postalInput = root.querySelector("[data-postal-code]");
+      const zip = taiwanPostalCode(postalAddress.value);
+      if (postalInput && zip && !postalInput.value) postalInput.value = zip;
+      updateMailLabelPreview(root);
+      return;
+    }
+    if (e.target.closest("[data-postal-code]")) {
+      updateMailLabelPreview(e.target.closest("form") || document);
+      return;
+    }
     const search = e.target.closest("[data-insurance-vehicle-search]");
     if (!search) return;
     renderVehiclePickerSuggestions(search);
@@ -6522,6 +6769,19 @@
       if (plateInput) plateInput.value = option?.dataset.plate || "";
       const searchInput = vehiclePickerSearch(root);
       if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
+      return;
+    }
+    const mailRecipientSelect = e.target.closest("[data-mail-recipient-select]");
+    if (mailRecipientSelect) {
+      const form = mailRecipientSelect.closest("form");
+      const recipient = (state.data.mail_recipients || []).find((item) => item.id === mailRecipientSelect.value);
+      if (form && recipient) {
+        ["company_name", "contact_name", "honorific", "phone", "postal_code", "address"].forEach((key) => {
+          const inputEl = form.querySelector(`[name="${key}"]`);
+          if (inputEl) inputEl.value = recipient[key] || "";
+        });
+        updateMailLabelPreview(form);
+      }
       return;
     }
     const serviceVendorSelect = e.target.closest('select[name="vendor"]');

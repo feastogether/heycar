@@ -14,7 +14,7 @@ const tables = [
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
-  "login_audit_logs", "key_access_codes"
+  "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -324,6 +324,7 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
     driverHelperArticles: ["messages"],
     loginSlogans: ["messages"],
     driverLinks: ["messages"],
+    mailManagement: ["messages"],
     payments: ["finance"]
   };
   return Boolean((aliases[permission] || []).some((key) => permissions[key]));
@@ -352,7 +353,9 @@ const tablePermission: Record<string, string> = {
   bom_parts: "bom",
   bom_packages: "bom",
   login_audit_logs: "super",
-  key_access_codes: "vehicleLoans"
+  key_access_codes: "vehicleLoans",
+  mail_recipients: "mailManagement",
+  mail_shipments: "mailManagement"
 };
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
