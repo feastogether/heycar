@@ -4467,6 +4467,7 @@
     }
     if (tableName === "vehicle_loans") {
       record.vehicle_id = record.vehicle_id || null;
+      delete record.requested_by_type;
       if ("borrow_at" in record) record.borrow_at = taipeiLocalDateTimeToIso(record.borrow_at);
       if ("return_at" in record) record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
       if ("actual_return_at" in record) record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
@@ -5546,8 +5547,7 @@
 
   function vehicleLoanForm(item) {
     return `<input type="hidden" name="status" value="${escapeHtml(item.status || "pending_approval")}">
-      <input type="hidden" name="requested_by_name" value="${escapeHtml(item.requested_by_name || state.adminProfile?.name || "管理者")}">
-      <input type="hidden" name="requested_by_type" value="${escapeHtml(item.requested_by_type || "admin")}">`
+      <input type="hidden" name="requested_by_name" value="${escapeHtml(item.requested_by_name || state.adminProfile?.name || "管理者")}">`
       + vehiclePlatePicker(item)
       + input("borrow_at", "借車時間", item.borrow_at ? taipeiDateTimeInput(item.borrow_at) : taipeiDateTimeInput(), "datetime-local", true)
       + input("return_at", "預計還車時間", item.return_at ? taipeiDateTimeInput(item.return_at) : "", "datetime-local", true)

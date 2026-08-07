@@ -238,7 +238,19 @@ async function loadAdminData(session: Record<string, unknown>) {
   for (const table of tables) {
     const permission = tablePermission[table];
     if (table === "admin_users" && !session.is_super_admin) {
-      result[table] = [];
+      const canAssignOnboarding = await adminCan(session, "driverOnboarding");
+      const canManageDrivers = await adminCan(session, "drivers");
+      if (canAssignOnboarding || canManageDrivers) {
+        const { data, error } = await db
+          .from("admin_users")
+          .select("id,name,active")
+          .eq("active", true)
+          .order("name", { ascending: true });
+        if (error) throw error;
+        result[table] = data || [];
+      } else {
+        result[table] = [];
+      }
       continue;
     }
     if (table === "login_audit_logs" && !session.is_super_admin) {
