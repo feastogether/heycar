@@ -3302,6 +3302,21 @@
     return key === "new_driver" || Boolean(progress?.[key]);
   }
 
+  function isSatelliteDogDealer(driver = {}) {
+    const dealer = String(driverDealerName(driver) || "");
+    return dealer.includes("亞緻旅行社") || dealer.includes("雅緻旅行社") || dealer.includes("亞緻旅行社有限公");
+  }
+
+  function satelliteDogBadge(driver, progress = onboardingProgress(driver)) {
+    if (!isSatelliteDogDealer(driver)) return "";
+    const notifiedDate = formDate(progress.satellite_dog_notified_at);
+    return `<div class="satellite-dog-badge ${notifiedDate ? "is-done" : ""}" title="衛星犬通知安裝">
+      <span class="satellite-dog-icon" aria-hidden="true">🐶</span>
+      <span>衛星犬</span>
+      <small>${notifiedDate ? escapeHtml(notifiedDate) : "未通知"}</small>
+    </div>`;
+  }
+
   function onboardingIsCompleted(driver) {
     const progress = onboardingProgress(driver);
     return Boolean(progress.completed_at || driver.onboarding_completed_at);
@@ -3338,7 +3353,10 @@
     return `
       <article class="onboarding-row ${onboardingIsCompleted(driver) ? "is-completed" : ""}">
         <div class="onboarding-driver">
-          ${driverPhoto(driver)}
+          <div class="onboarding-photo-block">
+            ${driverPhoto(driver)}
+            ${satelliteDogBadge(driver, progress)}
+          </div>
           <div>
             <strong>${escapeHtml(driver.name || "未命名司機")}</strong>
             <span>${escapeHtml(driver.phone || "-")}</span>
@@ -4397,6 +4415,7 @@
           files_confirmed_at: record.onboarding_files_confirmed_at || "",
           training_at: record.onboarding_training_at || "",
           online_confirmed_at: record.onboarding_online_confirmed_at || "",
+          satellite_dog_notified_at: record.onboarding_satellite_dog_notified_at || "",
           vehicle_confirmed_at: record.onboarding_vehicle_confirmed_at || "",
           vehicle_plate: record.onboarding_vehicle_plate || "",
           delivery_at: record.onboarding_delivery_at || "",
@@ -4411,6 +4430,7 @@
           "onboarding_files_confirmed_at",
           "onboarding_training_at",
           "onboarding_online_confirmed_at",
+          "onboarding_satellite_dog_notified_at",
           "onboarding_vehicle_confirmed_at",
           "onboarding_vehicle_plate",
           "onboarding_delivery_at",
@@ -4602,6 +4622,7 @@
       files_confirmed_at: record.onboarding_files_confirmed_at || "",
       training_at: record.onboarding_training_at || "",
       online_confirmed_at: record.onboarding_online_confirmed_at || "",
+      satellite_dog_notified_at: record.onboarding_satellite_dog_notified_at || "",
       vehicle_confirmed_at: record.onboarding_vehicle_confirmed_at || "",
       vehicle_plate: record.onboarding_vehicle_plate || "",
       delivery_at: record.onboarding_delivery_at || "",
@@ -4968,6 +4989,9 @@
 
   function driverOnboardingForm(driver = {}) {
     const progress = onboardingProgress(driver);
+    const satelliteDogField = isSatelliteDogDealer(driver)
+      ? `<div class="field onboarding-field satellite-dog-form-field"><label>衛星犬</label><input name="onboarding_satellite_dog_notified_at" type="date" value="${escapeHtml(formDate(progress.satellite_dog_notified_at))}"><small>押上日期代表已通知安裝。</small></div>`
+      : "";
     return `<div class="field full onboarding-form-driver">
         ${driverPhoto(driver)}
         <div>
@@ -4978,6 +5002,7 @@
       <div class="field onboarding-field"><label>檔案齊全確認</label><input name="onboarding_files_confirmed_at" type="date" value="${escapeHtml(formDate(progress.files_confirmed_at))}"></div>
       <div class="field onboarding-field"><label>教育訓練</label><input name="onboarding_training_at" type="date" value="${escapeHtml(formDate(progress.training_at))}"></div>
       <div class="field onboarding-field"><label>確認上線時間</label><input name="onboarding_online_confirmed_at" type="date" value="${escapeHtml(formDate(progress.online_confirmed_at))}"></div>
+      ${satelliteDogField}
       <div class="field onboarding-field"><label>配車確認日期</label><input name="onboarding_vehicle_confirmed_at" type="date" value="${escapeHtml(formDate(progress.vehicle_confirmed_at))}"></div>
       <div class="field onboarding-field"><label>配車車號</label><input name="onboarding_vehicle_plate" value="${escapeHtml(progress.vehicle_plate || "")}" placeholder="例如 RFB-9253"></div>
       <div class="field onboarding-field"><label>交車日期</label><input name="onboarding_delivery_at" type="date" value="${escapeHtml(formDate(progress.delivery_at))}"></div>

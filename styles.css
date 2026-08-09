@@ -896,9 +896,44 @@ a { text-decoration: none; }
   gap: 12px;
   min-width: 0;
 }
+.onboarding-photo-block {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 6px;
+  justify-items: center;
+}
 .onboarding-driver .driver-photo-stack { width: 58px; height: 58px; flex: 0 0 auto; }
 .onboarding-driver strong { display: block; color: var(--ink); font-size: 17px; font-weight: 950; }
 .onboarding-driver span { display: block; color: var(--muted); font-size: 12px; font-weight: 750; }
+.satellite-dog-badge {
+  display: grid;
+  width: 76px;
+  justify-items: center;
+  gap: 1px;
+  padding: 5px 6px;
+  border: 1px solid #fde68a;
+  border-radius: 12px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 10px;
+  font-weight: 950;
+  line-height: 1.12;
+  text-align: center;
+}
+.satellite-dog-badge.is-done {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #166534;
+}
+.satellite-dog-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+.satellite-dog-badge small {
+  color: inherit;
+  font-size: 9px;
+  font-weight: 850;
+}
 .onboarding-progress { display: grid; gap: 8px; min-width: 0; }
 .onboarding-progress-head {
   display: flex;
@@ -974,6 +1009,11 @@ a { text-decoration: none; }
 .onboarding-form-driver .driver-photo-stack { width: 64px; height: 64px; flex: 0 0 auto; }
 .onboarding-form-driver strong { display: block; color: var(--ink); font-size: 18px; font-weight: 950; }
 .onboarding-form-driver span { display: block; color: var(--muted); font-size: 13px; font-weight: 750; }
+.satellite-dog-form-field small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 750;
+}
 @media (max-width: 760px) {
   .onboarding-row {
     grid-template-columns: 1fr;
