@@ -3310,11 +3310,11 @@
   function satelliteDogBadge(driver, progress = onboardingProgress(driver)) {
     if (!isSatelliteDogDealer(driver)) return "";
     const notifiedDate = formDate(progress.satellite_dog_notified_at);
-    return `<div class="satellite-dog-badge ${notifiedDate ? "is-done" : ""}" title="衛星犬通知安裝">
+    return `<span class="satellite-dog-badge ${notifiedDate ? "is-done" : ""}" title="衛星犬通知安裝">
       <span class="satellite-dog-icon" aria-hidden="true">🐶</span>
       <span>衛星犬</span>
       <small>${notifiedDate ? escapeHtml(notifiedDate) : "未通知"}</small>
-    </div>`;
+    </span>`;
   }
 
   function onboardingIsCompleted(driver) {
@@ -3353,15 +3353,13 @@
     return `
       <article class="onboarding-row ${onboardingIsCompleted(driver) ? "is-completed" : ""}">
         <div class="onboarding-driver">
-          <div class="onboarding-photo-block">
-            ${driverPhoto(driver)}
-            ${satelliteDogBadge(driver, progress)}
-          </div>
+          ${driverPhoto(driver)}
           <div>
             <strong>${escapeHtml(driver.name || "未命名司機")}</strong>
             <span>${escapeHtml(driver.phone || "-")}</span>
             <span>所屬車商：${escapeHtml(driverDealerName(driver))}</span>
             <span>負責人員：${escapeHtml(responsibleName || "未指定")}</span>
+            ${satelliteDogBadge(driver, progress)}
           </div>
         </div>
         <div class="onboarding-progress">
@@ -4990,7 +4988,7 @@
   function driverOnboardingForm(driver = {}) {
     const progress = onboardingProgress(driver);
     const satelliteDogField = isSatelliteDogDealer(driver)
-      ? `<div class="field onboarding-field satellite-dog-form-field"><label>衛星犬</label><input name="onboarding_satellite_dog_notified_at" type="date" value="${escapeHtml(formDate(progress.satellite_dog_notified_at))}"><small>押上日期代表已通知安裝。</small></div>`
+      ? `<div class="field onboarding-field satellite-dog-form-field"><label>衛星犬</label><input name="onboarding_satellite_dog_notified_at" type="date" value="${escapeHtml(formDate(progress.satellite_dog_notified_at))}"></div>`
       : "";
     return `<div class="field full onboarding-form-driver">
         ${driverPhoto(driver)}
