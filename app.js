@@ -37,6 +37,7 @@
     loanSearch: "",
     loanDateFilter: "",
     onboardingFilter: "active",
+    onboardingDealerFilter: "",
     serviceSearch: "",
     serviceTypeFilter: "",
     serviceMonthFilter: "",
@@ -295,7 +296,8 @@
       insuranceStatusFilter: state.insuranceStatusFilter,
       messageReadFilter: state.messageReadFilter,
       loanStatusFilter: state.loanStatusFilter,
-      onboardingFilter: state.onboardingFilter
+      onboardingFilter: state.onboardingFilter,
+      onboardingDealerFilter: state.onboardingDealerFilter
     };
   }
 
@@ -315,6 +317,7 @@
       if (saved.messageReadFilter) state.messageReadFilter = saved.messageReadFilter;
       if (saved.loanStatusFilter !== undefined) state.loanStatusFilter = saved.loanStatusFilter;
       if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
+      if (saved.onboardingDealerFilter !== undefined) state.onboardingDealerFilter = saved.onboardingDealerFilter;
     } catch {}
   }
 
@@ -3323,8 +3326,12 @@
   }
 
   function adminDriverOnboarding() {
-    const activeDrivers = (state.data.drivers || []).filter((driver) => (driver.driver_status || "待上線") === "待上線" && !onboardingIsCompleted(driver));
-    const completedDrivers = (state.data.drivers || []).filter(onboardingIsCompleted);
+    const dealerFilter = state.onboardingDealerFilter || "";
+    const dealers = dealerPartners();
+    if (dealerFilter && !dealers.some((dealer) => dealer.id === dealerFilter)) state.onboardingDealerFilter = "";
+    const baseDrivers = (state.data.drivers || []).filter((driver) => onboardingMatchesDealer(driver, state.onboardingDealerFilter));
+    const activeDrivers = baseDrivers.filter((driver) => (driver.driver_status || "待上線") === "待上線" && !onboardingIsCompleted(driver));
+    const completedDrivers = baseDrivers.filter(onboardingIsCompleted);
     const showCompleted = state.onboardingFilter === "completed";
     const rows = showCompleted ? completedDrivers : activeDrivers;
     return `
@@ -3337,11 +3344,22 @@
       <div class="compact-filter-bar onboarding-filter-bar">
         <button class="filter-btn ${!showCompleted ? "active" : ""}" data-onboarding-filter="active">進行中 <b>${activeDrivers.length}</b></button>
         <button class="filter-btn ${showCompleted ? "active" : ""}" data-onboarding-filter="completed">已結案 <b>${completedDrivers.length}</b></button>
+        <select class="onboarding-dealer-filter" data-onboarding-dealer-filter aria-label="篩選所屬車商">
+          <option value="">全部車商</option>
+          ${dealers.map((dealer) => `<option value="${escapeHtml(dealer.id)}" ${state.onboardingDealerFilter === dealer.id ? "selected" : ""}>${escapeHtml(dealer.name)}</option>`).join("")}
+        </select>
       </div>
       <div class="onboarding-list">
         ${rows.length ? rows.map(onboardingRow).join("") : `<div class="empty">${showCompleted ? "目前沒有已結案的上線紀錄" : "目前沒有待上線司機"}</div>`}
       </div>
     `;
+  }
+
+  function onboardingMatchesDealer(driver = {}, dealerId = "") {
+    if (!dealerId) return true;
+    if (String(driver.dealer_partner_id || "") === String(dealerId)) return true;
+    const dealer = partnerById(dealerId);
+    return Boolean(dealer?.name && String(driver.fleet_name || "") === String(dealer.name));
   }
 
   function onboardingRow(driver) {
@@ -6852,6 +6870,13 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const onboardingDealerFilter = e.target.closest("[data-onboarding-dealer-filter]");
+    if (onboardingDealerFilter) {
+      state.onboardingDealerFilter = onboardingDealerFilter.value || "";
+      saveViewState();
+      render();
+      return;
+    }
     const richSize = e.target.closest("[data-rich-size]");
     if (richSize) {
       document.execCommand("fontSize", false, richSize.value || "3");

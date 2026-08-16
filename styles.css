@@ -876,7 +876,19 @@ a { text-decoration: none; }
   line-height: 1.65;
   white-space: pre-line;
 }
-.onboarding-filter-bar { margin-bottom: 14px; }
+.onboarding-filter-bar { align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.onboarding-dealer-filter {
+  min-height: 34px;
+  min-width: 220px;
+  max-width: min(360px, 100%);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+}
 .onboarding-list { display: grid; gap: 12px; }
 .onboarding-row {
   display: grid;
