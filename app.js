@@ -2029,7 +2029,14 @@
       return `${header}${content}`;
     }
     return `
-      <div class="section-head"><h2>共同行事曆</h2><button class="primary-btn" data-modal="calendarEvent">新增行程</button></div>
+      <div class="section-head calendar-admin-head">
+        <h2>共同行事曆</h2>
+        <div class="calendar-admin-actions">
+          <input type="file" accept=".xlsx,.xls" data-maintenance-excel-import hidden>
+          <button class="ghost-btn" type="button" data-action="pick-maintenance-excel">匯入保養排程</button>
+          <button class="primary-btn" data-modal="calendarEvent">新增行程</button>
+        </div>
+      </div>
       ${content}
       ${table(["日期", "時間", "類型", "車商", "車牌", "指定駕駛", "保養廠", "內容", "操作"], calendarMonthItems(true).map((item) => [
         fmtDate(item.event_date), item.event_time || "-", calendarTypeName(item.event_type), item.fleet_name || "", item.plate_no || "",
@@ -5872,9 +5879,180 @@
     return insuranceRequestSummary(item) + (needPolicy ? insuranceDocumentField(item, "document_policy", "\u88dc\u767c\u4fdd\u55ae", true) : "") + (needReceipt ? insuranceDocumentField(item, "document_receipt", "\u88dc\u767c\u6536\u64da", true) : "") + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="document_received">`;
   }
 
+  function normalizePlateKey(value) {
+    return String(value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  function findVehicleByPlate(value) {
+    const key = normalizePlateKey(value);
+    if (!key) return null;
+    return (state.data.vehicles || []).find((vehicle) => normalizePlateKey(vehicle.plate_no) === key) || null;
+  }
+
+  function findDriverForMaintenanceImport(vehicle, row = {}) {
+    const activeDriver = vehicleDrivers(vehicle)[0];
+    if (activeDriver) return activeDriver;
+    const rowDriver = String(row.driver_name || "").trim();
+    if (rowDriver) {
+      return (state.data.drivers || []).find((driver) => driver.name === rowDriver || String(driver.name || "").includes(rowDriver) || rowDriver.includes(driver.name)) || null;
+    }
+    if (vehicle?.current_driver_id) return (state.data.drivers || []).find((driver) => driver.id === vehicle.current_driver_id) || null;
+    return null;
+  }
+
+  function maintenanceImportHeaderKey(value) {
+    const text = String(value || "").replace(/\s+/g, "").trim();
+    const aliases = {
+      plate_no: ["車牌", "車號", "牌照", "車牌號碼"],
+      driver_name: ["司機", "駕駛", "使用人", "指定駕駛"],
+      service_type: ["服務類型", "類型", "分類", "項目"],
+      service_level: ["保養等級", "保養級別", "等級", "維修項目"],
+      event_date: ["日期", "保養日期", "維修日期", "排程日期", "預約日期"],
+      vendor: ["保養廠", "維修廠", "保修廠", "廠商"],
+      mileage_text: ["k數", "公里數", "里程", "目前里程", "保養里程"],
+      status_text: ["狀態", "安排狀態", "備註"]
+    };
+    for (const [key, names] of Object.entries(aliases)) {
+      if (names.some((name) => text === name || text.includes(name))) return key;
+    }
+    return text || "";
+  }
+
+  function parseTaiwanLikeDate(value) {
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return localDateValue(value);
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const match = raw.match(/(\d{2,4})\D+(\d{1,2})\D+(\d{1,2})/);
+    if (!match) return "";
+    let year = Number(match[1]);
+    if (year > 0 && year < 1911) year += 1911;
+    const month = String(Number(match[2])).padStart(2, "0");
+    const day = String(Number(match[3])).padStart(2, "0");
+    if (!year || month === "00" || day === "00") return "";
+    return `${year}-${month}-${day}`;
+  }
+
+  function calendarEventImportSignature(item = {}) {
+    return [
+      formDate(item.event_date),
+      normalizePlateKey(item.plate_no),
+      item.event_type || "maintenance",
+      normalizedText(item.vendor),
+      normalizedText(item.content)
+    ].join("|");
+  }
+
+  function parseMaintenanceWorkbook(arrayBuffer) {
+    if (!window.XLSX) throw new Error("Excel 解析套件尚未載入，請重新整理後再試一次。");
+    const workbook = window.XLSX.read(arrayBuffer, { type: "array", cellDates: true });
+    const parsed = [];
+    for (const sheetName of workbook.SheetNames || []) {
+      const sheet = workbook.Sheets[sheetName];
+      const rows = window.XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: "" });
+      const headerIndex = rows.findIndex((row) => {
+        const keys = row.map(maintenanceImportHeaderKey);
+        return keys.includes("plate_no") && keys.includes("event_date");
+      });
+      if (headerIndex < 0) continue;
+      const headers = rows[headerIndex].map(maintenanceImportHeaderKey);
+      rows.slice(headerIndex + 1).forEach((row, index) => {
+        const item = { sheet_name: sheetName, row_number: headerIndex + index + 2 };
+        headers.forEach((key, columnIndex) => {
+          if (key) item[key] = row[columnIndex];
+        });
+        item.plate_no = String(item.plate_no || "").trim();
+        item.event_date = parseTaiwanLikeDate(item.event_date);
+        item.service_type = String(item.service_type || "保養").trim();
+        item.service_level = String(item.service_level || "").trim();
+        item.vendor = String(item.vendor || "").trim();
+        item.mileage_text = String(item.mileage_text || "").trim();
+        item.status_text = String(item.status_text || "").trim();
+        item.driver_name = String(item.driver_name || "").trim();
+        if (item.plate_no && item.event_date) parsed.push(item);
+      });
+    }
+    return parsed;
+  }
+
+  function maintenanceImportEventType(row) {
+    const textValue = `${row.service_type || ""} ${row.service_level || ""}`;
+    if (/調胎|輪胎/.test(textValue)) return "tires";
+    if (/維修|修繕|故障/.test(textValue)) return "repair";
+    return "maintenance";
+  }
+
+  function maintenanceImportContent(row, vehicle) {
+    return [
+      `來源：Excel 保養排程`,
+      row.service_level ? `保養等級：${row.service_level}` : "",
+      row.mileage_text ? `k數／里程：${row.mileage_text}` : "",
+      row.status_text ? `排程狀態：${row.status_text}` : "",
+      vehicle?.model ? `車款：${vehicle.model}` : ""
+    ].filter(Boolean).join("\n");
+  }
+
+  async function importMaintenanceScheduleFile(file) {
+    if (!file) return;
+    const result = {
+      total: 0,
+      created: 0,
+      skipped: 0,
+      unknownPlates: [],
+      missingDrivers: [],
+      invalidRows: []
+    };
+    await withAppLoading("正在匯入保養排程", async () => {
+      const rows = parseMaintenanceWorkbook(await file.arrayBuffer());
+      result.total = rows.length;
+      if (!rows.length) throw new Error("Excel 中找不到可匯入的保養排程，請確認表頭包含車牌與日期。");
+      const existingSignatures = new Set((state.data.calendar_events || []).map(calendarEventImportSignature));
+      for (const row of rows) {
+        const vehicle = findVehicleByPlate(row.plate_no);
+        if (!vehicle) {
+          result.unknownPlates.push(row.plate_no);
+          continue;
+        }
+        const driver = findDriverForMaintenanceImport(vehicle, row);
+        if (!driver) result.missingDrivers.push(vehicle.plate_no);
+        const eventType = maintenanceImportEventType(row);
+        const content = maintenanceImportContent(row, vehicle);
+        const record = {
+          event_date: row.event_date,
+          event_time: null,
+          event_type: eventType,
+          fleet_name: partnerName(vehicle.dealer_partner_id) || vehicle.fleet_name || "全部車商",
+          plate_no: vehicle.plate_no,
+          vehicle_id: vehicle.id,
+          driver_id: driver?.id || null,
+          vendor: row.vendor || "",
+          content
+        };
+        const signature = calendarEventImportSignature(record);
+        if (existingSignatures.has(signature)) {
+          result.skipped += 1;
+          continue;
+        }
+        const saved = await insert("calendar_events", normalizeRecord("calendar_events", record));
+        existingSignatures.add(signature);
+        await syncCalendarNotification(saved);
+        result.created += 1;
+      }
+      await loadAll();
+    });
+    const lines = [
+      `解析 ${result.total} 筆，新增 ${result.created} 筆，略過重複 ${result.skipped} 筆。`,
+      result.unknownPlates.length ? `找不到車輛：${[...new Set(result.unknownPlates)].join("、")}` : "",
+      result.missingDrivers.length ? `未對應到目前駕駛：${[...new Set(result.missingDrivers)].join("、")}（仍已建立日曆行程）` : ""
+    ].filter(Boolean);
+    await showAlert(lines.join("\n"), "保養排程匯入完成");
+    render();
+  }
+
   async function syncCalendarNotification(item) {
     if (!["maintenance", "repair", "tires"].includes(item.event_type) || !item.driver_id) return;
-    const vehicle = state.data.vehicles.find((row) => String(row.plate_no).toUpperCase() === String(item.plate_no).toUpperCase());
+    const vehicle = item.vehicle_id
+      ? state.data.vehicles.find((row) => row.id === item.vehicle_id)
+      : findVehicleByPlate(item.plate_no);
     const patch = {
       driver_id: item.driver_id,
       vehicle_id: vehicle?.id || null,
@@ -6246,6 +6424,10 @@
         await update("mail_shipments", item.id, { printed_at: now() });
         render();
       }
+      return;
+    }
+    if (target?.dataset.action === "pick-maintenance-excel") {
+      document.querySelector("[data-maintenance-excel-import]")?.click();
       return;
     }
     if (target?.dataset.modal) {
@@ -6870,6 +7052,17 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const maintenanceExcelInput = e.target.closest("[data-maintenance-excel-import]");
+    if (maintenanceExcelInput?.files?.[0]) {
+      try {
+        await importMaintenanceScheduleFile(maintenanceExcelInput.files[0]);
+      } catch (error) {
+        await showAlert(error.message || error, "匯入失敗");
+      } finally {
+        maintenanceExcelInput.value = "";
+      }
+      return;
+    }
     const onboardingDealerFilter = e.target.closest("[data-onboarding-dealer-filter]");
     if (onboardingDealerFilter) {
       state.onboardingDealerFilter = onboardingDealerFilter.value || "";
