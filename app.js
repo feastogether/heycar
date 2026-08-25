@@ -504,6 +504,18 @@
       hero_title: "成為專業禮賓司機",
       hero_summary: "我們正在尋找重視服務細節、駕駛安全與準時承諾的夥伴，一起完成每一趟高品質接送。",
       content_html: "<h3>工作內容</h3><p>提供機場接送、商務接送與旅客禮賓服務，維持車輛整潔，並依照派車流程完成每趟任務。</p><h3>我們重視</h3><ul><li>安全駕駛與守時</li><li>良好的溝通與服務態度</li><li>願意配合教育訓練與車隊規範</li></ul><h3>適合的人</h3><p>有職業駕照、熟悉機場接送或願意學習高規格服務流程者，歡迎留下資料，我們會盡快與你聯繫。</p>",
+      about_title: "關於我們",
+      about_html: "<p>Hey!car 亞菲得租車專注於機場接送、商務接待與高品質禮賓服務。我們重視準時、安全、整潔與溝通，讓每一趟旅程都能被妥善安排。</p>",
+      salary_title: "薪資方案",
+      salary_html: "<p>依照趟次、服務型態與排班合作方式計算收入。適合想穩定接案、重視長期合作，也願意一起提升服務品質的司機夥伴。</p><ul><li>機場接送與商務接送趟次</li><li>依車型與任務內容安排派遣</li><li>透明紀錄與後台管理</li></ul>",
+      rental_title: "車輛承租",
+      rental_html: "<p>若已有合適車輛，可依車隊標準與服務需求進行合作；若需承租車輛，也可由車隊協助媒合合適車源與使用方式。</p>",
+      lease_title: "車輛租購",
+      lease_html: "<p>想長期投入禮賓接送服務的夥伴，可洽詢租購方案，依個人規劃與車款需求評估適合的合作方式。</p>",
+      stories_title: "司機分享",
+      stories_html: "<p>我們希望每位司機都不只是開車，而是旅客抵達台灣後第一個安心的接觸點。好的服務來自細節，也來自穩定的團隊支持。</p>",
+      apply_title: "立即應徵",
+      apply_summary: "留下基本資料後，招募窗口會依可接聽時間與你聯繫。",
       apply_button_text: "立即應徵"
     };
   }
@@ -525,9 +537,20 @@
 
   function renderHiringPage() {
     const page = activeHiringPage();
+    const sections = [
+      ["about", page.about_title || "關於我們", page.about_html || page.content_html || defaultHiringPage().about_html],
+      ["salary", page.salary_title || "薪資方案", page.salary_html || defaultHiringPage().salary_html],
+      ["rental", page.rental_title || "車輛承租", page.rental_html || defaultHiringPage().rental_html],
+      ["lease", page.lease_title || "車輛租購", page.lease_html || defaultHiringPage().lease_html],
+      ["stories", page.stories_title || "司機分享", page.stories_html || defaultHiringPage().stories_html]
+    ];
     app.innerHTML = `<main class="hiring-page">
       <header class="hiring-topbar">
-        <a class="hiring-logo" href="/"><img src="${escapeHtml(logoUrl)}" alt="Heycar 亞菲得"><span>${escapeHtml(page.subtitle || "Hey!car 亞菲得租車")}</span></a>
+        <div class="hiring-logo"><img src="${escapeHtml(logoUrl)}" alt="Heycar 亞菲得"><span>${escapeHtml(page.subtitle || "Hey!car 亞菲得租車")}</span></div>
+        <nav class="hiring-flow-nav">
+          ${sections.map(([key, title]) => `<a href="#${key}">${escapeHtml(title)}</a>`).join("")}
+          <a href="#apply">${escapeHtml(page.apply_title || "立即應徵")}</a>
+        </nav>
       </header>
       <section class="hiring-hero">
         <div class="hiring-hero-copy">
@@ -537,17 +560,25 @@
           <a class="primary-btn hiring-cta" href="#apply">${escapeHtml(page.apply_button_text || "立即應徵")}</a>
         </div>
       </section>
-      <section class="hiring-content-wrap">
-        <article class="hiring-article">${sanitizeRichHtml(page.content_html || defaultHiringPage().content_html)}</article>
-        <aside class="hiring-apply-card" id="apply">
-          <h2>立即應徵</h2>
-          <p>留下基本資料後，招募窗口會依可接聽時間與你聯繫。</p>
+      <section class="hiring-flow">
+        ${sections.map(([key, title, html], index) => `<article class="hiring-flow-section ${index % 2 ? "is-alt" : ""}" id="${key}">
+          <div class="hiring-section-index">${String(index + 1).padStart(2, "0")}</div>
+          <div class="hiring-section-copy">
+            <h2>${escapeHtml(title)}</h2>
+            <div class="hiring-article">${sanitizeRichHtml(html)}</div>
+          </div>
+        </article>`).join("")}
+      </section>
+      <section class="hiring-content-wrap" id="apply">
+        <aside class="hiring-apply-card">
+          <h2>${escapeHtml(page.apply_title || "立即應徵")}</h2>
+          <p>${escapeHtml(page.apply_summary || defaultHiringPage().apply_summary)}</p>
           <form id="hiringApplicationForm" class="hiring-form">
             <label>姓名<input name="name" required autocomplete="name" placeholder="請輸入姓名"></label>
             <label>電話<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="請輸入聯絡電話"></label>
             <label>居住縣市<input name="city" placeholder="例如 台北市"></label>
             <label>是否有職業駕照<select name="has_professional_license"><option value="有">有</option><option value="無">無</option></select></label>
-            <label>可接聽電話時間<input name="available_call_time" placeholder="例如 平日 14:00-18:00"></label>
+            <label>可接聽電話時間<select name="available_call_time"><option value="早上">早上</option><option value="中午">中午</option><option value="晚上">晚上</option><option value="皆可">皆可</option></select></label>
             <label>是否曾經跑過機場接送<select name="airport_transfer_experience"><option value="有">有</option><option value="無">無</option></select></label>
             <button class="primary-btn" type="submit">送出問卷</button>
             <small data-hiring-submit-status></small>
@@ -4604,6 +4635,10 @@
       record.subtitle = String(record.subtitle || "Hey!car 亞菲得租車").trim();
       record.hero_title = String(record.hero_title || "成為專業禮賓司機").trim();
       record.apply_button_text = String(record.apply_button_text || "立即應徵").trim();
+      ["about_title", "salary_title", "rental_title", "lease_title", "stories_title", "apply_title"].forEach((key) => {
+        record[key] = String(record[key] || defaultHiringPage()[key] || "").trim();
+      });
+      record.apply_summary = String(record.apply_summary || defaultHiringPage().apply_summary).trim();
     }
     if (tableName === "hiring_applications") {
       record.notification_status = record.notification_status || "unnotified";
@@ -5336,10 +5371,11 @@
     }
   }
 
-  function helperRichEditor(item, label = "\u6587\u7ae0\u5167\u5bb9", imageLabel = "\u53f8\u6a5f\u5e6b\u624b") {
+  function helperRichEditor(item, label = "\u6587\u7ae0\u5167\u5bb9", imageLabel = "\u53f8\u6a5f\u5e6b\u624b", fieldName = "content_html") {
+    const value = item[fieldName] || "";
     return `<div class="field full rich-editor-field">
       <label>${escapeHtml(label)}</label>
-      <input type="hidden" name="content_html" value="${escapeHtml(item.content_html || "")}" data-rich-editor-input>
+      <input type="hidden" name="${escapeHtml(fieldName)}" value="${escapeHtml(value)}" data-rich-editor-input>
       <div class="rich-toolbar">
         <button type="button" data-rich-command="bold">B</button>
         <button type="button" data-rich-command="italic">I</button>
@@ -5350,7 +5386,7 @@
         <button type="button" data-rich-image-pick>\u4e0a\u50b3\u5716\u7247</button>
         <input type="file" accept="image/*" data-rich-image-upload data-rich-image-label="${escapeHtml(imageLabel)}" hidden>
       </div>
-      <div class="rich-editor" contenteditable="true" data-rich-editor>${sanitizeRichHtml(item.content_html || "")}</div>
+      <div class="rich-editor" contenteditable="true" data-rich-editor>${sanitizeRichHtml(value)}</div>
     </div>`;
   }
 
@@ -5396,7 +5432,19 @@
       + input("apply_button_text", "應徵按鈕文字", page.apply_button_text || "立即應徵")
       + input("sort_order", "排序", page.sort_order || 0, "number")
       + checkbox("active", "啟用招募頁", page.active !== false)
-      + helperRichEditor(page, "招募頁內容", "招募頁");
+      + `<div class="form-section-title field full">流水頁段落</div>`
+      + input("about_title", "關於我們標題", page.about_title)
+      + helperRichEditor(page, "關於我們內容", "招募頁", "about_html")
+      + input("salary_title", "薪資方案標題", page.salary_title)
+      + helperRichEditor(page, "薪資方案內容", "招募頁", "salary_html")
+      + input("rental_title", "車輛承租標題", page.rental_title)
+      + helperRichEditor(page, "車輛承租內容", "招募頁", "rental_html")
+      + input("lease_title", "車輛租購標題", page.lease_title)
+      + helperRichEditor(page, "車輛租購內容", "招募頁", "lease_html")
+      + input("stories_title", "司機分享標題", page.stories_title)
+      + helperRichEditor(page, "司機分享內容", "招募頁", "stories_html")
+      + input("apply_title", "應徵區標題", page.apply_title)
+      + text("apply_summary", "應徵區說明", page.apply_summary);
   }
   function driverForm(d) {
     const assignedVehicles = (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d));

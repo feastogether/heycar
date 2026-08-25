@@ -751,7 +751,7 @@ Deno.serve(async (req) => {
           phone,
           city: compactText(record.city).slice(0, 80),
           has_professional_license: normalizeChoice(record.has_professional_license),
-          available_call_time: compactText(record.available_call_time).slice(0, 120),
+          available_call_time: ["早上", "中午", "晚上", "皆可"].includes(compactText(record.available_call_time)) ? compactText(record.available_call_time) : "皆可",
           airport_transfer_experience: normalizeChoice(record.airport_transfer_experience),
           notification_status: "unnotified",
           notes: compactText(record.notes).slice(0, 500)

@@ -1072,6 +1072,10 @@ a { text-decoration: none; }
   background: rgba(255, 255, 255, .78);
   border-bottom: 1px solid rgba(226, 232, 240, .8);
   backdrop-filter: blur(16px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
 }
 
 .hiring-logo {
@@ -1095,6 +1099,37 @@ a { text-decoration: none; }
   color: var(--muted);
   font-size: 14px;
   font-weight: 850;
+}
+
+.hiring-flow-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.hiring-flow-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.hiring-flow-nav a {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border: 1px solid rgba(226, 232, 240, .9);
+  border-radius: 999px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .72);
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+  transition: transform .2s ease, border-color .2s ease, background .2s ease;
+}
+
+.hiring-flow-nav a:hover {
+  transform: translateY(-1px);
+  border-color: rgba(201, 139, 44, .55);
+  background: #fff;
 }
 
 .hiring-hero {
@@ -1142,14 +1177,61 @@ a { text-decoration: none; }
   text-decoration: none;
 }
 
+.hiring-flow {
+  scroll-behavior: smooth;
+}
+
+.hiring-flow-section {
+  width: min(1180px, calc(100% - 40px));
+  min-height: 420px;
+  margin: 0 auto;
+  padding: clamp(44px, 8vw, 92px) 0;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: clamp(22px, 5vw, 70px);
+  align-items: center;
+  border-bottom: 1px solid rgba(226, 232, 240, .82);
+}
+
+.hiring-flow-section.is-alt {
+  grid-template-columns: minmax(0, 1fr) 120px;
+}
+
+.hiring-flow-section.is-alt .hiring-section-index {
+  order: 2;
+}
+
+.hiring-flow-section.is-alt .hiring-section-copy {
+  order: 1;
+}
+
+.hiring-section-index {
+  width: 96px;
+  height: 96px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(201, 139, 44, .38);
+  border-radius: 24px;
+  color: #9a6b22;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .95), rgba(253, 246, 232, .96));
+  font-size: 28px;
+  font-weight: 950;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, .06);
+}
+
+.hiring-section-copy h2 {
+  margin: 0 0 18px;
+  font-size: clamp(30px, 4vw, 48px);
+  line-height: 1.12;
+  font-weight: 950;
+}
+
 .hiring-content-wrap {
   width: min(1180px, calc(100% - 40px));
-  margin: -46px auto 0;
+  margin: 0 auto;
   padding-bottom: 72px;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  gap: 24px;
-  align-items: start;
+  place-items: center;
 }
 
 .hiring-article,
@@ -1166,6 +1248,7 @@ a { text-decoration: none; }
   line-height: 1.85;
   font-size: 16px;
   font-weight: 700;
+  animation: hiringFadeUp .7s ease both;
 }
 
 .hiring-article h3 {
@@ -1185,9 +1268,8 @@ a { text-decoration: none; }
 }
 
 .hiring-apply-card {
-  position: sticky;
-  top: 92px;
-  padding: 24px;
+  width: min(720px, 100%);
+  padding: clamp(24px, 5vw, 44px);
 }
 
 .hiring-apply-card h2 {
@@ -1205,6 +1287,7 @@ a { text-decoration: none; }
 
 .hiring-form {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1230,9 +1313,25 @@ a { text-decoration: none; }
 }
 
 .hiring-form small {
+  grid-column: 1 / -1;
   min-height: 18px;
   color: var(--brand);
   font-weight: 850;
+}
+
+.hiring-form button {
+  grid-column: 1 / -1;
+}
+
+@keyframes hiringFadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .hiring-admin-summary {
@@ -1279,21 +1378,46 @@ a { text-decoration: none; }
 }
 
 @media (max-width: 860px) {
+  .hiring-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
   .hiring-logo img { width: 116px; }
   .hiring-logo span { display: none; }
+  .hiring-flow-nav {
+    width: 100%;
+  }
   .hiring-hero {
     min-height: 460px;
     padding: 64px 20px 88px;
     background-position: center;
   }
-  .hiring-content-wrap {
+  .hiring-flow-section,
+  .hiring-flow-section.is-alt {
+    min-height: auto;
     grid-template-columns: 1fr;
     width: min(100% - 28px, 620px);
-    margin-top: -54px;
+    padding: 46px 0;
+  }
+  .hiring-flow-section.is-alt .hiring-section-index,
+  .hiring-flow-section.is-alt .hiring-section-copy {
+    order: initial;
+  }
+  .hiring-section-index {
+    width: 70px;
+    height: 70px;
+    border-radius: 18px;
+    font-size: 22px;
+  }
+  .hiring-content-wrap {
+    width: min(100% - 28px, 620px);
+    padding-top: 24px;
   }
   .hiring-apply-card {
-    position: static;
-    order: -1;
+    padding: 22px;
+  }
+  .hiring-form {
+    grid-template-columns: 1fr;
   }
   .hiring-admin-summary {
     grid-template-columns: 1fr;
