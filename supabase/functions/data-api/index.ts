@@ -14,7 +14,8 @@ const tables = [
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
-  "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments"
+  "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
+  "hiring_pages", "hiring_applications"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -334,6 +335,7 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
     marquee: ["messages"],
     emergencyEvents: ["messages"],
     driverHelperArticles: ["messages"],
+    hiringManagement: ["drivers"],
     loginSlogans: ["messages"],
     driverLinks: ["messages"],
     mailManagement: ["messages"],
@@ -367,7 +369,9 @@ const tablePermission: Record<string, string> = {
   login_audit_logs: "super",
   key_access_codes: "vehicleLoans",
   mail_recipients: "mailManagement",
-  mail_shipments: "mailManagement"
+  mail_shipments: "mailManagement",
+  hiring_pages: "hiringManagement",
+  hiring_applications: "hiringManagement"
 };
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
@@ -721,6 +725,41 @@ Deno.serve(async (req) => {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return json({ login_slogans: data || [] });
+    }
+    if (body.action === "public_hiring_page") {
+      const { data, error } = await db
+        .from("hiring_pages")
+        .select("*")
+        .eq("active", true)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return json({ hiring_page: data || null });
+    }
+    if (body.action === "submit_hiring_application") {
+      const record = body.record || {};
+      const name = compactText(record.name).slice(0, 80);
+      const phone = compactText(record.phone).replace(/[^\d+()-]/g, "").slice(0, 30);
+      if (!name || !phone) return json({ error: "HIRING_REQUIRED_FIELDS" }, 400);
+      const normalizeChoice = (value: unknown) => ["有", "無"].includes(compactText(value)) ? compactText(value) : "未填寫";
+      const { data, error } = await db
+        .from("hiring_applications")
+        .insert({
+          name,
+          phone,
+          city: compactText(record.city).slice(0, 80),
+          has_professional_license: normalizeChoice(record.has_professional_license),
+          available_call_time: compactText(record.available_call_time).slice(0, 120),
+          airport_transfer_experience: normalizeChoice(record.airport_transfer_experience),
+          notification_status: "unnotified",
+          notes: compactText(record.notes).slice(0, 500)
+        })
+        .select("id,created_at")
+        .single();
+      if (error) throw error;
+      return json({ application: data });
     }
 
     const session = await getSession(req);

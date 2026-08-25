@@ -55,6 +55,7 @@
     storageFolderFilter: "",
     loginHistoryFilter: "",
     mailTab: "addresses",
+    hiringApplicationFilter: "unnotified",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${today().slice(0, 7)}-01`,
@@ -114,7 +115,9 @@
     "login_audit_logs",
     "key_access_codes",
     "mail_recipients",
-    "mail_shipments"
+    "mail_shipments",
+    "hiring_pages",
+    "hiring_applications"
   ];
 
   const insuranceStatuses = [
@@ -223,7 +226,20 @@
     login_audit_logs: [],
     key_access_codes: [],
     mail_recipients: [],
-    mail_shipments: []
+    mail_shipments: [],
+    hiring_pages: [{
+      id: uid(),
+      slug: "main",
+      title: "禮賓司機招募",
+      subtitle: "Hey!car 亞菲得租車",
+      hero_title: "成為專業禮賓司機",
+      hero_summary: "我們正在尋找重視服務細節、駕駛安全與準時承諾的夥伴，一起完成每一趟高品質接送。",
+      content_html: "<h3>工作內容</h3><p>提供機場接送、商務接送與旅客禮賓服務，維持車輛整潔，並依照派車流程完成每趟任務。</p><h3>我們重視</h3><ul><li>安全駕駛與守時</li><li>良好的溝通與服務態度</li><li>願意配合教育訓練與車隊規範</li></ul><h3>適合的人</h3><p>有職業駕照、熟悉機場接送或願意學習高規格服務流程者，歡迎留下資料，我們會盡快與你聯繫。</p>",
+      apply_button_text: "立即應徵",
+      active: true,
+      sort_order: 0
+    }],
+    hiring_applications: []
   };
 
   function uid() {
@@ -475,6 +491,70 @@
       .slice(0, 3);
     if (!slogans.length) return "";
     return `<div class="login-slogans">${slogans.map((item) => `<span>${escapeHtml(item.message)}</span>`).join("")}</div>`;
+  }
+
+  function isHiringPath() {
+    return location.pathname.replace(/\/+$/, "") === "/hiring";
+  }
+
+  function defaultHiringPage() {
+    return {
+      title: "禮賓司機招募",
+      subtitle: "Hey!car 亞菲得租車",
+      hero_title: "成為專業禮賓司機",
+      hero_summary: "我們正在尋找重視服務細節、駕駛安全與準時承諾的夥伴，一起完成每一趟高品質接送。",
+      content_html: "<h3>工作內容</h3><p>提供機場接送、商務接送與旅客禮賓服務，維持車輛整潔，並依照派車流程完成每趟任務。</p><h3>我們重視</h3><ul><li>安全駕駛與守時</li><li>良好的溝通與服務態度</li><li>願意配合教育訓練與車隊規範</li></ul><h3>適合的人</h3><p>有職業駕照、熟悉機場接送或願意學習高規格服務流程者，歡迎留下資料，我們會盡快與你聯繫。</p>",
+      apply_button_text: "立即應徵"
+    };
+  }
+
+  async function loadPublicHiringPage() {
+    state.data = state.data && Object.keys(state.data).length ? state.data : emptyData();
+    if (!hasApi) return;
+    try {
+      const result = await apiRequest("public_hiring_page");
+      state.data.hiring_pages = result.hiring_page ? [result.hiring_page] : [];
+    } catch (error) {
+      console.warn("Hiring page unavailable", error);
+    }
+  }
+
+  function activeHiringPage() {
+    return (state.data.hiring_pages || []).find((item) => item.active !== false) || defaultHiringPage();
+  }
+
+  function renderHiringPage() {
+    const page = activeHiringPage();
+    app.innerHTML = `<main class="hiring-page">
+      <header class="hiring-topbar">
+        <a class="hiring-logo" href="/"><img src="${escapeHtml(logoUrl)}" alt="Heycar 亞菲得"><span>${escapeHtml(page.subtitle || "Hey!car 亞菲得租車")}</span></a>
+      </header>
+      <section class="hiring-hero">
+        <div class="hiring-hero-copy">
+          <p>${escapeHtml(page.title || "禮賓司機招募")}</p>
+          <h1>${escapeHtml(page.hero_title || "成為專業禮賓司機")}</h1>
+          <span>${escapeHtml(page.hero_summary || "")}</span>
+          <a class="primary-btn hiring-cta" href="#apply">${escapeHtml(page.apply_button_text || "立即應徵")}</a>
+        </div>
+      </section>
+      <section class="hiring-content-wrap">
+        <article class="hiring-article">${sanitizeRichHtml(page.content_html || defaultHiringPage().content_html)}</article>
+        <aside class="hiring-apply-card" id="apply">
+          <h2>立即應徵</h2>
+          <p>留下基本資料後，招募窗口會依可接聽時間與你聯繫。</p>
+          <form id="hiringApplicationForm" class="hiring-form">
+            <label>姓名<input name="name" required autocomplete="name" placeholder="請輸入姓名"></label>
+            <label>電話<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="請輸入聯絡電話"></label>
+            <label>居住縣市<input name="city" placeholder="例如 台北市"></label>
+            <label>是否有職業駕照<select name="has_professional_license"><option value="有">有</option><option value="無">無</option></select></label>
+            <label>可接聽電話時間<input name="available_call_time" placeholder="例如 平日 14:00-18:00"></label>
+            <label>是否曾經跑過機場接送<select name="airport_transfer_experience"><option value="有">有</option><option value="無">無</option></select></label>
+            <button class="primary-btn" type="submit">送出問卷</button>
+            <small data-hiring-submit-status></small>
+          </form>
+        </aside>
+      </section>
+    </main>`;
   }
 
 
@@ -1210,6 +1290,10 @@
   }
 
   function render() {
+    if (isHiringPath()) {
+      renderHiringPage();
+      return;
+    }
     if (!state.user && !state.admin && !state.partner) {
       renderLogin();
       return;
@@ -2834,7 +2918,8 @@
       loginSlogans: ["messages"],
       driverLinks: ["messages"],
       payments: ["finance"],
-      mailManagement: ["messages"]
+      mailManagement: ["messages"],
+      hiringManagement: ["drivers"]
     };
     return Boolean((aliases[permission] || []).some((key) => permissions[key]));
   }
@@ -2864,12 +2949,13 @@
     loginHistory: "登入紀錄",
     bom: "BOM表",
     vehicleTypes: "車種管理",
-    mailManagement: "寄信管理"
+    mailManagement: "寄信管理",
+    hiringManagement: "招募管理"
   };
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage"]]
@@ -2904,6 +2990,7 @@
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
       ["driverEvaluations", "評核表單", "📝", "driverEvaluations"],
+      ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
@@ -2935,6 +3022,7 @@
       drivers: adminDrivers,
       driverOnboarding: adminDriverOnboarding,
       driverEvaluations: adminDriverEvaluations,
+      hiringManagement: adminHiringManagement,
       vehicleTypes: adminVehicleTypes,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
@@ -4290,6 +4378,7 @@
       driverLink: ["連結", "driver_links", driverLinkForm],
       mailRecipient: ["地址", "mail_recipients", mailRecipientForm],
       mailShipment: ["寄件紀錄", "mail_shipments", mailShipmentForm],
+      hiringPage: ["招募頁", "hiring_pages", hiringPageForm],
       driverHelperArticle: ["\u53f8\u6a5f\u5e6b\u624b", "driver_helper_articles", driverHelperArticleForm],
       loginSlogan: ["\u6a19\u8a9e", "login_slogans", loginSloganForm],
       insurancePartner: ["合作單位", "insurance_partners", insurancePartnerForm],
@@ -4506,6 +4595,19 @@
     if (tableName === "driver_helper_articles") {
       record.active = record.active === "true";
       record.sort_order = Number(record.sort_order || 0);
+    }
+    if (tableName === "hiring_pages") {
+      record.slug = String(record.slug || "main").trim() || "main";
+      record.active = record.active === "true";
+      record.sort_order = Number(record.sort_order || 0);
+      record.title = String(record.title || "禮賓司機招募").trim();
+      record.subtitle = String(record.subtitle || "Hey!car 亞菲得租車").trim();
+      record.hero_title = String(record.hero_title || "成為專業禮賓司機").trim();
+      record.apply_button_text = String(record.apply_button_text || "立即應徵").trim();
+    }
+    if (tableName === "hiring_applications") {
+      record.notification_status = record.notification_status || "unnotified";
+      record.notified_at = record.notification_status === "notified" ? (record.notified_at || now()) : null;
     }
     if (tableName === "admin_users") {
       record.active = record.active === "true";
@@ -4936,6 +5038,43 @@
     return `<div class="section-head"><div><h2>\u53f8\u6a5f\u5e6b\u624b</h2><small>\u5efa\u7acb\u6559\u5b78\u5206\u985e\u8207\u6587\u7ae0\uff0c\u53f8\u6a5f\u524d\u53f0\u53ef\u76f4\u63a5\u67e5\u770b\u3002</small></div><button class="primary-btn" data-modal="driverHelperArticle">\u65b0\u589e\u6587\u7ae0</button></div>
       ${table(["\u5206\u985e", "\u6a19\u984c", "\u6458\u8981", "\u6392\u5e8f", "\u72c0\u614b", "\u64cd\u4f5c"], rows)}`;
   }
+
+  function adminHiringManagement() {
+    const pages = state.data.hiring_pages || [];
+    const page = pages[0];
+    const status = state.hiringApplicationFilter || "unnotified";
+    const applications = (state.data.hiring_applications || [])
+      .filter((item) => (item.notification_status || "unnotified") === status)
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    const counts = {
+      unnotified: (state.data.hiring_applications || []).filter((item) => (item.notification_status || "unnotified") !== "notified").length,
+      notified: (state.data.hiring_applications || []).filter((item) => item.notification_status === "notified").length
+    };
+    const rows = applications.map((item) => [
+      `<strong>${escapeHtml(item.name || "-")}</strong><small class="muted-line">${escapeHtml(item.phone || "-")}</small>`,
+      escapeHtml(item.city || "-"),
+      escapeHtml(item.has_professional_license || "-"),
+      escapeHtml(item.available_call_time || "-"),
+      escapeHtml(item.airport_transfer_experience || "-"),
+      fmtDateTime(item.created_at),
+      `<div class="actions">
+        <button class="${status === "notified" ? "soft-btn" : "primary-btn"}" data-hiring-application-status="${item.id}:${status === "notified" ? "unnotified" : "notified"}">${status === "notified" ? "改未通知" : "標記已通知"}</button>
+        <button class="danger-btn" data-delete="hiring_applications:${item.id}">刪除</button>
+      </div>`
+    ]);
+    return `<div class="section-head"><div><h2>招募管理</h2><small>管理 /hiring 招募頁內容與應徵問卷。</small></div><div class="actions"><a class="ghost-btn" href="/hiring" target="_blank" rel="noopener noreferrer">開啟招募頁</a><button class="primary-btn" data-modal="hiringPage" data-id="${escapeHtml(page?.id || "")}">${page ? "編輯招募頁" : "新增招募頁"}</button></div></div>
+      <div class="hiring-admin-summary">
+        <div><span>招募頁狀態</span><strong>${page?.active === false ? "停用" : "啟用中"}</strong><small>${escapeHtml(page?.hero_title || "尚未建立內容")}</small></div>
+        <div><span>未通知問卷</span><strong>${counts.unnotified}</strong><small>需要聯繫的應徵者</small></div>
+        <div><span>已通知問卷</span><strong>${counts.notified}</strong><small>已完成聯繫或通知</small></div>
+      </div>
+      <div class="toolbar hiring-tabs">
+        <button class="filter-btn ${status === "unnotified" ? "active" : ""}" data-hiring-filter="unnotified">未通知 <span>${counts.unnotified}</span></button>
+        <button class="filter-btn ${status === "notified" ? "active" : ""}" data-hiring-filter="notified">已通知 <span>${counts.notified}</span></button>
+      </div>
+      ${table(["姓名/電話", "居住縣市", "職業駕照", "可接聽時間", "機場接送經驗", "送出時間", "操作"], rows, "hiring-application-table")}`;
+  }
+
   function adminDriverLinks() {
     return `<div class="section-head"><div><h2>連結管理</h2><small>新進司機入隊後三天內可查看</small></div><button class="primary-btn" data-modal="driverLink">新增連結</button></div>
       ${table(["名稱", "說明", "可見車隊", "連結", "狀態", "操作"], (state.data.driver_links || []).map((item) => [
@@ -5175,11 +5314,12 @@
     const file = fileInput.files?.[0];
     if (!field || !editor || !file) return;
     const form = field.closest("form");
-    const articleTitle = form?.querySelector('[name="title"]')?.value || "司機幫手";
+    const articleTitle = form?.querySelector('[name="title"]')?.value || form?.querySelector('[name="hero_title"]')?.value || "司機幫手";
+    const uploadLabel = fileInput.dataset.richImageLabel || "司機幫手";
     try {
       fileInput.disabled = true;
       field.classList.add("is-uploading");
-      const uploaded = await uploadAttachment(file, articleTitle, "司機幫手");
+      const uploaded = await uploadAttachment(file, articleTitle, uploadLabel);
       const url = typeof uploaded === "string" ? uploaded : uploaded.url;
       const name = typeof uploaded === "string" ? file.name : uploaded.name || file.name;
       if (!url) throw new Error("圖片上傳後沒有取得檔案網址");
@@ -5196,9 +5336,9 @@
     }
   }
 
-  function helperRichEditor(item) {
+  function helperRichEditor(item, label = "\u6587\u7ae0\u5167\u5bb9", imageLabel = "\u53f8\u6a5f\u5e6b\u624b") {
     return `<div class="field full rich-editor-field">
-      <label>\u6587\u7ae0\u5167\u5bb9</label>
+      <label>${escapeHtml(label)}</label>
       <input type="hidden" name="content_html" value="${escapeHtml(item.content_html || "")}" data-rich-editor-input>
       <div class="rich-toolbar">
         <button type="button" data-rich-command="bold">B</button>
@@ -5208,7 +5348,7 @@
         <input type="color" value="#182033" data-rich-color aria-label="\u6587\u5b57\u984f\u8272">
         <button type="button" data-rich-link>\u9023\u7d50</button>
         <button type="button" data-rich-image-pick>\u4e0a\u50b3\u5716\u7247</button>
-        <input type="file" accept="image/*" data-rich-image-upload hidden>
+        <input type="file" accept="image/*" data-rich-image-upload data-rich-image-label="${escapeHtml(imageLabel)}" hidden>
       </div>
       <div class="rich-editor" contenteditable="true" data-rich-editor>${sanitizeRichHtml(item.content_html || "")}</div>
     </div>`;
@@ -5244,6 +5384,19 @@
       + checkbox("active", "\u555f\u7528\u6587\u7ae0", item.active !== false)
       + coverImageField(item)
       + helperRichEditor(item);
+  }
+
+  function hiringPageForm(item = {}) {
+    const page = { ...defaultHiringPage(), ...item };
+    return input("slug", "網址代號", page.slug || "main", "text", true)
+      + input("title", "頁面標題", page.title, "text", true)
+      + input("subtitle", "Logo 下方文字", page.subtitle)
+      + input("hero_title", "主標題", page.hero_title, "text", true)
+      + text("hero_summary", "主視覺文字", page.hero_summary)
+      + input("apply_button_text", "應徵按鈕文字", page.apply_button_text || "立即應徵")
+      + input("sort_order", "排序", page.sort_order || 0, "number")
+      + checkbox("active", "啟用招募頁", page.active !== false)
+      + helperRichEditor(page, "招募頁內容", "招募頁");
   }
   function driverForm(d) {
     const assignedVehicles = (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d));
@@ -6451,6 +6604,20 @@
       render();
       return;
     }
+    if (target?.dataset.hiringFilter) {
+      state.hiringApplicationFilter = target.dataset.hiringFilter;
+      render();
+      return;
+    }
+    if (target?.dataset.hiringApplicationStatus) {
+      const [id, status] = target.dataset.hiringApplicationStatus.split(":");
+      await update("hiring_applications", id, {
+        notification_status: status,
+        notified_at: status === "notified" ? now() : null
+      });
+      render();
+      return;
+    }
     if (target?.dataset.action === "edit-onboarding-driver") {
       openModal("driver", target.dataset.id);
       return;
@@ -6870,6 +7037,27 @@
   });
 
   document.addEventListener("submit", async (e) => {
+    if (e.target.id === "hiringApplicationForm") {
+      e.preventDefault();
+      const form = e.target;
+      const status = form.querySelector("[data-hiring-submit-status]");
+      const button = form.querySelector("button[type='submit']");
+      try {
+        if (status) status.textContent = "送出中...";
+        if (button) button.disabled = true;
+        const data = Object.fromEntries(new FormData(form).entries());
+        await apiRequest("submit_hiring_application", { record: data });
+        form.reset();
+        if (status) status.textContent = "已收到你的資料，我們會盡快聯繫。";
+        await showAlert("應徵資料已送出，我們會盡快與你聯繫。", "送出成功");
+      } catch (error) {
+        if (status) status.textContent = "送出失敗，請稍後再試。";
+        await showAlert(error.message || error, "送出失敗");
+      } finally {
+        if (button) button.disabled = false;
+      }
+      return;
+    }
     if (e.target.id === "loginForm") {
       e.preventDefault();
       if (state.loginLoading) return;
@@ -7398,7 +7586,10 @@
 
   restoreSession();
   applyRequestedDriverView();
-  if (state.apiSession || state.user || state.admin || state.partner) {
+  if (isHiringPath()) {
+    state.appLoading = true;
+    renderHiringPage();
+  } else if (state.apiSession || state.user || state.admin || state.partner) {
     state.appLoading = true;
     state.loadingText = "正在載入系統資料";
     renderBootLoading(state.loadingText);
@@ -7407,11 +7598,15 @@
   }
   (async function boot() {
     try {
-      await loadAll();
+      if (isHiringPath()) {
+        await loadPublicHiringPage();
+      } else {
+        await loadAll();
+      }
       state.appLoading = false;
       state.loadingText = "";
       render();
-      if (!state.apiSession) await initLiffAutoLogin();
+      if (!isHiringPath() && !state.apiSession) await initLiffAutoLogin();
     } catch (err) {
       state.appLoading = false;
       state.loadingText = "";
@@ -7423,7 +7618,7 @@
       state.data = hasApi ? emptyData() : localLoad();
       clearSession();
       render();
-      await initLiffAutoLogin();
+      if (!isHiringPath()) await initLiffAutoLogin();
     }
   })();
 })();

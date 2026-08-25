@@ -1055,6 +1055,250 @@ a { text-decoration: none; }
     align-items: flex-start;
   }
 }
+
+.hiring-page {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, .88), rgba(255, 255, 255, .96)),
+    radial-gradient(circle at 82% 0%, rgba(201, 139, 44, .16), transparent 24rem);
+  color: var(--ink);
+}
+
+.hiring-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  padding: 18px clamp(18px, 5vw, 72px);
+  background: rgba(255, 255, 255, .78);
+  border-bottom: 1px solid rgba(226, 232, 240, .8);
+  backdrop-filter: blur(16px);
+}
+
+.hiring-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 950;
+}
+
+.hiring-logo img {
+  width: 132px;
+  height: auto;
+  display: block;
+}
+
+.hiring-logo span {
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.hiring-hero {
+  min-height: 520px;
+  display: grid;
+  align-items: end;
+  padding: 80px clamp(20px, 6vw, 92px);
+  background:
+    linear-gradient(90deg, rgba(11, 18, 32, .72), rgba(11, 18, 32, .34), rgba(11, 18, 32, .12)),
+    url("./assets/login-starlux-plane.jpeg") center/cover no-repeat;
+}
+
+.hiring-hero-copy {
+  max-width: 760px;
+  color: #fff;
+  text-shadow: 0 12px 34px rgba(0, 0, 0, .36);
+}
+
+.hiring-hero-copy p {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.hiring-hero-copy h1 {
+  margin: 0;
+  font-size: clamp(40px, 6vw, 72px);
+  line-height: 1.05;
+  font-weight: 950;
+}
+
+.hiring-hero-copy span {
+  display: block;
+  max-width: 620px;
+  margin-top: 18px;
+  font-size: 18px;
+  line-height: 1.75;
+  font-weight: 750;
+}
+
+.hiring-cta {
+  width: fit-content;
+  margin-top: 26px;
+  text-decoration: none;
+}
+
+.hiring-content-wrap {
+  width: min(1180px, calc(100% - 40px));
+  margin: -46px auto 0;
+  padding-bottom: 72px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+}
+
+.hiring-article,
+.hiring-apply-card,
+.hiring-admin-summary > div {
+  border: 1px solid rgba(226, 232, 240, .92);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 22px 60px rgba(15, 23, 42, .08);
+}
+
+.hiring-article {
+  padding: clamp(24px, 4vw, 42px);
+  line-height: 1.85;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hiring-article h3 {
+  margin: 28px 0 10px;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.hiring-article h3:first-child {
+  margin-top: 0;
+}
+
+.hiring-article img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 14px;
+}
+
+.hiring-apply-card {
+  position: sticky;
+  top: 92px;
+  padding: 24px;
+}
+
+.hiring-apply-card h2 {
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 950;
+}
+
+.hiring-apply-card p {
+  margin: 0 0 18px;
+  color: var(--muted);
+  font-weight: 800;
+  line-height: 1.6;
+}
+
+.hiring-form {
+  display: grid;
+  gap: 12px;
+}
+
+.hiring-form label {
+  display: grid;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.hiring-form input,
+.hiring-form select {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0 13px;
+  color: var(--ink);
+  background: #fff;
+  font: inherit;
+  font-weight: 800;
+}
+
+.hiring-form small {
+  min-height: 18px;
+  color: var(--brand);
+  font-weight: 850;
+}
+
+.hiring-admin-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.hiring-admin-summary > div {
+  padding: 18px;
+  display: grid;
+  gap: 4px;
+}
+
+.hiring-admin-summary span,
+.hiring-admin-summary small,
+.muted-line {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.hiring-admin-summary strong {
+  font-size: 28px;
+  font-weight: 950;
+}
+
+.hiring-tabs button span {
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, .08);
+  font-size: 12px;
+}
+
+.muted-line {
+  display: block;
+  margin-top: 3px;
+}
+
+.hiring-application-table td:first-child {
+  min-width: 120px;
+}
+
+@media (max-width: 860px) {
+  .hiring-logo img { width: 116px; }
+  .hiring-logo span { display: none; }
+  .hiring-hero {
+    min-height: 460px;
+    padding: 64px 20px 88px;
+    background-position: center;
+  }
+  .hiring-content-wrap {
+    grid-template-columns: 1fr;
+    width: min(100% - 28px, 620px);
+    margin-top: -54px;
+  }
+  .hiring-apply-card {
+    position: static;
+    order: -1;
+  }
+  .hiring-admin-summary {
+    grid-template-columns: 1fr;
+  }
+}
 .service-record-row { padding: 14px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: #fff; }
 .service-record-head, .service-record-meta, .service-record-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px 16px; }
 .record-type { padding: 4px 8px; border-radius: 4px; background: #e8f4f6; color: var(--accent); font-size: 11px; font-weight: 900; }
