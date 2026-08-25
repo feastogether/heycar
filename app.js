@@ -1133,12 +1133,17 @@
       reader.onerror = reject;
       reader.readAsDataURL(file);
     });
-    const name = renamedAttachment(file, plateNo, documentLabel);
+    const isDriverHelperDocument = String(documentLabel || "").includes("司機幫手");
+    const name = isDriverHelperDocument
+      ? renamedAttachment(file, "司機幫手", plateNo || "圖片")
+      : renamedAttachment(file, plateNo, documentLabel);
     const vehicle = findVehicleByPlate(plateNo);
     const dealerName = vehicle?.dealer_partner_id ? partnerName(vehicle.dealer_partner_id) : "";
     const isInsuranceDocument = /保險|報價|要保|用印|保單|收據|批改|批加|刷卡/.test(String(documentLabel || name));
     const folder = isInsuranceDocument
       ? [dealerName || "未指定車商", plateNo || "未指定車牌"].map((part) => safeFolderPart(part)).join("/")
+      : isDriverHelperDocument
+      ? safeFolderPart("司機幫手")
       : safeFolderPart(plateNo || "general");
     return await storageRequest("upload", { name, type: inferAttachmentType(name, file.type), plate_no: plateNo, dealer_name: dealerName, folder, base64 });
   }
@@ -5164,6 +5169,33 @@
     });
   }
 
+  async function insertRichEditorUploadedImage(fileInput) {
+    const field = fileInput.closest(".rich-editor-field");
+    const editor = field?.querySelector("[data-rich-editor]");
+    const file = fileInput.files?.[0];
+    if (!field || !editor || !file) return;
+    const form = field.closest("form");
+    const articleTitle = form?.querySelector('[name="title"]')?.value || "司機幫手";
+    try {
+      fileInput.disabled = true;
+      field.classList.add("is-uploading");
+      const uploaded = await uploadAttachment(file, articleTitle, "司機幫手");
+      const url = typeof uploaded === "string" ? uploaded : uploaded.url;
+      const name = typeof uploaded === "string" ? file.name : uploaded.name || file.name;
+      if (!url) throw new Error("圖片上傳後沒有取得檔案網址");
+      editor.focus();
+      const imageHtml = `<p><img src="${escapeHtml(url)}" alt="${escapeHtml(name)}"></p>`;
+      if (!document.execCommand("insertHTML", false, imageHtml)) editor.insertAdjacentHTML("beforeend", imageHtml);
+      syncRichEditors(form || document);
+    } catch (error) {
+      await showAlert(error.message || error, "圖片上傳失敗");
+    } finally {
+      field.classList.remove("is-uploading");
+      fileInput.disabled = false;
+      fileInput.value = "";
+    }
+  }
+
   function helperRichEditor(item) {
     return `<div class="field full rich-editor-field">
       <label>\u6587\u7ae0\u5167\u5bb9</label>
@@ -5175,7 +5207,8 @@
         <select data-rich-size aria-label="\u5b57\u9ad4\u5927\u5c0f"><option value="3">\u4e00\u822c</option><option value="4">\u4e2d\u6a19</option><option value="5">\u5927\u6a19</option></select>
         <input type="color" value="#182033" data-rich-color aria-label="\u6587\u5b57\u984f\u8272">
         <button type="button" data-rich-link>\u9023\u7d50</button>
-        <button type="button" data-rich-image>\u5716\u7247</button>
+        <button type="button" data-rich-image-pick>\u4e0a\u50b3\u5716\u7247</button>
+        <input type="file" accept="image/*" data-rich-image-upload hidden>
       </div>
       <div class="rich-editor" contenteditable="true" data-rich-editor>${sanitizeRichHtml(item.content_html || "")}</div>
     </div>`;
@@ -5187,7 +5220,7 @@
       <input type="hidden" name="cover_url" value="${escapeHtml(item.cover_url || "")}" data-attachment-url>
       <input type="hidden" name="cover_name" value="${escapeHtml(item.cover_name || "")}" data-attachment-name>
       <div class="attachment-upload-row">
-        <input type="file" accept="image/*" data-attachment-upload data-document-label="\u53f8\u6a5f\u5e6b\u624b\u5c01\u9762">
+        <input type="file" accept="image/*" data-attachment-upload data-document-label="\u53f8\u6a5f\u5e6b\u624b">
         <span data-attachment-status>${item.cover_url ? `\u5df2\u4e0a\u50b3\uff1a${escapeHtml(item.cover_name || "\u5c01\u9762\u5716\u7247")}` : "\u53ef\u9078\u64c7\u5716\u7247\u4e0a\u50b3"}</span>
       </div>
       ${item.cover_url ? `<div class="attachment-link"><button type="button" data-preview-file="${escapeHtml(item.cover_url)}" data-preview-name="${escapeHtml(item.cover_name || "\u5c01\u9762\u5716\u7247")}" data-preview-type="">\u67e5\u770b\u5c01\u9762</button></div>` : ""}
@@ -5900,6 +5933,39 @@
     return null;
   }
 
+  function normalizeMaintenanceVendorKey(value) {
+    return String(value || "")
+      .normalize("NFKC")
+      .replace(/\s+/g, "")
+      .replace(/[　、，,。．.（）()【】\[\]{}「」『』"'`~\-_/\\|]/g, "")
+      .toLowerCase();
+  }
+
+  function repairShopPartners() {
+    return (state.data.insurance_partners || [])
+      .filter((item) => item.partner_type === "repair_shop" && item.active !== false && item.name);
+  }
+
+  function matchRepairShopName(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const key = normalizeMaintenanceVendorKey(raw);
+    if (!key) return raw;
+    const shops = repairShopPartners();
+    const exact = shops.find((shop) => normalizeMaintenanceVendorKey(shop.name) === key);
+    if (exact) return exact.name;
+    const contains = shops
+      .map((shop) => ({ shop, shopKey: normalizeMaintenanceVendorKey(shop.name) }))
+      .filter((item) => item.shopKey && (item.shopKey.includes(key) || key.includes(item.shopKey)))
+      .sort((a, b) => b.shopKey.length - a.shopKey.length)[0];
+    if (contains) return contains.shop.name;
+    const prefix = shops
+      .map((shop) => ({ shop, shopKey: normalizeMaintenanceVendorKey(shop.name) }))
+      .filter((item) => item.shopKey && (item.shopKey.startsWith(key.slice(0, 2)) || key.startsWith(item.shopKey.slice(0, 2))))
+      .sort((a, b) => b.shopKey.length - a.shopKey.length)[0];
+    return prefix?.shop?.name || raw;
+  }
+
   function maintenanceImportHeaderKey(value) {
     const text = String(value || "").replace(/\s+/g, "").trim();
     const aliases = {
@@ -5909,7 +5975,7 @@
       service_level: ["保養等級", "保養級別", "等級", "維修項目"],
       event_date: ["日期", "保養日期", "維修日期", "排程日期", "預約日期"],
       vendor: ["保養廠", "維修廠", "保修廠", "廠商"],
-      mileage_text: ["k數", "公里數", "里程", "目前里程", "保養里程"],
+      mileage_text: ["k數", "公里數", "里程", "目前里程", "保養里程", "萬數"],
       status_text: ["狀態", "安排狀態", "備註"]
     };
     for (const [key, names] of Object.entries(aliases)) {
@@ -5999,7 +6065,8 @@
       skipped: 0,
       unknownPlates: [],
       missingDrivers: [],
-      invalidRows: []
+      invalidRows: [],
+      vendorMappings: []
     };
     await withAppLoading("正在匯入保養排程", async () => {
       const rows = parseMaintenanceWorkbook(await file.arrayBuffer());
@@ -6016,6 +6083,8 @@
         if (!driver) result.missingDrivers.push(vehicle.plate_no);
         const eventType = maintenanceImportEventType(row);
         const content = maintenanceImportContent(row, vehicle);
+        const matchedVendor = matchRepairShopName(row.vendor);
+        if (row.vendor && matchedVendor && matchedVendor !== row.vendor) result.vendorMappings.push(`${row.vendor}→${matchedVendor}`);
         const record = {
           event_date: row.event_date,
           event_time: null,
@@ -6024,7 +6093,7 @@
           plate_no: vehicle.plate_no,
           vehicle_id: vehicle.id,
           driver_id: driver?.id || null,
-          vendor: row.vendor || "",
+          vendor: matchedVendor || "",
           content
         };
         const signature = calendarEventImportSignature(record);
@@ -6042,7 +6111,8 @@
     const lines = [
       `解析 ${result.total} 筆，新增 ${result.created} 筆，略過重複 ${result.skipped} 筆。`,
       result.unknownPlates.length ? `找不到車輛：${[...new Set(result.unknownPlates)].join("、")}` : "",
-      result.missingDrivers.length ? `未對應到目前駕駛：${[...new Set(result.missingDrivers)].join("、")}（仍已建立日曆行程）` : ""
+      result.missingDrivers.length ? `未對應到目前駕駛：${[...new Set(result.missingDrivers)].join("、")}（仍已建立日曆行程）` : "",
+      result.vendorMappings.length ? `保養廠已自動對應：${[...new Set(result.vendorMappings)].slice(0, 8).join("、")}${new Set(result.vendorMappings).size > 8 ? "..." : ""}` : ""
     ].filter(Boolean);
     await showAlert(lines.join("\n"), "保養排程匯入完成");
     render();
@@ -6361,10 +6431,8 @@
       syncRichEditors(target.closest("form") || document);
       return;
     }
-    if (target?.dataset.richImage !== undefined) {
-      const url = await showPrompt("請輸入圖片網址");
-      if (url) document.execCommand("insertImage", false, url);
-      syncRichEditors(target.closest("form") || document);
+    if (target?.dataset.richImagePick !== undefined) {
+      target.closest(".rich-editor-field")?.querySelector("[data-rich-image-upload]")?.click();
       return;
     }
     if (helperDetail && target?.tagName !== "BUTTON") {
@@ -7052,6 +7120,11 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const richImageInput = e.target.closest("[data-rich-image-upload]");
+    if (richImageInput?.files?.[0]) {
+      await insertRichEditorUploadedImage(richImageInput);
+      return;
+    }
     const maintenanceExcelInput = e.target.closest("[data-maintenance-excel-import]");
     if (maintenanceExcelInput?.files?.[0]) {
       try {

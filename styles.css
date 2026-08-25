@@ -572,6 +572,10 @@ a { text-decoration: none; }
   padding: 3px;
 }
 
+.rich-editor-field.is-uploading .rich-editor {
+  opacity: .72;
+}
+
 .rich-editor {
   min-height: 220px;
   border: 1px solid var(--line);
@@ -585,6 +589,15 @@ a { text-decoration: none; }
 .rich-editor:focus {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px rgba(239,63,53,.08);
+}
+
+.rich-editor img {
+  display: block;
+  width: min(100%, 680px);
+  height: auto;
+  margin: 10px 0;
+  border-radius: 8px;
+  border: 1px solid #eef2f7;
 }
 .brand-copy { display: grid; gap: 1px; min-width: 0; }
 .brand-title { font-weight: 900; color: var(--ink); font-size: 15px; white-space: nowrap; }
