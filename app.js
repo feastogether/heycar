@@ -58,6 +58,9 @@
     hiringApplicationFilter: "unnotified",
     dispatchDateFilter: today(),
     dispatchAdminDateFilter: today(),
+    dispatchSearch: "",
+    dispatchDriverFilter: "",
+    dispatchTimeFilter: "",
     dispatchImportSummary: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
@@ -79,6 +82,7 @@
     lastLinePushResult: null,
     unlockedSalaryPayments: new Set()
   };
+  let dispatchRefreshTimer = null;
 
   function requestedDriverView() {
     try {
@@ -320,7 +324,9 @@
       messageReadFilter: state.messageReadFilter,
       loanStatusFilter: state.loanStatusFilter,
       onboardingFilter: state.onboardingFilter,
-      onboardingDealerFilter: state.onboardingDealerFilter
+      onboardingDealerFilter: state.onboardingDealerFilter,
+      dispatchDateFilter: state.dispatchDateFilter,
+      dispatchAdminDateFilter: state.dispatchAdminDateFilter
     };
   }
 
@@ -341,6 +347,8 @@
       if (saved.loanStatusFilter !== undefined) state.loanStatusFilter = saved.loanStatusFilter;
       if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
       if (saved.onboardingDealerFilter !== undefined) state.onboardingDealerFilter = saved.onboardingDealerFilter;
+      if (saved.dispatchDateFilter) state.dispatchDateFilter = saved.dispatchDateFilter;
+      if (saved.dispatchAdminDateFilter) state.dispatchAdminDateFilter = saved.dispatchAdminDateFilter;
     } catch {}
   }
 
@@ -1333,13 +1341,40 @@
       return;
     }
     if (!state.user && !state.admin && !state.partner) {
+      if (dispatchRefreshTimer) {
+        clearInterval(dispatchRefreshTimer);
+        dispatchRefreshTimer = null;
+      }
       renderLogin();
       return;
     }
     saveViewState();
+    ensureDispatchAutoRefresh();
     if (state.admin) renderAdmin();
     else if (state.partner) renderPartnerPortal();
     else renderDriver();
+  }
+
+  function ensureDispatchAutoRefresh() {
+    const shouldRefresh = Boolean(state.user && state.view === "dispatchCenter" && state.apiSession);
+    if (!shouldRefresh && dispatchRefreshTimer) {
+      clearInterval(dispatchRefreshTimer);
+      dispatchRefreshTimer = null;
+      return;
+    }
+    if (!shouldRefresh || dispatchRefreshTimer) return;
+    dispatchRefreshTimer = setInterval(async () => {
+      if (!state.user || state.view !== "dispatchCenter" || !state.apiSession) {
+        ensureDispatchAutoRefresh();
+        return;
+      }
+      try {
+        await loadAll();
+        render();
+      } catch (error) {
+        console.warn("dispatch refresh failed", error);
+      }
+    }, 20000);
   }
 
   function driverNotificationCount() {
@@ -1714,11 +1749,8 @@
     const selectedDate = state.dispatchDateFilter || today();
     const orders = dispatchOrdersForDriver().filter((item) => String(item.reservation_date || "").slice(0, 10) === selectedDate);
     return `<section class="driver-dispatch-page">
-      <div class="driver-page-head dispatch-page-head">
-        <button class="ghost-btn" data-view="home">←</button>
-        <div><h2>派趟中心</h2><small>${escapeHtml(state.user?.name || "")} 的派趟訂單</small></div>
-      </div>
       <div class="dispatch-date-switcher">
+        <button class="ghost-btn" data-view="home">返回</button>
         <button class="ghost-btn" data-dispatch-date-shift="-1">‹</button>
         <input type="date" value="${escapeHtml(selectedDate)}" data-dispatch-date-input>
         <button class="ghost-btn" data-dispatch-date-shift="1">›</button>
@@ -1730,21 +1762,31 @@
   }
 
   function dispatchOrderCard(order, admin = false) {
-    return `<article class="dispatch-order-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""}">
+    const updated = !admin && dispatchOrderNeedsAttention(order);
+    return `<article class="dispatch-order-card dispatch-order-row ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
       <button type="button" data-dispatch-detail="${escapeHtml(order.id)}">
-        <div class="dispatch-order-main">
-          <span>${escapeHtml(order.source_platform || "派趟")}</span>
-          <strong>${escapeHtml(order.trip_type || "-")}</strong>
-          <small>${escapeHtml([order.city, order.district].filter(Boolean).join(" ") || "-")}</small>
-        </div>
-        <div class="dispatch-order-time">
-          <strong>${escapeHtml(fmtDate(order.reservation_date))}</strong>
-          <span>${escapeHtml(order.reservation_time || "-")}</span>
-        </div>
-        ${admin ? `<div class="dispatch-order-driver"><small>司機</small><strong>${escapeHtml(order.driver_name || "-")}</strong></div>` : ""}
-        <span class="status ${order.status === "completed" ? "done" : "pending"}">${order.status === "completed" ? "已完成" : "新訂單"}</span>
+        <strong class="dispatch-platform">${escapeHtml(order.source_platform || "派趟")}</strong>
+        <span class="dispatch-booking">${escapeHtml(order.booking_no || "-")}</span>
+        <span>${escapeHtml(order.trip_type || "-")}</span>
+        <span>${escapeHtml([order.city, order.district].filter(Boolean).join("") || "-")}</span>
+        <time>${escapeHtml(fmtDate(order.reservation_date))}</time>
+        <span>${escapeHtml(order.reservation_time || "-")}</span>
+        <span>${escapeHtml(order.driver_name || "-")}</span>
       </button>
     </article>`;
+  }
+
+  function dispatchSeenKey(id) {
+    return `afide-dispatch-seen-${id}`;
+  }
+
+  function dispatchOrderNeedsAttention(order) {
+    if (!order?.id || !order.updated_at) return false;
+    return localStorage.getItem(dispatchSeenKey(order.id)) !== String(order.updated_at);
+  }
+
+  function markDispatchOrderSeen(order) {
+    if (order?.id && order.updated_at) localStorage.setItem(dispatchSeenKey(order.id), String(order.updated_at));
   }
 
   function shiftDate(dateText, days) {
@@ -1757,6 +1799,7 @@
   function openDispatchDetail(id) {
     const item = (state.data.dispatch_orders || []).find((row) => String(row.id) === String(id));
     if (!item) return;
+    markDispatchOrderSeen(item);
     const link = platformLink(item.source_platform);
     const modal = document.createElement("div");
     modal.className = "modal-backdrop dispatch-detail-backdrop";
@@ -1773,7 +1816,7 @@
         <div class="dispatch-flight-box" data-dispatch-flight-status="${escapeHtml(item.id)}">
           ${item.flight_no ? `<strong>${escapeHtml(item.flight_no)}</strong><span>查詢小港航班狀態中...</span>` : `<span>此訂單沒有航班編號</span>`}
         </div>
-        <div class="dispatch-detail-grid">
+        <div class="dispatch-detail-list">
           ${[
             ["來源平台", item.source_platform],
             ["預約編號", item.booking_no],
@@ -1790,8 +1833,6 @@
             ["航班編號", item.flight_no],
             ["停站地址", item.stop_address],
             ["請準備安全座椅", item.child_seat || "無"],
-            ["客戶別", item.customer_type],
-            ["專案別", item.project_type],
             ["備註", item.vendor_notes || item.other_notes]
           ].map(([label, value]) => `<div><small>${escapeHtml(label)}</small><strong>${escapeHtml(value || "-")}</strong></div>`).join("")}
         </div>
@@ -4169,14 +4210,29 @@
 
   function adminDispatchCenter() {
     const selectedDate = state.dispatchAdminDateFilter || today();
+    const keyword = normalizedText(state.dispatchSearch || "");
+    const driverKeyword = normalizedText(state.dispatchDriverFilter || "");
+    const timeKeyword = String(state.dispatchTimeFilter || "").trim();
     const all = state.data.dispatch_orders || [];
     const items = all
       .filter((item) => !selectedDate || String(item.reservation_date || "").slice(0, 10) === selectedDate)
+      .filter((item) => {
+        const haystack = normalizedText([
+          item.source_platform, item.booking_no, item.trip_type, item.city, item.district,
+          item.member_name, item.phone, item.flight_no, item.stop_address
+        ].filter(Boolean).join(" "));
+        const driverText = normalizedText([item.driver_name, item.driver_phone].filter(Boolean).join(" "));
+        const itemTime = String(item.reservation_time || "");
+        return (!keyword || haystack.includes(keyword))
+          && (!driverKeyword || driverText.includes(driverKeyword))
+          && (!timeKeyword || itemTime.includes(timeKeyword));
+      })
       .sort(dispatchOrderSort);
     const pending = items.filter((item) => item.status !== "completed").length;
     const platformCounts = ["肯驛", "和運", "格上"].map((platform) => [platform, items.filter((item) => String(item.source_platform || "").includes(platform)).length]);
-    return `<div class="section-head">
-      <div><h2>派趟中心</h2><small>匯入平台派趟 Excel，依日期查看、編輯與同步到司機前台。</small></div>
+    return `<div class="dispatch-admin-shell">
+    <div class="section-head">
+      <div><h2>派趟中心</h2></div>
       <div class="actions">
         <button class="ghost-btn" data-action="pick-dispatch-excel">匯入 Excel</button>
         <input type="file" accept=".xlsx,.xls" data-dispatch-excel-import hidden>
@@ -4184,10 +4240,14 @@
       </div>
     </div>
     <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel">
-      <div class="loan-search-row">
+      <div class="dispatch-search-row">
         <input name="date" type="date" value="${escapeHtml(selectedDate)}">
-        <button class="primary-btn">套用日期</button>
+        <input name="search" value="${escapeHtml(state.dispatchSearch || "")}" placeholder="搜尋訂單、平台、地區、航班">
+        <input name="driver" value="${escapeHtml(state.dispatchDriverFilter || "")}" placeholder="搜尋司機">
+        <input name="time" value="${escapeHtml(state.dispatchTimeFilter || "")}" placeholder="時間">
+        <button class="primary-btn">篩選</button>
         <button class="ghost-btn" type="button" data-action="dispatch-today">今天</button>
+        <button class="ghost-btn" type="button" data-action="clear-dispatch-search">清除</button>
       </div>
     </form>
     ${state.dispatchImportSummary ? `<div class="dispatch-import-summary">${escapeHtml(state.dispatchImportSummary)}</div>` : ""}
@@ -4201,7 +4261,7 @@
         ${dispatchOrderCard(item, true)}
         <div class="actions"><button class="soft-btn" data-modal="dispatchOrder" data-id="${escapeHtml(item.id)}">編輯</button><button class="danger-btn" data-delete="dispatch_orders:${escapeHtml(item.id)}">刪除</button></div>
       </div>`).join("") : `<div class="empty">此日期沒有派趟資料</div>`}
-    </div>`;
+    </div></div>`;
   }
 
   function excelCellDate(value) {
@@ -4289,7 +4349,8 @@
       .map((row) => dispatchRecordFromExcelRow(row, sheetName))
       .filter((record) => record.source_platform && record.booking_no);
     if (!records.length) throw new Error("Excel 內找不到可匯入的派趟資料。");
-    const result = await apiRequest("bulk_upsert_dispatch_orders", { records });
+    const replace_dates = [...new Set(records.map((record) => record.reservation_date).filter(Boolean))];
+    const result = await apiRequest("bulk_upsert_dispatch_orders", { records, replace_dates });
     state.dispatchImportSummary = `已匯入/更新 ${result.count || records.length} 筆派趟資料（來源工作表：${sheetName}）`;
     await loadAll();
     render();
@@ -7298,6 +7359,13 @@
       state.driverSearch = "";
       render();
     }
+    if (target.dataset.action === "clear-dispatch-search") {
+      state.dispatchSearch = "";
+      state.dispatchDriverFilter = "";
+      state.dispatchTimeFilter = "";
+      render();
+      return;
+    }
     if (target.dataset.action === "refresh-insurance") {
       e.preventDefault();
       try {
@@ -7533,6 +7601,9 @@
       e.preventDefault();
       const data = new FormData(e.target);
       state.dispatchAdminDateFilter = String(data.get("date") || today());
+      state.dispatchSearch = String(data.get("search") || "").trim();
+      state.dispatchDriverFilter = String(data.get("driver") || "").trim();
+      state.dispatchTimeFilter = String(data.get("time") || "").trim();
       render();
     }
     if (e.target.id === "vehicleTypeSearchForm") {

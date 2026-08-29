@@ -852,6 +852,16 @@ Deno.serve(async (req) => {
         })
         .filter((record) => record.source_platform && record.booking_no);
       if (!cleaned.length) return json({ error: "DISPATCH_IMPORT_EMPTY" }, 400);
+      const replaceDates = Array.isArray(body.replace_dates)
+        ? [...new Set(body.replace_dates.map((value: unknown) => compactText(value).slice(0, 10)).filter(Boolean))]
+        : [];
+      if (replaceDates.length) {
+        const { error: deleteError } = await db
+          .from("dispatch_orders")
+          .delete()
+          .in("reservation_date", replaceDates);
+        if (deleteError) throw deleteError;
+      }
       const { data, error } = await db
         .from("dispatch_orders")
         .upsert(cleaned, { onConflict: "source_platform,booking_no" })
