@@ -1704,6 +1704,10 @@
     return [order.trip_type || "派趟", [order.city, order.district].filter(Boolean).join(""), fmtDate(order.reservation_date)].filter(Boolean).join("｜");
   }
 
+  function dispatchDisplayDate(value) {
+    return fmtDate(value).replaceAll("-", "/");
+  }
+
   function driverFleet() {
     return state.user.fleet_name || fleetNames(false)[0] || "亞菲得車隊";
   }
@@ -1769,7 +1773,7 @@
         <span class="dispatch-booking">${escapeHtml(order.booking_no || "-")}</span>
         <span>${escapeHtml(order.trip_type || "-")}</span>
         <span>${escapeHtml([order.city, order.district].filter(Boolean).join("") || "-")}</span>
-        <time>${escapeHtml(fmtDate(order.reservation_date))}</time>
+        <time>${escapeHtml(dispatchDisplayDate(order.reservation_date))}</time>
         <span>${escapeHtml(order.reservation_time || "-")}</span>
         <span>${escapeHtml(order.driver_name || "-")}</span>
       </button>
@@ -1823,7 +1827,7 @@
             ["會員姓名", item.member_name],
             ["電話", item.phone],
             ["類型", item.trip_type],
-            ["預約日期", fmtDate(item.reservation_date)],
+            ["預約日期", dispatchDisplayDate(item.reservation_date)],
             ["預約時間", item.reservation_time],
             ["車型", item.vehicle_type],
             ["航站", item.terminal],
