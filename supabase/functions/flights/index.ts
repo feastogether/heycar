@@ -242,12 +242,14 @@ async function tdxToken() {
   return tokenCache.token;
 }
 
-async function readTdxRows(endpoint: string, token: string) {
-  const hit = flightCache.get(endpoint);
+async function readTdxRows(endpoint: string, token: string, airport = "TPE") {
+  const airportCode = cleanText(airport || "TPE").toUpperCase() || "TPE";
+  const cacheKey = `${airportCode}:${endpoint}`;
+  const hit = flightCache.get(cacheKey);
   const now = Date.now();
   if (hit && now - hit.ts < cacheMs) return hit.rows;
 
-  const response = await fetch(`${apiBase}/${endpoint}/TPE?%24format=JSON`, {
+  const response = await fetch(`${apiBase}/${endpoint}/${airportCode}?%24format=JSON`, {
     headers: { Authorization: `Bearer ${token}` }
   });
   if (!response.ok) {
@@ -257,7 +259,7 @@ async function readTdxRows(endpoint: string, token: string) {
   }
   const payload = await response.json();
   const rows = Array.isArray(payload) ? payload : payload.Flights || [];
-  flightCache.set(endpoint, { ts: now, rows });
+  flightCache.set(cacheKey, { ts: now, rows });
   return rows;
 }
 
@@ -351,6 +353,7 @@ Deno.serve(async (request) => {
     const directionCode = endpoint === "Departure" ? "D" : "A";
     const targetDate = (url.searchParams.get("date") || taipeiDate()).slice(0, 10);
     const source = url.searchParams.get("source") === "taoyuan" ? "taoyuan" : "tdx";
+    const airport = (url.searchParams.get("airport") || "TPE").trim().toUpperCase();
 
     if (source === "taoyuan") {
       const rows = await readTaoyuanRows();
@@ -363,7 +366,7 @@ Deno.serve(async (request) => {
     }
 
     const token = await tdxToken();
-    const rows = await readTdxRows(endpoint, token);
+    const rows = await readTdxRows(endpoint, token, airport);
     const flights = rows
       .filter((row: Record<string, unknown>) => {
         const scheduled = firstValue(row, ["ScheduleDepartureTime", "ScheduleArrivalTime", "ScheduledTime"]);

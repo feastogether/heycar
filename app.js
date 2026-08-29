@@ -11,7 +11,7 @@
   const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
   const hasApi = Boolean(dataApiUrl);
   const app = document.getElementById("app");
-  const directDriverViews = new Set(["messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
+  const directDriverViews = new Set(["dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
   const initialDriverView = requestedDriverView();
 
   const state = {
@@ -56,6 +56,9 @@
     loginHistoryFilter: "",
     mailTab: "addresses",
     hiringApplicationFilter: "unnotified",
+    dispatchDateFilter: today(),
+    dispatchAdminDateFilter: today(),
+    dispatchImportSummary: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${today().slice(0, 7)}-01`,
@@ -117,7 +120,8 @@
     "mail_recipients",
     "mail_shipments",
     "hiring_pages",
-    "hiring_applications"
+    "hiring_applications",
+    "dispatch_orders"
   ];
 
   const insuranceStatuses = [
@@ -171,6 +175,7 @@
     flights: "M2.5 13.5 10 11l3.5-8 2 1-1 7 6 3v2l-6-1-4 7-2-1 1-8-8-4v-2Z",
     calendar: "M7 3v4M17 3v4M4 9h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1Zm3 8h3v3H7v-3Z",
     myVehicle: "M4 13l1.4-4.2A2.6 2.6 0 0 1 7.9 7h8.2a2.6 2.6 0 0 1 2.5 1.8L20 13M5 13h14v5H5v-5Zm2 5v2m10-2v2M7.5 15.5h.01m9 0h.01"
+    ,dispatchCenter: "M4 5h16v14H4V5Zm4 4h8M8 13h5M16 13h.01M16 16h.01M8 16h5"
     ,messagesCenter: "M4 5h16v12H7l-3 3V5Zm4 4h8m-8 4h5"
     ,feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
     ,links: "M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"
@@ -178,6 +183,7 @@
   };
 
   const driverFrontendFeatures = [
+    ["dispatchCenter", "派趟中心"],
     ["messagesCenter", "訊息中心"],
     ["myVehicle", "我的車輛"],
     ["calendar", "共同行事曆"],
@@ -239,7 +245,8 @@
       active: true,
       sort_order: 0
     }],
-    hiring_applications: []
+    hiring_applications: [],
+    dispatch_orders: []
   };
 
   function uid() {
@@ -1554,6 +1561,7 @@
   }
 
   function renderDriver() {
+    const dispatchCount = dispatchOrdersForDriver().filter((item) => item.status !== "completed").length;
     const unread = visibleAnnouncements().filter((a) => !isAnnouncementRead(a.id)).length;
     const pendingMaint = mine("maintenance_notifications").filter((x) => x.status === "pending").length;
     const pendingPay = mine("payment_notices").filter((x) => x.status === "pending").length;
@@ -1563,6 +1571,7 @@
         if (state.view === "home") {
           layout(`
             <div class="dashboard-grid">
+          ${driverFeature("dispatchCenter", "派趟中心", "今日與未完成派趟", dispatchCount)}
           ${driverFeature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
           ${driverFeature("myVehicle", "我的車輛", "行照與車輛資訊", 0)}
           ${driverFeature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
@@ -1581,6 +1590,7 @@
 
     const views = {
       announcements: driverAnnouncements,
+      dispatchCenter: driverDispatchCenter,
       messagesCenter: driverMessagesCenter,
       myVehicle: driverMyVehicle,
       maintenance: () => driverTaskList("maintenance_notifications", "保養維修"),
@@ -1605,7 +1615,7 @@
 
   function feature(view, title, desc, count) {
     return `
-      <button class="feature-card" data-view="${view}">
+      <button class="feature-card ${view === "dispatchCenter" ? "dispatch-feature-card" : ""}" data-view="${view}">
         ${count ? `<span class="badge alert-badge">${count}</span>` : ""}
         <span class="feature-icon">${iconSvg(featureIcons[view])}</span>
         <span class="feature-copy">
@@ -1621,6 +1631,42 @@
 
   function mine(table) {
     return state.data[table].filter((row) => row.driver_id === state.user.id || row.target_driver_id === state.user.id);
+  }
+
+  function dispatchOrdersForDriver() {
+    if (!state.user) return [];
+    return (state.data.dispatch_orders || [])
+      .filter((row) =>
+        row.driver_id === state.user.id ||
+        (row.driver_phone && phoneMatches(row.driver_phone, state.user.phone)) ||
+        (row.driver_name && row.driver_name === state.user.name)
+      )
+      .sort(dispatchOrderSort);
+  }
+
+  function dispatchOrderSort(a, b) {
+    return String(`${a.reservation_date || ""} ${a.reservation_time || ""}`)
+      .localeCompare(String(`${b.reservation_date || ""} ${b.reservation_time || ""}`));
+  }
+
+  function platformClass(platform = "") {
+    const text = String(platform || "");
+    if (text.includes("肯驛")) return "canlead";
+    if (text.includes("和運")) return "hotai";
+    if (text.includes("格上")) return "car-plus";
+    return "other";
+  }
+
+  function platformLink(platform = "") {
+    const text = String(platform || "");
+    if (text.includes("肯驛")) return "https://driver.canlead.com.tw/index.aspx";
+    if (text.includes("格上")) return "https://apps.apple.com/tw/app/%E8%BB%8A%E9%9A%8A%E6%8E%A5%E9%80%81%E9%81%8A/id1331770557";
+    if (text.includes("和運")) return "https://apps.apple.com/tw/app/%E5%92%8C%E9%9B%B2%E5%8F%B8%E6%A9%9F%E5%B9%B3%E5%8F%B0/id6677011032";
+    return "";
+  }
+
+  function dispatchSummaryLine(order) {
+    return [order.trip_type || "派趟", [order.city, order.district].filter(Boolean).join(""), fmtDate(order.reservation_date)].filter(Boolean).join("｜");
   }
 
   function driverFleet() {
@@ -1662,6 +1708,127 @@
   function driverAssignedVehicles() {
     if (!state.user) return [];
     return (state.data.vehicles || []).filter((vehicle) => vehicleMatchesDriver(vehicle, state.user));
+  }
+
+  function driverDispatchCenter() {
+    const selectedDate = state.dispatchDateFilter || today();
+    const orders = dispatchOrdersForDriver().filter((item) => String(item.reservation_date || "").slice(0, 10) === selectedDate);
+    return `<section class="driver-dispatch-page">
+      <div class="driver-page-head dispatch-page-head">
+        <button class="ghost-btn" data-view="home">←</button>
+        <div><h2>派趟中心</h2><small>${escapeHtml(state.user?.name || "")} 的派趟訂單</small></div>
+      </div>
+      <div class="dispatch-date-switcher">
+        <button class="ghost-btn" data-dispatch-date-shift="-1">‹</button>
+        <input type="date" value="${escapeHtml(selectedDate)}" data-dispatch-date-input>
+        <button class="ghost-btn" data-dispatch-date-shift="1">›</button>
+      </div>
+      <div class="dispatch-card-list">
+        ${orders.length ? orders.map(dispatchOrderCard).join("") : `<div class="empty">這一天沒有派趟資料</div>`}
+      </div>
+    </section>`;
+  }
+
+  function dispatchOrderCard(order, admin = false) {
+    return `<article class="dispatch-order-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""}">
+      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}">
+        <div class="dispatch-order-main">
+          <span>${escapeHtml(order.source_platform || "派趟")}</span>
+          <strong>${escapeHtml(order.trip_type || "-")}</strong>
+          <small>${escapeHtml([order.city, order.district].filter(Boolean).join(" ") || "-")}</small>
+        </div>
+        <div class="dispatch-order-time">
+          <strong>${escapeHtml(fmtDate(order.reservation_date))}</strong>
+          <span>${escapeHtml(order.reservation_time || "-")}</span>
+        </div>
+        ${admin ? `<div class="dispatch-order-driver"><small>司機</small><strong>${escapeHtml(order.driver_name || "-")}</strong></div>` : ""}
+        <span class="status ${order.status === "completed" ? "done" : "pending"}">${order.status === "completed" ? "已完成" : "新訂單"}</span>
+      </button>
+    </article>`;
+  }
+
+  function shiftDate(dateText, days) {
+    const base = new Date(`${dateText || today()}T12:00:00+08:00`);
+    if (Number.isNaN(base.getTime())) return today();
+    base.setDate(base.getDate() + Number(days || 0));
+    return base.toISOString().slice(0, 10);
+  }
+
+  function openDispatchDetail(id) {
+    const item = (state.data.dispatch_orders || []).find((row) => String(row.id) === String(id));
+    if (!item) return;
+    const link = platformLink(item.source_platform);
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop dispatch-detail-backdrop";
+    modal.innerHTML = `<div class="modal dispatch-detail-modal">
+      <div class="loan-detail-hero dispatch-detail-hero ${platformClass(item.source_platform)}">
+        <div>
+          <small>${escapeHtml(item.source_platform || "派趟訂單")}</small>
+          <h3>${escapeHtml(item.booking_no || "-")}</h3>
+          <p>${escapeHtml(dispatchSummaryLine(item))}</p>
+        </div>
+        <button class="icon-close-btn" data-close-modal aria-label="關閉">${iconSvg("M6 6l12 12M18 6 6 18")}</button>
+      </div>
+      <div class="dispatch-detail-body">
+        <div class="dispatch-flight-box" data-dispatch-flight-status="${escapeHtml(item.id)}">
+          ${item.flight_no ? `<strong>${escapeHtml(item.flight_no)}</strong><span>查詢小港航班狀態中...</span>` : `<span>此訂單沒有航班編號</span>`}
+        </div>
+        <div class="dispatch-detail-grid">
+          ${[
+            ["來源平台", item.source_platform],
+            ["預約編號", item.booking_no],
+            ["會員姓名", item.member_name],
+            ["電話", item.phone],
+            ["類型", item.trip_type],
+            ["預約日期", fmtDate(item.reservation_date)],
+            ["預約時間", item.reservation_time],
+            ["車型", item.vehicle_type],
+            ["航站", item.terminal],
+            ["成人數", item.adult_count],
+            ["兒童數", item.child_count],
+            ["行李", item.luggage],
+            ["航班編號", item.flight_no],
+            ["停站地址", item.stop_address],
+            ["請準備安全座椅", item.child_seat || "無"],
+            ["客戶別", item.customer_type],
+            ["專案別", item.project_type],
+            ["備註", item.vendor_notes || item.other_notes]
+          ].map(([label, value]) => `<div><small>${escapeHtml(label)}</small><strong>${escapeHtml(value || "-")}</strong></div>`).join("")}
+        </div>
+        <div class="dispatch-detail-actions">
+          ${state.user && item.status !== "completed" ? `<button class="primary-btn" data-dispatch-complete="${escapeHtml(item.id)}">完成</button>` : ""}
+          ${link ? `<a class="ghost-btn" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">連接平台</a>` : ""}
+        </div>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    if (item.flight_no) loadDispatchFlightStatus(item);
+  }
+
+  async function loadDispatchFlightStatus(order) {
+    const box = Array.from(document.querySelectorAll("[data-dispatch-flight-status]"))
+      .find((element) => element.dataset.dispatchFlightStatus === String(order.id));
+    if (!box || !cfg.FLIGHT_INFO_URL) return;
+    try {
+      const endpoint = new URL(cfg.FLIGHT_INFO_URL);
+      endpoint.searchParams.set("q", order.flight_no);
+      endpoint.searchParams.set("direction", String(order.trip_type || "").includes("送") ? "departure" : "arrival");
+      endpoint.searchParams.set("date", fmtDate(order.reservation_date));
+      endpoint.searchParams.set("source", "tdx");
+      endpoint.searchParams.set("airport", "KHH");
+      const response = await fetch(endpoint, { cache: "no-store" });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "航班查詢失敗");
+      const flight = (Array.isArray(payload) ? payload : payload.flights || [])[0];
+      if (!flight) {
+        box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span>小港機場暫查無此航班狀態</span>`;
+        return;
+      }
+      const status = flightStatusText(flight, String(order.trip_type || "").includes("送") ? "departure" : "arrival");
+      box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span class="flight-status ${flightStatusClass(status)}">${escapeHtml(status)}</span><small>表定 ${escapeHtml(formatFlightTime(flight.scheduledTime))}｜預計 ${escapeHtml(formatFlightTime(flight.estimatedTime))}</small>`;
+    } catch (error) {
+      box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span>航班狀態暫時無法讀取</span>`;
+    }
   }
 
   function vehicleMatchesDriver(vehicle = {}, driver = {}) {
@@ -2950,7 +3117,8 @@
       driverLinks: ["messages"],
       payments: ["finance"],
       mailManagement: ["messages"],
-      hiringManagement: ["drivers"]
+      hiringManagement: ["drivers"],
+      dispatchCenter: ["drivers"]
     };
     return Boolean((aliases[permission] || []).some((key) => permissions[key]));
   }
@@ -2961,6 +3129,7 @@
     vehicles: "車輛管理",
     vehicleLoans: "車輛租借",
     driverOnboarding: "上線管理",
+    dispatchCenter: "派趟中心",
     driverEvaluations: "評核表單",
     serviceRecords: "車輛履歷",
     insuranceCenter: "保險中心",
@@ -2987,7 +3156,7 @@
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "hiringManagement", "driverHelperArticles", "feedbacks"]],
-    ["行控中心", ["vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
+    ["行控中心", ["dispatchCenter", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage"]]
   ];
@@ -3023,6 +3192,7 @@
       ["driverEvaluations", "評核表單", "📝", "driverEvaluations"],
       ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
+      ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
       ["serviceRecords", "車輛履歷", "🧾", "serviceRecords"],
@@ -3055,6 +3225,7 @@
       driverEvaluations: adminDriverEvaluations,
       hiringManagement: adminHiringManagement,
       vehicleTypes: adminVehicleTypes,
+      dispatchCenter: adminDispatchCenter,
       vehicles: adminVehicles,
       vehicleLoans: adminVehicleLoans,
       serviceRecords: adminServiceRecords,
@@ -3996,6 +4167,134 @@
     `;
   }
 
+  function adminDispatchCenter() {
+    const selectedDate = state.dispatchAdminDateFilter || today();
+    const all = state.data.dispatch_orders || [];
+    const items = all
+      .filter((item) => !selectedDate || String(item.reservation_date || "").slice(0, 10) === selectedDate)
+      .sort(dispatchOrderSort);
+    const pending = items.filter((item) => item.status !== "completed").length;
+    const platformCounts = ["肯驛", "和運", "格上"].map((platform) => [platform, items.filter((item) => String(item.source_platform || "").includes(platform)).length]);
+    return `<div class="section-head">
+      <div><h2>派趟中心</h2><small>匯入平台派趟 Excel，依日期查看、編輯與同步到司機前台。</small></div>
+      <div class="actions">
+        <button class="ghost-btn" data-action="pick-dispatch-excel">匯入 Excel</button>
+        <input type="file" accept=".xlsx,.xls" data-dispatch-excel-import hidden>
+        <button class="primary-btn" data-modal="dispatchOrder">新增派趟</button>
+      </div>
+    </div>
+    <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel">
+      <div class="loan-search-row">
+        <input name="date" type="date" value="${escapeHtml(selectedDate)}">
+        <button class="primary-btn">套用日期</button>
+        <button class="ghost-btn" type="button" data-action="dispatch-today">今天</button>
+      </div>
+    </form>
+    ${state.dispatchImportSummary ? `<div class="dispatch-import-summary">${escapeHtml(state.dispatchImportSummary)}</div>` : ""}
+    <div class="dispatch-kpi-grid">
+      <article><small>當日派趟</small><strong>${items.length}</strong></article>
+      <article><small>未完成</small><strong>${pending}</strong></article>
+      ${platformCounts.map(([platform, count]) => `<article class="${platformClass(platform)}"><small>${platform}</small><strong>${count}</strong></article>`).join("")}
+    </div>
+    <div class="dispatch-admin-list">
+      ${items.length ? items.map((item) => `<div class="dispatch-admin-row">
+        ${dispatchOrderCard(item, true)}
+        <div class="actions"><button class="soft-btn" data-modal="dispatchOrder" data-id="${escapeHtml(item.id)}">編輯</button><button class="danger-btn" data-delete="dispatch_orders:${escapeHtml(item.id)}">刪除</button></div>
+      </div>`).join("") : `<div class="empty">此日期沒有派趟資料</div>`}
+    </div>`;
+  }
+
+  function excelCellDate(value) {
+    if (!value) return "";
+    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    const textValue = String(value).trim();
+    const dateMatch = textValue.match(/(\d{4})[/-](\d{1,2})[/-](\d{1,2})/);
+    if (dateMatch) return `${dateMatch[1]}-${dateMatch[2].padStart(2, "0")}-${dateMatch[3].padStart(2, "0")}`;
+    if (typeof value === "number" && window.XLSX?.SSF) {
+      const parsed = window.XLSX.SSF.parse_date_code(value);
+      if (parsed) return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+    }
+    return textValue.slice(0, 10).replaceAll("/", "-");
+  }
+
+  function excelCellTime(value) {
+    if (!value) return "";
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      return `${String(value.getHours()).padStart(2, "0")}:${String(value.getMinutes()).padStart(2, "0")}`;
+    }
+    const textValue = String(value).trim();
+    const match = textValue.match(/(\d{1,2}):(\d{2})/);
+    return match ? `${match[1].padStart(2, "0")}:${match[2]}` : textValue;
+  }
+
+  function findDriverForDispatch(name = "", phone = "") {
+    const normalizedName = normalizedText(name);
+    const normalizedPhone = String(phone || "").replace(/\D/g, "");
+    return (state.data.drivers || []).find((driver) =>
+      (normalizedName && normalizedText(driver.name) === normalizedName) ||
+      (normalizedPhone && phoneMatches(driver.phone, normalizedPhone))
+    ) || null;
+  }
+
+  function dispatchRecordFromExcelRow(row, sourceSheet = "") {
+    const get = (key) => row[key] ?? "";
+    const driver = findDriverForDispatch(get("司機姓名"), get("司機電話"));
+    const platform = String(get("來源平台") || get("__YFD_SOURCE") || "").trim();
+    const booking = String(get("預約編號") || get("__YFD_BOOKING") || "").trim();
+    return {
+      source_platform: platform,
+      booking_no: booking,
+      assigned_vendor: String(get("指定車商") || "").trim(),
+      vendor_name: String(get("車商") || "").trim(),
+      driver_id: driver?.id || null,
+      driver_name: driver?.name || String(get("司機姓名") || "").trim(),
+      driver_phone: driver?.phone || String(get("司機電話") || "").trim(),
+      status: "pending",
+      trip_type: String(get("類型") || "").trim(),
+      reservation_date: excelCellDate(get("預約日期")),
+      reservation_time: excelCellTime(get("預約時間")),
+      vehicle_type: String(get("車型") || "").trim(),
+      terminal: String(get("航站") || "").trim(),
+      city: String(get("縣市") || "").trim(),
+      district: String(get("區域") || "").trim(),
+      customer_type: String(get("客戶別") || "").trim(),
+      member_name: String(get("會員姓名") || "").trim(),
+      phone: String(get("電話") || "").trim(),
+      adult_count: String(get("成人數") || "").trim(),
+      child_count: String(get("兒童數") || "").trim(),
+      luggage: String(get("行李") || "").trim(),
+      flight_no: String(get("航班編號") || "").replace(/\s+/g, "").toUpperCase(),
+      stop_address: String(get("停站地址") || "").trim(),
+      child_seat: String(get("請準備安全座椅") || "").trim(),
+      project_type: String(get("專案別") || "").trim(),
+      vendor_notes: String(get("車商備註") || "").trim(),
+      car_no: String(get("車號") || "").trim(),
+      car_model: String(get("車款") || "").trim(),
+      flight_time: String(get("起飛/抵達時間") || "").trim(),
+      other_notes: String(get("其它註記") || "").trim(),
+      graphic_notes: String(get("圖形備註") || "").trim(),
+      source_sheet: sourceSheet,
+      raw_json: row
+    };
+  }
+
+  async function importDispatchExcelFile(file) {
+    if (!window.XLSX) throw new Error("Excel 解析器尚未載入，請重新整理後再試。");
+    const buffer = await file.arrayBuffer();
+    const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
+    const sheetName = workbook.SheetNames.find((name) => name.includes("混合派趟")) || workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    const rows = window.XLSX.utils.sheet_to_json(sheet, { defval: "", raw: false });
+    const records = rows
+      .map((row) => dispatchRecordFromExcelRow(row, sheetName))
+      .filter((record) => record.source_platform && record.booking_no);
+    if (!records.length) throw new Error("Excel 內找不到可匯入的派趟資料。");
+    const result = await apiRequest("bulk_upsert_dispatch_orders", { records });
+    state.dispatchImportSummary = `已匯入/更新 ${result.count || records.length} 筆派趟資料（來源工作表：${sheetName}）`;
+    await loadAll();
+    render();
+  }
+
   function adminVehicleTypes() {
     const keyword = String(state.vehicleTypeSearch || "").trim().toUpperCase();
     const items = [...(state.data.vehicle_types || [])]
@@ -4391,6 +4690,7 @@
       vehicle: ["車輛", "vehicles", vehicleForm],
       vehicleFolder: ["車輛資料夾", "vehicles", vehicleFolderForm],
       vehicleLoan: ["借車登記", "vehicle_loans", vehicleLoanForm],
+      dispatchOrder: ["派趟訂單", "dispatch_orders", dispatchOrderForm],
       vehicleReturn: ["登記還車", "vehicle_loans", vehicleReturnForm],
       keyAccessCode: ["取鑰密碼", "key_access_codes", keyAccessCodeForm],
       serviceRecord: ["車輛履歷", "vehicle_service_records", serviceRecordForm],
@@ -4657,6 +4957,18 @@
       if ("return_at" in record) record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
       if ("actual_return_at" in record) record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
       record.status = record.status || "pending_approval";
+    }
+    if (tableName === "dispatch_orders") {
+      const selectedDriver = (state.data.drivers || []).find((driver) => String(driver.id) === String(record.driver_id || ""));
+      const driver = selectedDriver || findDriverForDispatch(record.driver_name, record.driver_phone);
+      record.driver_id = record.driver_id || driver?.id || null;
+      record.driver_name = record.driver_name || driver?.name || "";
+      record.driver_phone = record.driver_phone || driver?.phone || "";
+      record.status = record.status || "pending";
+      blankToNull(record, ["driver_id", "reservation_date", "completed_at"]);
+      if (typeof record.raw_json === "string") {
+        try { record.raw_json = JSON.parse(record.raw_json || "{}"); } catch { record.raw_json = {}; }
+      }
     }
     if (tableName === "key_access_codes") {
       record.code = String(record.code || "").replace(/\D/g, "").slice(0, 4);
@@ -5446,6 +5758,60 @@
       + input("apply_title", "應徵區標題", page.apply_title)
       + text("apply_summary", "應徵區說明", page.apply_summary);
   }
+
+  function dispatchOrderForm(item = {}) {
+    const driver = item.driver_id
+      ? (state.data.drivers || []).find((row) => String(row.id) === String(item.driver_id))
+      : findDriverForDispatch(item.driver_name, item.driver_phone);
+    return `
+      <div class="form-section-title field full">平台與司機</div>
+      ${select("source_platform", "來源平台", item.source_platform || "", [["", "請選擇"], ["肯驛", "肯驛"], ["和運", "和運"], ["格上", "格上"], [item.source_platform || "其他", item.source_platform || "其他"]])}
+      ${input("booking_no", "預約編號", item.booking_no, "text", true)}
+      <div class="field full driver-history-picker">
+        <label>指定司機</label>
+        <input type="hidden" name="driver_id" value="${escapeHtml(driver?.id || item.driver_id || "")}" data-driver-history-id>
+        <input data-driver-history-search value="${escapeHtml(driver?.name || item.driver_name || "")}" data-selected-name="${escapeHtml(driver?.name || item.driver_name || "")}" placeholder="輸入司機姓名或電話快速搜尋">
+        <div class="vehicle-picker-suggestions driver-history-suggestions" data-driver-history-suggestions hidden></div>
+      </div>
+      ${input("driver_name", "司機姓名（可手動）", item.driver_name || driver?.name || "")}
+      ${input("driver_phone", "司機電話", item.driver_phone || driver?.phone || "", "tel")}
+      ${select("status", "狀態", item.status || "pending", [["pending", "未完成"], ["completed", "已完成"], ["cancelled", "取消"]])}
+
+      <div class="form-section-title field full">預約資料</div>
+      ${input("trip_type", "類型", item.trip_type)}
+      ${input("reservation_date", "預約日期", formDate(item.reservation_date), "date", true)}
+      ${input("reservation_time", "預約時間", item.reservation_time, "text")}
+      ${input("vehicle_type", "車型", item.vehicle_type)}
+      ${input("terminal", "航站", item.terminal)}
+      ${input("city", "縣市", item.city)}
+      ${input("district", "區域", item.district)}
+
+      <div class="form-section-title field full">乘客與航班</div>
+      ${input("member_name", "會員姓名", item.member_name)}
+      ${input("phone", "電話", item.phone, "tel")}
+      ${input("adult_count", "成人數", item.adult_count)}
+      ${input("child_count", "兒童數", item.child_count)}
+      ${input("luggage", "行李", item.luggage)}
+      ${input("flight_no", "航班編號", item.flight_no)}
+      ${input("flight_time", "起飛/抵達時間", item.flight_time)}
+      ${input("child_seat", "請準備安全座椅", item.child_seat)}
+      ${text("stop_address", "停站地址", item.stop_address)}
+
+      <div class="form-section-title field full">車商與備註</div>
+      ${input("assigned_vendor", "指定車商", item.assigned_vendor)}
+      ${input("vendor_name", "車商", item.vendor_name)}
+      ${input("customer_type", "客戶別", item.customer_type)}
+      ${input("project_type", "專案別", item.project_type)}
+      ${input("car_no", "車號", item.car_no)}
+      ${input("car_model", "車款", item.car_model)}
+      ${text("vendor_notes", "車商備註", item.vendor_notes)}
+      ${text("other_notes", "其它註記", item.other_notes)}
+      ${text("graphic_notes", "圖形備註", item.graphic_notes)}
+      <input type="hidden" name="source_sheet" value="${escapeHtml(item.source_sheet || "")}">
+      <input type="hidden" name="raw_json" value="${escapeHtml(JSON.stringify(item.raw_json || {}))}">
+    `;
+  }
+
   function driverForm(d) {
     const assignedVehicles = (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d));
     return `
@@ -6713,6 +7079,32 @@
       document.querySelector("[data-maintenance-excel-import]")?.click();
       return;
     }
+    if (target?.dataset.action === "pick-dispatch-excel") {
+      document.querySelector("[data-dispatch-excel-import]")?.click();
+      return;
+    }
+    if (target?.dataset.action === "dispatch-today") {
+      state.dispatchAdminDateFilter = today();
+      render();
+      return;
+    }
+    if (target?.dataset.dispatchDateShift !== undefined) {
+      state.dispatchDateFilter = shiftDate(state.dispatchDateFilter || today(), Number(target.dataset.dispatchDateShift));
+      render();
+      return;
+    }
+    if (target?.dataset.dispatchDetail) {
+      e.preventDefault();
+      openDispatchDetail(target.dataset.dispatchDetail);
+      return;
+    }
+    if (target?.dataset.dispatchComplete) {
+      e.preventDefault();
+      await update("dispatch_orders", target.dataset.dispatchComplete, { status: "completed", completed_at: now() });
+      target.closest(".modal-backdrop")?.remove();
+      render();
+      return;
+    }
     if (target?.dataset.modal) {
       e.preventDefault();
       openModal(target.dataset.modal, target.dataset.id);
@@ -7137,6 +7529,12 @@
       state.vehicleDealerFilter = String(data.get("dealer") || "");
       render();
     }
+    if (e.target.id === "dispatchSearchForm") {
+      e.preventDefault();
+      const data = new FormData(e.target);
+      state.dispatchAdminDateFilter = String(data.get("date") || today());
+      render();
+    }
     if (e.target.id === "vehicleTypeSearchForm") {
       e.preventDefault();
       const data = new FormData(e.target);
@@ -7370,6 +7768,25 @@
       } finally {
         maintenanceExcelInput.value = "";
       }
+      return;
+    }
+    const dispatchExcelInput = e.target.closest("[data-dispatch-excel-import]");
+    if (dispatchExcelInput?.files?.[0]) {
+      try {
+        await withAppLoading("正在匯入派趟 Excel", async () => {
+          await importDispatchExcelFile(dispatchExcelInput.files[0]);
+        });
+      } catch (error) {
+        await showAlert(error.message || error, "匯入失敗");
+      } finally {
+        dispatchExcelInput.value = "";
+      }
+      return;
+    }
+    const dispatchDateInput = e.target.closest("[data-dispatch-date-input]");
+    if (dispatchDateInput) {
+      state.dispatchDateFilter = dispatchDateInput.value || today();
+      render();
       return;
     }
     const onboardingDealerFilter = e.target.closest("[data-onboarding-dealer-filter]");

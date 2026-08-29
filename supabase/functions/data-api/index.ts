@@ -15,7 +15,7 @@ const tables = [
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
-  "hiring_pages", "hiring_applications"
+  "hiring_pages", "hiring_applications", "dispatch_orders"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -212,12 +212,13 @@ async function loadDriverData(driverId: string) {
     db.from("feedbacks").select("*").eq("driver_id", driverId),
     canSeeLinks ? db.from("driver_links").select("*").eq("active", true) : Promise.resolve({ data: [], error: null }),
     db.from("driver_helper_articles").select("*").eq("active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: false }),
-    db.from("insurance_partners").select("id,name,partner_type,phone,active,frontend_permissions").eq("active", true)
+    db.from("insurance_partners").select("id,name,partner_type,phone,active,frontend_permissions").eq("active", true),
+    db.from("dispatch_orders").select("*").eq("driver_id", driverId)
   ]);
   const names = [
     "vehicles", "announcements", "announcement_reads", "maintenance_notifications",
     "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks", "driver_links",
-    "driver_helper_articles", "insurance_partners"
+    "driver_helper_articles", "insurance_partners", "dispatch_orders"
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;
@@ -336,6 +337,7 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
     emergencyEvents: ["messages"],
     driverHelperArticles: ["messages"],
     hiringManagement: ["drivers"],
+    dispatchCenter: ["drivers"],
     loginSlogans: ["messages"],
     driverLinks: ["messages"],
     mailManagement: ["messages"],
@@ -371,7 +373,8 @@ const tablePermission: Record<string, string> = {
   mail_recipients: "mailManagement",
   mail_shipments: "mailManagement",
   hiring_pages: "hiringManagement",
-  hiring_applications: "hiringManagement"
+  hiring_applications: "hiringManagement",
+  dispatch_orders: "dispatchCenter"
 };
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
@@ -800,6 +803,62 @@ Deno.serve(async (req) => {
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
       return json(await signStorageUrls(await loadDriverData(session.driver_id)));
     }
+    if (body.action === "bulk_upsert_dispatch_orders") {
+      if (session.session_type !== "admin" || !(await adminCan(session, "dispatchCenter"))) {
+        return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      }
+      const records = Array.isArray(body.records) ? body.records : [];
+      if (!records.length) return json({ data: [], count: 0 });
+      const cleaned = records
+        .map((record: Record<string, unknown>) => {
+          const cleanedRecord: Record<string, unknown> = {
+            source_platform: compactText(record.source_platform).slice(0, 80),
+            booking_no: compactText(record.booking_no).slice(0, 120),
+            assigned_vendor: compactText(record.assigned_vendor).slice(0, 120),
+            vendor_name: compactText(record.vendor_name).slice(0, 120),
+            driver_id: record.driver_id || null,
+            driver_name: compactText(record.driver_name).slice(0, 120),
+            driver_phone: compactText(record.driver_phone).slice(0, 40),
+            status: ["pending", "completed", "cancelled"].includes(compactText(record.status)) ? compactText(record.status) : "pending",
+            trip_type: compactText(record.trip_type).slice(0, 40),
+            reservation_date: compactText(record.reservation_date) || null,
+            reservation_time: compactText(record.reservation_time).slice(0, 20),
+            vehicle_type: compactText(record.vehicle_type).slice(0, 80),
+            terminal: compactText(record.terminal).slice(0, 40),
+            city: compactText(record.city).slice(0, 80),
+            district: compactText(record.district).slice(0, 80),
+            customer_type: compactText(record.customer_type).slice(0, 180),
+            member_name: compactText(record.member_name).slice(0, 120),
+            phone: compactText(record.phone).slice(0, 60),
+            adult_count: compactText(record.adult_count).slice(0, 40),
+            child_count: compactText(record.child_count).slice(0, 40),
+            luggage: compactText(record.luggage).slice(0, 80),
+            flight_no: compactText(record.flight_no).replace(/\s+/g, "").toUpperCase().slice(0, 20),
+            stop_address: compactText(record.stop_address).slice(0, 500),
+            child_seat: compactText(record.child_seat).slice(0, 180),
+            project_type: compactText(record.project_type).slice(0, 180),
+            vendor_notes: compactText(record.vendor_notes).slice(0, 1000),
+            car_no: compactText(record.car_no).slice(0, 40),
+            car_model: compactText(record.car_model).slice(0, 120),
+            flight_time: compactText(record.flight_time).slice(0, 80),
+            other_notes: compactText(record.other_notes).slice(0, 1000),
+            graphic_notes: compactText(record.graphic_notes).slice(0, 1000),
+            source_sheet: compactText(record.source_sheet).slice(0, 120),
+            raw_json: record.raw_json && typeof record.raw_json === "object" ? record.raw_json : {},
+            updated_at: new Date().toISOString()
+          };
+          if (record.id) cleanedRecord.id = record.id;
+          return cleanedRecord;
+        })
+        .filter((record) => record.source_platform && record.booking_no);
+      if (!cleaned.length) return json({ error: "DISPATCH_IMPORT_EMPTY" }, 400);
+      const { data, error } = await db
+        .from("dispatch_orders")
+        .upsert(cleaned, { onConflict: "source_platform,booking_no" })
+        .select("*");
+      if (error) throw error;
+      return json({ data: data || [], count: data?.length || 0 });
+    }
     if (body.action === "push_line_message") {
       if (session.session_type !== "admin" || !(await adminCan(session, "personalMessages"))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
@@ -834,6 +893,12 @@ Deno.serve(async (req) => {
         ["maintenance_notifications", "personal_messages", "payment_notices"].includes(body.table)
       ) {
         body.record = { status: body.record.status, updated_at: new Date().toISOString() };
+      } else if (body.action === "update" && body.table === "dispatch_orders") {
+        body.record = {
+          status: body.record.status === "completed" ? "completed" : "pending",
+          completed_at: body.record.status === "completed" ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString()
+        };
       } else {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       }
