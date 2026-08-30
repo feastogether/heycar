@@ -56,6 +56,7 @@
     eupLoading: false,
     eupSnapshot: null,
     eupError: "",
+    eupSelectedVehicle: "",
     loginHistoryFilter: "",
     mailTab: "addresses",
     hiringApplicationFilter: "unnotified",
@@ -86,6 +87,9 @@
     unlockedSalaryPayments: new Set()
   };
   let dispatchRefreshTimer = null;
+  let satelliteMap = null;
+  let satelliteMarkerLayer = null;
+  let satelliteLeafletPromise = null;
 
   function requestedDriverView() {
     try {
@@ -2843,17 +2847,104 @@
     }
   }
 
-  async function loadSatelliteSnapshot() {
+  async function loadSatelliteSnapshot(options = {}) {
+    const carUnicode = options.carUnicode || "";
     state.eupLoading = true;
     state.eupError = "";
+    if (carUnicode) state.eupSelectedVehicle = carUnicode;
     render();
     try {
-      state.eupSnapshot = await apiRequest("eup_vehicle_snapshot");
+      const result = await apiRequest("eup_vehicle_snapshot", carUnicode ? { car_unicode: carUnicode } : {});
+      if (carUnicode && state.eupSnapshot && Array.isArray(result.vehicles) && result.vehicles.length) {
+        const nextVehicles = Array.isArray(state.eupSnapshot.vehicles) ? [...state.eupSnapshot.vehicles] : [];
+        const updatedVehicle = result.vehicles[0];
+        const index = nextVehicles.findIndex((vehicle) => String(vehicle.car_unicode || "") === String(updatedVehicle.car_unicode || ""));
+        if (index >= 0) nextVehicles[index] = { ...nextVehicles[index], ...updatedVehicle };
+        else nextVehicles.unshift(updatedVehicle);
+        state.eupSnapshot = { ...state.eupSnapshot, updated_at: result.updated_at, vehicles: nextVehicles };
+      } else {
+        state.eupSnapshot = result;
+      }
     } catch (error) {
       state.eupError = error.message || String(error);
     } finally {
       state.eupLoading = false;
       render();
+    }
+  }
+
+  function satelliteVehicleCoords(vehicle) {
+    const lat = Number(vehicle?.lat);
+    const lng = Number(vehicle?.lng);
+    return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+  }
+
+  function loadSatelliteMapAssets() {
+    if (window.L) return Promise.resolve(window.L);
+    if (satelliteLeafletPromise) return satelliteLeafletPromise;
+    satelliteLeafletPromise = new Promise((resolve, reject) => {
+      if (!document.querySelector("link[data-leaflet]")) {
+        const link = document.createElement("link");
+        link.rel = "stylesheet";
+        link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+        link.dataset.leaflet = "true";
+        document.head.appendChild(link);
+      }
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.async = true;
+      script.onload = () => resolve(window.L);
+      script.onerror = () => reject(new Error("MAP_ASSET_LOAD_FAILED"));
+      document.head.appendChild(script);
+    });
+    return satelliteLeafletPromise;
+  }
+
+  async function renderSatelliteMap() {
+    const mapEl = document.getElementById("satelliteMap");
+    if (!mapEl) return;
+    const vehicles = Array.isArray(state.eupSnapshot?.vehicles) ? state.eupSnapshot.vehicles : [];
+    const locatedVehicles = vehicles
+      .map((vehicle) => ({ vehicle, coords: satelliteVehicleCoords(vehicle) }))
+      .filter((item) => item.coords);
+    if (!locatedVehicles.length) {
+      if (satelliteMap) {
+        satelliteMap.remove();
+        satelliteMap = null;
+        satelliteMarkerLayer = null;
+      }
+      mapEl.innerHTML = `<div class="satellite-map-empty">目前沒有可顯示的位置資料<br><small>請先同步自有車隊，或點選車輛更新位置。</small></div>`;
+      return;
+    }
+    try {
+      const L = await loadSatelliteMapAssets();
+      if (!document.getElementById("satelliteMap")) return;
+      if (satelliteMap && satelliteMap.getContainer && satelliteMap.getContainer() !== mapEl) {
+        satelliteMap.remove();
+        satelliteMap = null;
+        satelliteMarkerLayer = null;
+      }
+      if (!satelliteMap) {
+        satelliteMap = L.map("satelliteMap", { zoomControl: true, attributionControl: false });
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          maxZoom: 19,
+          attribution: "&copy; OpenStreetMap"
+        }).addTo(satelliteMap);
+        satelliteMarkerLayer = L.layerGroup().addTo(satelliteMap);
+      }
+      satelliteMarkerLayer.clearLayers();
+      const bounds = [];
+      locatedVehicles.forEach(({ vehicle, coords }) => {
+        bounds.push(coords);
+        L.marker(coords)
+          .bindPopup(`<strong>${escapeHtml(vehicle.plate_no || "-")}</strong><br>${escapeHtml(vehicle.driver || "-")}<br>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}`)
+          .addTo(satelliteMarkerLayer);
+      });
+      if (bounds.length === 1) satelliteMap.setView(bounds[0], 15);
+      else satelliteMap.fitBounds(bounds, { padding: [24, 24], maxZoom: 15 });
+      setTimeout(() => satelliteMap.invalidateSize(), 80);
+    } catch {
+      mapEl.innerHTML = `<div class="satellite-map-empty">地圖載入失敗<br><small>車輛清單仍可正常查看。</small></div>`;
     }
   }
 
@@ -2961,11 +3052,12 @@
     const eupUrl = "https://www.eup.tw/section_spy.html?v1.3.1.0&index";
     const snapshot = state.eupSnapshot || {};
     const vehicles = Array.isArray(snapshot.vehicles) ? snapshot.vehicles : [];
+    setTimeout(renderSatelliteMap, 0);
     return `
       <div class="section-head admin-compact-head">
         <h2>衛星犬監測</h2>
         <div class="actions">
-          <button class="primary-btn" data-action="refresh-satellite-monitor">${state.eupLoading ? "同步中..." : "同步車輛"}</button>
+          <button class="primary-btn" data-action="refresh-satellite-monitor">${state.eupLoading ? "同步中..." : "同步自有車隊"}</button>
           <a class="ghost-btn" href="${eupUrl}" target="_blank" rel="noopener noreferrer">開啟衛星犬</a>
         </div>
       </div>
@@ -2973,21 +3065,26 @@
       ${snapshot.configured === false ? `<div class="empty">衛星犬登入資料尚未設定完成。</div>` : ""}
       <section class="traffic-metric-grid">
         <article class="traffic-metric-card"><span>同步狀態</span><strong>${snapshot.configured ? "已連線" : "待設定"}</strong><small>${snapshot.updated_at ? fmtDateTime(snapshot.updated_at) : "尚未同步"}</small></article>
-        <article class="traffic-metric-card"><span>車輛數</span><strong>${vehicles.length || snapshot.total || 0}</strong><small>衛星犬回傳車輛</small></article>
+        <article class="traffic-metric-card"><span>自有車隊</span><strong>${vehicles.length || snapshot.total || 0}</strong><small>只顯示自有車隊</small></article>
         <article class="traffic-metric-card"><span>帳號單位</span><strong>${escapeHtml(snapshot.account_name || "-")}</strong><small>登入後回傳名稱</small></article>
-        <article class="traffic-metric-card"><span>資料來源</span><strong>後端</strong><small>Secret 不進前端</small></article>
+        <article class="traffic-metric-card"><span>更新方式</span><strong>省流量</strong><small>進頁一次，點車更新</small></article>
       </section>
-      <section class="panel satellite-monitor-panel">
-        <div class="subsection-head"><h3>車輛狀態</h3><small>${vehicles.length} 筆</small></div>
-        <div class="satellite-vehicle-list">
-          ${state.eupLoading ? `<p>正在同步衛星犬車輛資料...</p>` : vehicles.length ? vehicles.slice(0, 80).map((vehicle) => `
-            <div>
-              <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
-              <span>${escapeHtml(vehicle.driver || "-")}</span>
-              <small>${escapeHtml(vehicle.status || "-")}${vehicle.speed ? ` · ${escapeHtml(vehicle.speed)} km/h` : ""}</small>
-              <em>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}</em>
-            </div>
-          `).join("") : `<p>尚未取得衛星犬車輛資料。</p>`}
+      <section class="satellite-monitor-layout">
+        <div class="panel satellite-monitor-panel">
+          <div class="subsection-head"><h3>車輛狀態</h3><small>${vehicles.length} 筆</small></div>
+          <div class="satellite-vehicle-list">
+            ${state.eupLoading ? `<p>正在同步衛星犬車輛資料...</p>` : vehicles.length ? vehicles.slice(0, 120).map((vehicle) => `
+              <button type="button" class="${state.eupSelectedVehicle === String(vehicle.car_unicode || "") ? "active" : ""}" data-satellite-refresh-car="${escapeHtml(vehicle.car_unicode || "")}">
+                <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
+                <span>${escapeHtml(vehicle.driver || "-")}</span>
+                <small>${escapeHtml(vehicle.status || "-")}${vehicle.speed ? ` · ${escapeHtml(vehicle.speed)} km/h` : ""}</small>
+                <em>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}</em>
+              </button>
+            `).join("") : `<p>尚未取得衛星犬自有車隊資料。</p>`}
+          </div>
+        </div>
+        <div class="satellite-map-card">
+          <div id="satelliteMap" class="satellite-map"><div class="satellite-map-empty">同步後會顯示車輛地圖</div></div>
         </div>
       </section>
     `;
@@ -7519,6 +7616,13 @@
     }
     if (target.dataset.action === "refresh-satellite-monitor") {
       await loadSatelliteSnapshot();
+      return;
+    }
+    const satelliteVehicleButton = target.closest("[data-satellite-refresh-car]");
+    if (satelliteVehicleButton) {
+      const carUnicode = satelliteVehicleButton.dataset.satelliteRefreshCar || "";
+      if (!carUnicode) return;
+      await loadSatelliteSnapshot({ carUnicode });
       return;
     }
     if (target.dataset.action === "clear-storage-filter") {

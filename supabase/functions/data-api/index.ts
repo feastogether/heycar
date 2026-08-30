@@ -374,7 +374,40 @@ async function eupServletCall(
   }
 }
 
-async function loadEupVehicleSnapshot() {
+function eupText(value: unknown) {
+  return String(value || "").trim();
+}
+
+function eupCompact(value: unknown) {
+  return eupText(value).replace(/\s+/g, "");
+}
+
+function eupFirstText(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const value = eupText(source[key]);
+    if (value) return value;
+  }
+  return "";
+}
+
+function eupNumber(source: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const raw = source[key];
+    if (raw === null || raw === undefined || raw === "") continue;
+    const value = Number(raw);
+    if (Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+function isEupOwnFleet(car: Record<string, unknown>, status: Record<string, unknown>) {
+  const values = [...Object.values(car), ...Object.values(status)]
+    .map((value) => eupCompact(value))
+    .filter(Boolean);
+  return values.some((value) => value.includes("自有車隊"));
+}
+
+async function loadEupVehicleSnapshot(options: { carUnicode?: string } = {}) {
   if (!eupCompanyCode || !eupAccount || !eupPassword) {
     return {
       configured: false,
@@ -413,12 +446,13 @@ async function loadEupVehicleSnapshot() {
     Team_ID: accountInfo.Team_ID
   }, loginResponse.Token || "");
   const cars = Array.isArray(carDataResponse?.result) ? carDataResponse.result : [];
+  const targetCarUnicode = eupText(options.carUnicode);
   let statuses: Record<string, unknown>[] = [];
   try {
     const statusResponse = await eupServletCall("realtime", {
       ...baseParam,
       MethodName: "GetCarStatus",
-      Car_Unicode: null,
+      Car_Unicode: targetCarUnicode || null,
       Cust_IMID: accountInfo.Cust_IMID,
       Team_ID: accountInfo.Team_ID
     }, loginResponse.Token || "");
@@ -428,21 +462,33 @@ async function loadEupVehicleSnapshot() {
   }
   const statusByUnicode = new Map(statuses.map((item) => [String(item.Car_Unicode || item.carUnicode || ""), item]));
   const vehicles = cars.map((car: Record<string, unknown>) => {
-    const status = statusByUnicode.get(String(car.Car_Unicode || "")) || {};
+    const carUnicode = eupFirstText(car, ["Car_Unicode", "carUnicode", "CarUnicode"]);
+    const status = statusByUnicode.get(carUnicode) || {};
+    const lat = eupNumber(status, ["GISY", "gisY", "Latitude", "latitude", "Lat", "lat", "Y"]);
+    const lng = eupNumber(status, ["GISX", "gisX", "Longitude", "longitude", "Lng", "lng", "X"]);
     return {
-      plate_no: car.Car_Number || car.carNumber || "",
-      driver: car.Car_Driver || car.driverName || "",
-      car_unicode: car.Car_Unicode || "",
-      status: status.Status || status.status || status.Car_Status || "",
-      speed: status.Speed || status.speed || "",
-      address: status.Address || status.address || status.Position || "",
-      gps_time: status.GPSTime || status.gpsTime || status.Update_Time || status.updateTime || ""
+      plate_no: eupFirstText(car, ["Car_Number", "carNumber", "CarNumber", "car_no"]) || eupFirstText(status, ["Car_Number", "carNumber", "CarNumber"]),
+      driver: eupFirstText(car, ["Car_Driver", "driverName", "Driver_Name", "DriverName"]) || eupFirstText(status, ["Car_Driver", "driverName", "Driver_Name", "DriverName"]),
+      car_unicode: carUnicode,
+      fleet_name: eupFirstText(car, ["Team_Name", "TeamName", "Group_Name", "GroupName", "Car_GroupName", "Car_TeamName"]) || eupFirstText(status, ["Team_Name", "TeamName", "Group_Name", "GroupName"]),
+      status: eupFirstText(status, ["Status", "status", "Car_Status", "CarStatus"]),
+      speed: eupFirstText(status, ["Speed", "speed", "Car_Speed", "CarSpeed"]),
+      address: eupFirstText(status, ["Address", "address", "Position", "position", "Addr", "addr"]),
+      gps_time: eupFirstText(status, ["GPSTime", "gpsTime", "Update_Time", "updateTime", "RecvTime", "recvTime"]),
+      lat,
+      lng,
+      has_position: lat !== null && lng !== null,
+      is_own_fleet: isEupOwnFleet(car, status)
     };
-  });
+  })
+    .filter((vehicle) => vehicle.is_own_fleet)
+    .filter((vehicle) => !targetCarUnicode || vehicle.car_unicode === targetCarUnicode);
   return {
     configured: true,
     updated_at: new Date().toISOString(),
     account_name: accountInfo.Cust_Name || accountInfo.IM_Cust_Name || "",
+    filter: "自有車隊",
+    mode: targetCarUnicode ? "single_vehicle" : "snapshot",
     total: vehicles.length,
     vehicles
   };
@@ -873,7 +919,7 @@ Deno.serve(async (req) => {
       if (session.session_type !== "admin" || !session.is_super_admin) {
         return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
       }
-      return json(await loadEupVehicleSnapshot());
+      return json(await loadEupVehicleSnapshot({ carUnicode: compactText(body.car_unicode) }));
     }
     if (body.action === "bind_line_driver") {
       if (session.session_type !== "driver" || !session.driver_id) return json({ error: "ACTION_NOT_ALLOWED" }, 403);

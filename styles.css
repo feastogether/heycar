@@ -5998,7 +5998,6 @@ body {
 .satellite-monitor-panel {
   display: grid;
   gap: 8px;
-  max-width: 860px;
   padding: 18px;
 }
 .satellite-monitor-panel p {
@@ -6011,7 +6010,8 @@ body {
   display: grid;
   gap: 6px;
 }
-.satellite-vehicle-list div {
+.satellite-vehicle-list button {
+  appearance: none;
   display: grid;
   grid-template-columns: 110px 110px 120px minmax(0, 1fr);
   align-items: center;
@@ -6021,6 +6021,16 @@ body {
   border: 1px solid #eef2f6;
   border-radius: 9px;
   background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+.satellite-vehicle-list button:hover,
+.satellite-vehicle-list button.active {
+  border-color: rgba(239, 68, 68, .38);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, .08);
+  transform: translateY(-1px);
 }
 .satellite-vehicle-list strong,
 .satellite-vehicle-list span,
@@ -6052,6 +6062,41 @@ body {
   border: 1px dashed var(--line);
   border-radius: 10px;
   background: #f8fafc;
+}
+.satellite-monitor-layout {
+  display: grid;
+  grid-template-columns: minmax(360px, .9fr) minmax(460px, 1.1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+.satellite-map-card {
+  min-height: 520px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: #eef4f7;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, .08);
+}
+.satellite-map {
+  width: 100%;
+  min-height: 520px;
+  height: 100%;
+}
+.satellite-map-empty {
+  display: grid;
+  min-height: 520px;
+  place-items: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.8;
+  text-align: center;
+}
+.satellite-map-empty small {
+  color: #667085;
+  font-size: 12px;
+  font-weight: 750;
 }
 .cute-plane-flyby {
   display: none !important;
@@ -6087,15 +6132,21 @@ body {
     overflow-x: auto;
   }
   .traffic-metric-grid,
-  .traffic-panel-grid {
+  .traffic-panel-grid,
+  .satellite-monitor-layout {
     grid-template-columns: 1fr;
   }
-  .satellite-vehicle-list div {
+  .satellite-vehicle-list button {
     grid-template-columns: 98px minmax(0, 1fr);
   }
   .satellite-vehicle-list small,
   .satellite-vehicle-list em {
     grid-column: 1 / -1;
+  }
+  .satellite-map-card,
+  .satellite-map,
+  .satellite-map-empty {
+    min-height: 360px;
   }
   .storage-usage,
   .storage-filter-bar {
