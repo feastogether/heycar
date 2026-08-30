@@ -1402,8 +1402,8 @@
 
   function cuteCarLoader(title = "資料載入中", subtitle = "正在整理車隊資料", extraClass = "") {
     return `<div class="cute-car-loader ${extraClass}" role="status" aria-live="polite">
-      <div class="cute-plane-flyby" aria-hidden="true">✈</div>
       <div class="cute-car-scene" aria-hidden="true">
+        <div class="cute-loader-plane">✈</div>
         <div class="cute-car-road"><span></span><span></span><span></span></div>
         <div class="cute-car">
           <span class="cute-car-body"></span>
@@ -2878,6 +2878,96 @@
     `;
   }
 
+  function adminTrafficMonitor() {
+    const tableLabels = {
+      drivers: "駕駛",
+      vehicles: "車輛",
+      insurance_requests: "保險案件",
+      vehicle_loans: "車輛租借",
+      calendar_events: "日曆行程",
+      dispatch_orders: "派趟訂單",
+      driver_helper_articles: "司機幫手文章",
+      login_audit_logs: "登入紀錄"
+    };
+    const allTables = Object.entries(state.data || {})
+      .filter(([, value]) => Array.isArray(value))
+      .map(([key, value]) => ({ key, label: tableLabels[key] || key, count: value.length }))
+      .sort((a, b) => b.count - a.count);
+    const logins = state.data.login_audit_logs || [];
+    const todayText = today();
+    const monthText = todayText.slice(0, 7);
+    const todayLogins = logins.filter((item) => String(item.created_at || "").slice(0, 10) === todayText).length;
+    const monthLogins = logins.filter((item) => String(item.created_at || "").slice(0, 7) === monthText).length;
+    const totalRows = allTables.reduce((sum, item) => sum + item.count, 0);
+    const percent = Math.min(100, Math.round(state.storageUsedBytes / Math.max(1, state.storageQuotaBytes) * 100));
+    return `
+      <div class="section-head admin-compact-head">
+        <h2>流量監測</h2>
+        <div class="actions">
+          <button class="primary-btn" data-action="refresh-traffic-monitor">${state.storageLoading ? "更新中..." : "重新整理"}</button>
+        </div>
+      </div>
+      <section class="traffic-metric-grid">
+        <article class="traffic-metric-card">
+          <span>今日登入</span>
+          <strong>${todayLogins}</strong>
+          <small>全部角色登入次數</small>
+        </article>
+        <article class="traffic-metric-card">
+          <span>本月登入</span>
+          <strong>${monthLogins}</strong>
+          <small>${escapeHtml(monthText)} 累計</small>
+        </article>
+        <article class="traffic-metric-card">
+          <span>系統資料量</span>
+          <strong>${totalRows}</strong>
+          <small>目前已同步資料列</small>
+        </article>
+        <article class="traffic-metric-card">
+          <span>附件容量</span>
+          <strong>${formatBytes(state.storageUsedBytes)}</strong>
+          <small>${percent}% / ${formatBytes(state.storageQuotaBytes)}</small>
+        </article>
+      </section>
+      <section class="traffic-panel-grid">
+        <article class="panel traffic-panel">
+          <div class="subsection-head"><h3>資料表使用量</h3><small>${allTables.length} 個資料表</small></div>
+          <div class="traffic-table-list">
+            ${allTables.slice(0, 18).map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${item.count}</b></div>`).join("") || `<p class="muted-text">尚未取得資料。</p>`}
+          </div>
+        </article>
+        <article class="panel traffic-panel">
+          <div class="subsection-head"><h3>Supabase 精準流量</h3><small>需後端金鑰</small></div>
+          <p>目前頁面顯示的是系統端可安全取得的登入、資料量與附件容量。若要顯示 Supabase 專案的 API request / egress / bandwidth 精準用量，需要在後端設定 Supabase Management API token，不能放在前端。</p>
+          <div class="traffic-note-list">
+            <span>前端不暴露 token</span>
+            <span>由 Edge Function 代理查詢</span>
+            <span>可接日/月用量告警</span>
+          </div>
+        </article>
+      </section>
+    `;
+  }
+
+  function adminSatelliteMonitor() {
+    const eupUrl = "https://www.eup.tw/section_spy.html?v1.3.1.0&index";
+    return `
+      <div class="section-head admin-compact-head">
+        <h2>衛星犬監測</h2>
+        <div class="actions"><a class="primary-btn" href="${eupUrl}" target="_blank" rel="noopener noreferrer">開啟衛星犬</a></div>
+      </div>
+      <section class="panel satellite-monitor-panel">
+        <strong>可整合，但需要先確認登入與資料來源。</strong>
+        <p>如果衛星犬提供 API 或可匯出報表，我可以直接把車輛位置、狀態與更新時間同步到系統。若只有網頁帳密，也要確認網站是否允許嵌入 iframe；若不允許，就會改成後端登入抓資料或手動匯入。</p>
+        <div class="traffic-note-list">
+          <span>不建議把帳密存在前端</span>
+          <span>優先使用 API / 匯出檔</span>
+          <span>可做車牌對應與異常提醒</span>
+        </div>
+      </section>
+    `;
+  }
+
   function adminMailManagement() {
     const recipients = [...(state.data.mail_recipients || [])].sort((a, b) =>
       String(a.company_name || "").localeCompare(String(b.company_name || ""), "zh-Hant")
@@ -3180,6 +3270,8 @@
     insuranceCenter: "保險中心",
     insurancePartners: "廠商管理",
     storage: "儲存空間",
+    trafficMonitor: "流量監測",
+    satelliteMonitor: "衛星犬監測",
     calendar: "車輛日曆",
     maintenanceNotifications: "保養通知",
     announcements: "公告管理",
@@ -3203,7 +3295,7 @@
     ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["dispatchCenter", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
-    ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage"]]
+    ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
   ];
 
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
@@ -3211,7 +3303,7 @@
   function adminPermissionCatalog() {
     return adminNavDepartments.flatMap(([department, keys]) =>
       keys
-        .filter((key) => key !== "adminUsers" && key !== "loginHistory")
+        .filter((key) => !["adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
         .map((key) => [key, adminNavLabels[key] || key, department])
     );
   }
@@ -3244,6 +3336,8 @@
       ["insuranceCenter", "保險中心", "🛡️", "insuranceCenter"],
       ["insurancePartners", "廠商管理", "🏢", "insurancePartners"],
       ["storage", "儲存空間", "💾", "storage"],
+      ["trafficMonitor", "流量監測", "📈", "super"],
+      ["satelliteMonitor", "衛星犬監測", "📍", "super"],
       ["driverLinks", "連結管理", "🔗", "driverLinks"],
       ["mailManagement", "寄信管理", "📮", "mailManagement"],
       ["bom", "BOM表", "🧩", "bom"],
@@ -3277,6 +3371,8 @@
       insuranceCenter: adminInsuranceCenter,
       insurancePartners: adminInsurancePartners,
       storage: adminStorage,
+      trafficMonitor: adminTrafficMonitor,
+      satelliteMonitor: adminSatelliteMonitor,
       maintenanceNotifications: () => adminTaskManager("maintenance_notifications", "保養通知"),
       announcements: adminAnnouncements,
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
@@ -7331,6 +7427,7 @@
       localStorage.setItem("afide-admin-collapsed", "true");
       render();
       if (state.adminView === "storage" && !state.storageFiles.length) await loadStorageUsage();
+      if (state.adminView === "trafficMonitor" && !state.storageFiles.length) await loadStorageUsage();
     }
     if (target.dataset.partnerView) {
       state.partnerView = target.dataset.partnerView;
@@ -7385,6 +7482,14 @@
       await withAppLoading("正在讀取儲存空間", async () => {
         await loadStorageUsage();
       });
+      return;
+    }
+    if (target.dataset.action === "refresh-traffic-monitor") {
+      await withAppLoading("正在更新流量監測", async () => {
+        await loadAll();
+        await loadStorageUsage();
+      });
+      return;
     }
     if (target.dataset.action === "clear-storage-filter") {
       state.storageSearch = "";

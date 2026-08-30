@@ -5743,3 +5743,313 @@ tr:last-child td { border-bottom: 0; }
     font-size: 12px;
   }
 }
+
+/* Admin density refresh */
+body {
+  font-size: 14px;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+.admin-workspace {
+  width: min(1680px, calc(100% - 48px));
+  margin: 16px auto 56px;
+}
+.admin-workspace .section-head {
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.admin-workspace .section-head > div {
+  min-width: 0;
+}
+.admin-workspace .section-head h2,
+.admin-workspace .vehicle-toolbar h2 {
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+.admin-workspace .section-head h3 {
+  font-size: 17px;
+}
+.admin-workspace .section-head small,
+.admin-workspace .section-head p,
+.admin-workspace .vehicle-toolbar small {
+  display: none !important;
+}
+.admin-workspace .actions {
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+.admin-workspace .actions > * {
+  flex: 0 0 auto;
+}
+.admin-workspace .primary-btn,
+.admin-workspace .ghost-btn,
+.admin-workspace .danger-btn,
+.admin-workspace .soft-btn {
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.admin-workspace input,
+.admin-workspace select,
+.admin-workspace textarea {
+  min-height: 36px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.admin-workspace textarea {
+  min-height: 72px;
+}
+.admin-workspace label,
+.admin-workspace .field label {
+  font-size: 12px;
+  line-height: 1.25;
+}
+.admin-workspace .form-grid,
+.driver-editor-modal .form-grid,
+.vehicle-editor-modal .form-grid {
+  gap: 9px 10px;
+}
+.modal-title {
+  padding: 15px 18px 10px;
+}
+.modal h3 {
+  font-size: 18px;
+}
+.modal-form-body {
+  padding: 14px 18px 16px;
+}
+.modal-actions {
+  padding: 10px 18px;
+}
+.admin-workspace .panel,
+.admin-workspace .loan-filter-panel {
+  border-radius: 10px;
+}
+.driver-filter-bar,
+.storage-filter-bar,
+.vehicle-search-bar,
+.vehicle-type-toolbar,
+.bom-filter-bar,
+.service-filter-bar,
+.dispatch-search-row,
+.loan-search-row,
+.calendar-admin-actions {
+  gap: 7px;
+}
+.driver-filter-bar,
+.compact-filter-bar,
+.loan-filter-panel .compact-filter-bar,
+.insurance-filter-strip {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.filter-btn {
+  min-height: 32px;
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.storage-usage {
+  display: grid;
+  grid-template-columns: minmax(180px, .32fr) minmax(220px, 1fr);
+  align-items: center;
+  gap: 10px 16px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  margin-bottom: 10px;
+}
+.storage-usage > div:first-child {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: baseline;
+  gap: 7px;
+}
+.storage-usage strong {
+  font-size: 20px;
+}
+.storage-meter {
+  margin-top: 0;
+}
+.storage-usage p {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.storage-folder-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.storage-folder-list button {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+.storage-folder-list button span {
+  justify-self: end;
+}
+.storage-file-list {
+  gap: 4px;
+}
+.storage-file-row {
+  grid-template-columns: auto minmax(0, 1fr) 76px 92px auto;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 10px;
+}
+.storage-file-row b,
+.storage-file-row time {
+  white-space: nowrap;
+}
+.traffic-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.traffic-metric-card {
+  display: grid;
+  gap: 3px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+}
+.traffic-metric-card span,
+.traffic-metric-card small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+.traffic-metric-card strong {
+  font-size: 24px;
+  line-height: 1.1;
+  font-weight: 950;
+}
+.traffic-panel-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr);
+  gap: 12px;
+}
+.traffic-panel {
+  padding: 14px;
+}
+.traffic-table-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.traffic-table-list div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #eef2f6;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.traffic-table-list span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.traffic-note-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.traffic-note-list span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+}
+.satellite-monitor-panel {
+  display: grid;
+  gap: 8px;
+  max-width: 860px;
+  padding: 18px;
+}
+.satellite-monitor-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+  line-height: 1.7;
+}
+.cute-plane-flyby {
+  display: none !important;
+}
+.cute-loader-plane {
+  position: absolute;
+  left: 18px;
+  top: 7px;
+  z-index: 2;
+  color: #1f7a8c;
+  font-size: 23px;
+  line-height: 1;
+  transform: rotate(-10deg);
+  filter: drop-shadow(0 5px 8px rgba(31,122,140,.22));
+  animation: loader-plane-hover 1.2s ease-in-out infinite;
+}
+@keyframes loader-plane-hover {
+  0%, 100% { transform: translateY(0) rotate(-10deg); opacity: .78; }
+  50% { transform: translateY(-5px) rotate(-6deg); opacity: 1; }
+}
+
+@media (max-width: 900px) {
+  .admin-workspace {
+    width: calc(100% - 28px);
+    margin-top: 14px;
+  }
+  .admin-workspace .section-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-workspace .section-head .actions {
+    width: 100%;
+    overflow-x: auto;
+  }
+  .traffic-metric-grid,
+  .traffic-panel-grid {
+    grid-template-columns: 1fr;
+  }
+  .storage-usage,
+  .storage-filter-bar {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-workspace {
+    width: calc(100% - 18px);
+  }
+  .admin-workspace .primary-btn,
+  .admin-workspace .ghost-btn,
+  .admin-workspace .danger-btn,
+  .admin-workspace .soft-btn {
+    min-height: 36px;
+    padding: 8px 10px;
+  }
+  .traffic-metric-card strong {
+    font-size: 21px;
+  }
+  .traffic-table-list,
+  .storage-file-row {
+    grid-template-columns: 1fr;
+  }
+  .storage-file-row .actions {
+    justify-content: flex-start;
+  }
+}
