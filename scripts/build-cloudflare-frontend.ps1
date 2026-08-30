@@ -14,6 +14,7 @@ if (Test-Path -LiteralPath (Join-Path $root "recruitment-pdf.js")) {
   Copy-Item -LiteralPath (Join-Path $root "recruitment-pdf.js") -Destination $output
 }
 Copy-Item -LiteralPath (Join-Path $root "styles.css") -Destination $output
+Copy-Item -LiteralPath (Join-Path $root "config.js") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "config.example.js") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "assets") -Destination $output -Recurse
 
