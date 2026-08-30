@@ -5751,7 +5751,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 .admin-workspace {
-  width: min(1680px, calc(100% - 48px));
+  width: calc(100% - 48px);
+  max-width: none;
   margin: 16px auto 56px;
 }
 .admin-workspace .section-head {
@@ -5770,6 +5771,21 @@ body {
 }
 .admin-workspace .section-head h3 {
   font-size: 17px;
+}
+.admin-workspace > .section-head h2 {
+  display: none !important;
+}
+.admin-workspace > .page-head h2,
+.admin-workspace > .vehicle-toolbar h2 {
+  display: none !important;
+}
+.admin-workspace > .section-head {
+  justify-content: flex-end;
+}
+.admin-workspace > .page-head,
+.admin-workspace > .vehicle-toolbar {
+  justify-content: flex-end;
+  margin-bottom: 12px;
 }
 .admin-workspace .section-head small,
 .admin-workspace .section-head p,
@@ -5939,6 +5955,9 @@ body {
   grid-template-columns: minmax(0, 1.1fr) minmax(320px, .9fr);
   gap: 12px;
 }
+.traffic-panel-grid-single {
+  grid-template-columns: 1fr;
+}
 .traffic-panel {
   padding: 14px;
 }
@@ -5988,6 +6007,52 @@ body {
   font-weight: 700;
   line-height: 1.7;
 }
+.satellite-vehicle-list {
+  display: grid;
+  gap: 6px;
+}
+.satellite-vehicle-list div {
+  display: grid;
+  grid-template-columns: 110px 110px 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #eef2f6;
+  border-radius: 9px;
+  background: #fff;
+}
+.satellite-vehicle-list strong,
+.satellite-vehicle-list span,
+.satellite-vehicle-list small,
+.satellite-vehicle-list em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.satellite-vehicle-list strong {
+  font-size: 14px;
+  font-weight: 950;
+}
+.satellite-vehicle-list span,
+.satellite-vehicle-list small {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+.satellite-vehicle-list em {
+  color: #344054;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 750;
+}
+.satellite-vehicle-list p {
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #f8fafc;
+}
 .cute-plane-flyby {
   display: none !important;
 }
@@ -6024,6 +6089,13 @@ body {
   .traffic-metric-grid,
   .traffic-panel-grid {
     grid-template-columns: 1fr;
+  }
+  .satellite-vehicle-list div {
+    grid-template-columns: 98px minmax(0, 1fr);
+  }
+  .satellite-vehicle-list small,
+  .satellite-vehicle-list em {
+    grid-column: 1 / -1;
   }
   .storage-usage,
   .storage-filter-bar {

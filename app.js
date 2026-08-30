@@ -53,6 +53,9 @@
     storageLoading: false,
     storageSearch: "",
     storageFolderFilter: "",
+    eupLoading: false,
+    eupSnapshot: null,
+    eupError: "",
     loginHistoryFilter: "",
     mailTab: "addresses",
     hiringApplicationFilter: "unnotified",
@@ -2840,6 +2843,20 @@
     }
   }
 
+  async function loadSatelliteSnapshot() {
+    state.eupLoading = true;
+    state.eupError = "";
+    render();
+    try {
+      state.eupSnapshot = await apiRequest("eup_vehicle_snapshot");
+    } catch (error) {
+      state.eupError = error.message || String(error);
+    } finally {
+      state.eupLoading = false;
+      render();
+    }
+  }
+
   function adminStorage() {
     const percent = Math.min(100, Math.round(state.storageUsedBytes / Math.max(1, state.storageQuotaBytes) * 100));
     const warning = percent >= 90 ? "danger" : percent >= 75 ? "warning" : "normal";
@@ -2929,20 +2946,11 @@
           <small>${percent}% / ${formatBytes(state.storageQuotaBytes)}</small>
         </article>
       </section>
-      <section class="traffic-panel-grid">
+      <section class="traffic-panel-grid traffic-panel-grid-single">
         <article class="panel traffic-panel">
           <div class="subsection-head"><h3>資料表使用量</h3><small>${allTables.length} 個資料表</small></div>
           <div class="traffic-table-list">
             ${allTables.slice(0, 18).map((item) => `<div><span>${escapeHtml(item.label)}</span><b>${item.count}</b></div>`).join("") || `<p class="muted-text">尚未取得資料。</p>`}
-          </div>
-        </article>
-        <article class="panel traffic-panel">
-          <div class="subsection-head"><h3>Supabase 精準流量</h3><small>需後端金鑰</small></div>
-          <p>目前頁面顯示的是系統端可安全取得的登入、資料量與附件容量。若要顯示 Supabase 專案的 API request / egress / bandwidth 精準用量，需要在後端設定 Supabase Management API token，不能放在前端。</p>
-          <div class="traffic-note-list">
-            <span>前端不暴露 token</span>
-            <span>由 Edge Function 代理查詢</span>
-            <span>可接日/月用量告警</span>
           </div>
         </article>
       </section>
@@ -2951,18 +2959,35 @@
 
   function adminSatelliteMonitor() {
     const eupUrl = "https://www.eup.tw/section_spy.html?v1.3.1.0&index";
+    const snapshot = state.eupSnapshot || {};
+    const vehicles = Array.isArray(snapshot.vehicles) ? snapshot.vehicles : [];
     return `
       <div class="section-head admin-compact-head">
         <h2>衛星犬監測</h2>
-        <div class="actions"><a class="primary-btn" href="${eupUrl}" target="_blank" rel="noopener noreferrer">開啟衛星犬</a></div>
+        <div class="actions">
+          <button class="primary-btn" data-action="refresh-satellite-monitor">${state.eupLoading ? "同步中..." : "同步車輛"}</button>
+          <a class="ghost-btn" href="${eupUrl}" target="_blank" rel="noopener noreferrer">開啟衛星犬</a>
+        </div>
       </div>
+      ${state.eupError ? `<div class="empty">衛星犬同步失敗：${escapeHtml(state.eupError)}</div>` : ""}
+      ${snapshot.configured === false ? `<div class="empty">衛星犬登入資料尚未設定完成。</div>` : ""}
+      <section class="traffic-metric-grid">
+        <article class="traffic-metric-card"><span>同步狀態</span><strong>${snapshot.configured ? "已連線" : "待設定"}</strong><small>${snapshot.updated_at ? fmtDateTime(snapshot.updated_at) : "尚未同步"}</small></article>
+        <article class="traffic-metric-card"><span>車輛數</span><strong>${vehicles.length || snapshot.total || 0}</strong><small>衛星犬回傳車輛</small></article>
+        <article class="traffic-metric-card"><span>帳號單位</span><strong>${escapeHtml(snapshot.account_name || "-")}</strong><small>登入後回傳名稱</small></article>
+        <article class="traffic-metric-card"><span>資料來源</span><strong>後端</strong><small>Secret 不進前端</small></article>
+      </section>
       <section class="panel satellite-monitor-panel">
-        <strong>可整合，但需要先確認登入與資料來源。</strong>
-        <p>如果衛星犬提供 API 或可匯出報表，我可以直接把車輛位置、狀態與更新時間同步到系統。若只有網頁帳密，也要確認網站是否允許嵌入 iframe；若不允許，就會改成後端登入抓資料或手動匯入。</p>
-        <div class="traffic-note-list">
-          <span>不建議把帳密存在前端</span>
-          <span>優先使用 API / 匯出檔</span>
-          <span>可做車牌對應與異常提醒</span>
+        <div class="subsection-head"><h3>車輛狀態</h3><small>${vehicles.length} 筆</small></div>
+        <div class="satellite-vehicle-list">
+          ${state.eupLoading ? `<p>正在同步衛星犬車輛資料...</p>` : vehicles.length ? vehicles.slice(0, 80).map((vehicle) => `
+            <div>
+              <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
+              <span>${escapeHtml(vehicle.driver || "-")}</span>
+              <small>${escapeHtml(vehicle.status || "-")}${vehicle.speed ? ` · ${escapeHtml(vehicle.speed)} km/h` : ""}</small>
+              <em>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}</em>
+            </div>
+          `).join("") : `<p>尚未取得衛星犬車輛資料。</p>`}
         </div>
       </section>
     `;
@@ -7428,6 +7453,7 @@
       render();
       if (state.adminView === "storage" && !state.storageFiles.length) await loadStorageUsage();
       if (state.adminView === "trafficMonitor" && !state.storageFiles.length) await loadStorageUsage();
+      if (state.adminView === "satelliteMonitor" && !state.eupSnapshot && !state.eupLoading) await loadSatelliteSnapshot();
     }
     if (target.dataset.partnerView) {
       state.partnerView = target.dataset.partnerView;
@@ -7489,6 +7515,10 @@
         await loadAll();
         await loadStorageUsage();
       });
+      return;
+    }
+    if (target.dataset.action === "refresh-satellite-monitor") {
+      await loadSatelliteSnapshot();
       return;
     }
     if (target.dataset.action === "clear-storage-filter") {

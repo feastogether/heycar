@@ -21,6 +21,9 @@ const tables = [
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
 const lineChannelAccessToken = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN") || "";
 const lineLoginChannelId = Deno.env.get("LINE_LOGIN_CHANNEL_ID") || Deno.env.get("LINE_CHANNEL_ID") || "";
+const eupCompanyCode = Deno.env.get("EUP_COMPANY_CODE") || "";
+const eupAccount = Deno.env.get("EUP_ACCOUNT") || "";
+const eupPassword = Deno.env.get("EUP_PASSWORD") || "";
 const db = createClient(
   Deno.env.get("SUPABASE_URL") || "",
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
@@ -344,6 +347,105 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
     payments: ["finance"]
   };
   return Boolean((aliases[permission] || []).some((key) => permissions[key]));
+}
+
+async function eupServletCall(
+  endpoint: "login" | "realtime",
+  param: Record<string, unknown>,
+  token = ""
+) {
+  const url = endpoint === "login"
+    ? "https://slt.eup.tw:8443/Eup_Login_SOAP/Eup_Login_SOAP"
+    : "https://slt.eup.tw:8443/Eup_RealTime_SOAP/Eup_RealTime_SOAP";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+      ...(token ? { Authorization: token } : {})
+    },
+    body: `Param=${encodeURIComponent(JSON.stringify(param))}`
+  });
+  const text = await response.text();
+  if (!response.ok) throw new Error(`EUP_HTTP_${response.status}`);
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error("EUP_RESPONSE_NOT_JSON");
+  }
+}
+
+async function loadEupVehicleSnapshot() {
+  if (!eupCompanyCode || !eupAccount || !eupPassword) {
+    return {
+      configured: false,
+      vehicles: [],
+      updated_at: new Date().toISOString(),
+      message: "EUP_SECRETS_REQUIRED"
+    };
+  }
+  const loginResponse = await eupServletCall("login", {
+    MethodName: "Login",
+    CoName: eupCompanyCode,
+    Account: eupAccount,
+    Password: eupPassword,
+    DeviceType: "1",
+    ProgVer: "v1.3.8.0",
+    Cust_SystemKind: "1",
+    osVersion: "Server",
+    browserVersion: "Heycar"
+  });
+  if (loginResponse?.status !== 1 || !Array.isArray(loginResponse.result) || !loginResponse.result[0]) {
+    throw new Error("EUP_LOGIN_FAILED");
+  }
+  const accountInfo = loginResponse.result[0] as Record<string, unknown>;
+  const baseParam = {
+    Cust_IMID: accountInfo.Cust_IMID,
+    custImid: accountInfo.Cust_IMID,
+    Cust_ID: accountInfo.Cust_ID,
+    custId: accountInfo.Cust_ID,
+    Team_ID: accountInfo.Team_ID,
+    teamId: accountInfo.Team_ID,
+    SESSION_ID: loginResponse.SESSION_ID
+  };
+  const carDataResponse = await eupServletCall("login", {
+    ...baseParam,
+    MethodName: "GetCarData",
+    Team_ID: accountInfo.Team_ID
+  }, loginResponse.Token || "");
+  const cars = Array.isArray(carDataResponse?.result) ? carDataResponse.result : [];
+  let statuses: Record<string, unknown>[] = [];
+  try {
+    const statusResponse = await eupServletCall("realtime", {
+      ...baseParam,
+      MethodName: "GetCarStatus",
+      Car_Unicode: null,
+      Cust_IMID: accountInfo.Cust_IMID,
+      Team_ID: accountInfo.Team_ID
+    }, loginResponse.Token || "");
+    statuses = Array.isArray(statusResponse?.result) ? statusResponse.result : [];
+  } catch (error) {
+    console.error("eup status fetch failed", error);
+  }
+  const statusByUnicode = new Map(statuses.map((item) => [String(item.Car_Unicode || item.carUnicode || ""), item]));
+  const vehicles = cars.map((car: Record<string, unknown>) => {
+    const status = statusByUnicode.get(String(car.Car_Unicode || "")) || {};
+    return {
+      plate_no: car.Car_Number || car.carNumber || "",
+      driver: car.Car_Driver || car.driverName || "",
+      car_unicode: car.Car_Unicode || "",
+      status: status.Status || status.status || status.Car_Status || "",
+      speed: status.Speed || status.speed || "",
+      address: status.Address || status.address || status.Position || "",
+      gps_time: status.GPSTime || status.gpsTime || status.Update_Time || status.updateTime || ""
+    };
+  });
+  return {
+    configured: true,
+    updated_at: new Date().toISOString(),
+    account_name: accountInfo.Cust_Name || accountInfo.IM_Cust_Name || "",
+    total: vehicles.length,
+    vehicles
+  };
 }
 
 const tablePermission: Record<string, string> = {
@@ -767,6 +869,12 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action === "eup_vehicle_snapshot") {
+      if (session.session_type !== "admin" || !session.is_super_admin) {
+        return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
+      }
+      return json(await loadEupVehicleSnapshot());
+    }
     if (body.action === "bind_line_driver") {
       if (session.session_type !== "driver" || !session.driver_id) return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       let lineIdentity;
