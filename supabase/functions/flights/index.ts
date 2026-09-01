@@ -6,6 +6,15 @@ const staleCacheMs = 60 * 60_000;
 
 const flightCache = new Map<string, { ts: number; rows: Record<string, unknown>[] }>();
 const taoyuanCache: { ts: number; rows: Record<string, string>[] } = { ts: 0, rows: [] };
+const kaohsiungCache: {
+  ts: number;
+  arrivals: Record<string, unknown>[];
+  departures: Record<string, unknown>[];
+  airlines: Record<string, unknown>[];
+  airports: Record<string, unknown>[];
+  noteArrivals: Record<string, unknown>[];
+  noteDepartures: Record<string, unknown>[];
+} = { ts: 0, arrivals: [], departures: [], airlines: [], airports: [], noteArrivals: [], noteDepartures: [] };
 const tokenCache: { ts: number; token: string } = { ts: 0, token: "" };
 
 const airlineNames: Record<string, string> = {
@@ -125,6 +134,10 @@ function flightKey(code: unknown, number: unknown) {
   return `${cleanText(code).toUpperCase()}${cleanText(number).replace(/\s+/g, "").toUpperCase()}`;
 }
 
+function normalizedFlightQuery(value: unknown) {
+  return cleanText(value).replace(/[^A-Z0-9]/gi, "").toUpperCase();
+}
+
 function taipeiDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
 }
@@ -218,6 +231,19 @@ function matchTaoyuanFlight(row: Record<string, string>, query: string) {
   return matchText(searchText, query);
 }
 
+function extractPhpMyAdminTable(payload: unknown) {
+  if (!Array.isArray(payload)) return Array.isArray((payload as { data?: unknown[] })?.data) ? (payload as { data: Record<string, unknown>[] }).data : [];
+  const table = payload.find((item) => item && typeof item === "object" && (item as Record<string, unknown>).type === "table");
+  const data = table && typeof table === "object" ? (table as Record<string, unknown>).data : null;
+  return Array.isArray(data) ? data as Record<string, unknown>[] : [];
+}
+
+async function readJson(url: string) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`高雄機場航班資料讀取失敗 (${response.status})`);
+  return response.json();
+}
+
 async function tdxToken() {
   if (tokenCache.token && Date.now() - tokenCache.ts < 50 * 60_000) return tokenCache.token;
 
@@ -285,6 +311,32 @@ async function readTaoyuanRows() {
   return rows;
 }
 
+async function readKaohsiungData() {
+  const now = Date.now();
+  if (kaohsiungCache.arrivals.length && now - kaohsiungCache.ts < cacheMs) return kaohsiungCache;
+  try {
+    const [arrivals, departures, airlineJson, airportJson, noteArrivalJson, noteDepartureJson] = await Promise.all([
+      readJson("https://www.kia.gov.tw/data/arr.json"),
+      readJson("https://www.kia.gov.tw/data/dep.json"),
+      readJson("https://www.kia.gov.tw/data/airline2.json"),
+      readJson("https://www.kia.gov.tw/data/airport2.json"),
+      readJson("https://www.kia.gov.tw/data/note_arr.json"),
+      readJson("https://www.kia.gov.tw/data/note_dep.json")
+    ]);
+    kaohsiungCache.ts = now;
+    kaohsiungCache.arrivals = Array.isArray(arrivals) ? arrivals : [];
+    kaohsiungCache.departures = Array.isArray(departures) ? departures : [];
+    kaohsiungCache.airlines = extractPhpMyAdminTable(airlineJson);
+    kaohsiungCache.airports = extractPhpMyAdminTable(airportJson);
+    kaohsiungCache.noteArrivals = extractPhpMyAdminTable(noteArrivalJson);
+    kaohsiungCache.noteDepartures = extractPhpMyAdminTable(noteDepartureJson);
+    return kaohsiungCache;
+  } catch (error) {
+    if (kaohsiungCache.arrivals.length && now - kaohsiungCache.ts < staleCacheMs) return kaohsiungCache;
+    throw error;
+  }
+}
+
 function mapTdxFlight(row: Record<string, unknown>, endpoint: string) {
   const airlineCode = firstValue(row, ["AirlineID", "AirlineCode"]);
   return {
@@ -343,6 +395,74 @@ function mapTaoyuanFlight(row: Record<string, string>) {
   };
 }
 
+function kaohsiungName(rows: Record<string, unknown>[], code: string, codeKey: string, nameKey: string) {
+  const item = rows.find((row) => cleanText(row[codeKey]).toUpperCase() === code);
+  return item ? cleanText(item[nameKey]) : "";
+}
+
+function kaohsiungNote(rows: Record<string, unknown>[], id: unknown) {
+  const code = cleanText(id);
+  const item = rows.find((row) => cleanText(row.NID) === code);
+  return item ? cleanText(item.TW) : "";
+}
+
+function matchKaohsiungFlight(row: Record<string, unknown>, query: string) {
+  const normalized = normalizedFlightQuery(query);
+  if (!normalized) return true;
+  return [
+    row.airLineNum,
+    row.CodeShare,
+    row.airLineIATA,
+    row.DepartureAirportIATA,
+    row.ArrivalAirportIATA,
+    row.airPlaneType
+  ].some((value) => normalizedFlightQuery(value).includes(normalized));
+}
+
+function mapKaohsiungFlight(
+  row: Record<string, unknown>,
+  endpoint: string,
+  meta: Awaited<ReturnType<typeof readKaohsiungData>>
+) {
+  const airlineCode = cleanText(row.airLineIATA).toUpperCase();
+  const airportCode = endpoint === "Departure"
+    ? cleanText(row.ArrivalAirportIATA).toUpperCase()
+    : cleanText(row.DepartureAirportIATA).toUpperCase();
+  const statusMaps: Record<string, Record<string, string>> = {
+    Arrival: { "0": "", "1": "準時", "2": "抵達", "3": "延遲", "4": "轉降", "5": "取消", "6": "提早" },
+    Departure: { "0": "", "1": "準時", "2": "報到", "3": "登機", "4": "離站", "5": "延遲登機", "6": "延遲", "7": "取消", "8": "提早" }
+  };
+  const statusCode = endpoint === "Departure" ? cleanText(row.statusdep) : cleanText(row.statusarr);
+  const note = endpoint === "Departure" ? kaohsiungNote(meta.noteDepartures, row.notedep) : kaohsiungNote(meta.noteArrivals, row.notearr);
+  return {
+    flightNo: cleanText(row.airLineNum) || "-",
+    codeShare: cleanText(row.CodeShare),
+    city: kaohsiungName(meta.airports, airportCode, "IATA", "BN") || airportNames[airportCode] || airportCode,
+    airportCode,
+    baseAirport: "高雄",
+    baseAirportCode: "KHH",
+    airline: kaohsiungName(meta.airlines, airlineCode, "AirlineIATA", "AirlineChineseAlias") || airlineNames[airlineCode] || airlineCode,
+    airlineCode,
+    airlineLogo: airlineLogo(airlineCode),
+    scheduledTime: endpoint === "Departure" ? cleanText(row.STD).replace(" ", "T") : cleanText(row.STA).replace(" ", "T"),
+    estimatedTime: endpoint === "Departure"
+      ? cleanText(row.deptime || row.ATD).replace(" ", "T")
+      : cleanText(row.arrtime || row.ATA).replace(" ", "T"),
+    actualTime: endpoint === "Departure" ? cleanText(row.ATD).replace(" ", "T") : cleanText(row.ATA).replace(" ", "T"),
+    terminal: "高雄",
+    gate: cleanText(row.Bay),
+    baggage: cleanText(row.BHSNo),
+    checkInCounter: "",
+    status: [statusMaps[endpoint]?.[statusCode], note].filter(Boolean).join(" / ") || "即時航班",
+    statusEn: "",
+    remark: note,
+    aircraftType: cleanText(row.airPlaneType),
+    updateTime: endpoint === "Departure" ? cleanText(row.deptime || row.STD).replace(" ", "T") : cleanText(row.arrtime || row.STA).replace(" ", "T"),
+    source: "高雄機場",
+    sourceType: "kaohsiung"
+  };
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers });
 
@@ -352,8 +472,9 @@ Deno.serve(async (request) => {
     const endpoint = url.searchParams.get("direction") === "departure" ? "Departure" : "Arrival";
     const directionCode = endpoint === "Departure" ? "D" : "A";
     const targetDate = (url.searchParams.get("date") || taipeiDate()).slice(0, 10);
-    const source = url.searchParams.get("source") === "taoyuan" ? "taoyuan" : "tdx";
+    const sourceParam = cleanText(url.searchParams.get("source")).toLowerCase();
     const airport = (url.searchParams.get("airport") || "TPE").trim().toUpperCase();
+    const source = sourceParam === "taoyuan" ? "taoyuan" : sourceParam === "kaohsiung" || airport === "KHH" ? "kaohsiung" : "tdx";
 
     if (source === "taoyuan") {
       const rows = await readTaoyuanRows();
@@ -362,6 +483,17 @@ Deno.serve(async (request) => {
         .filter((row) => matchTaoyuanFlight(row, query))
         .slice(0, 40)
         .map(mapTaoyuanFlight);
+      return new Response(JSON.stringify(flights), { headers });
+    }
+
+    if (source === "kaohsiung") {
+      const data = await readKaohsiungData();
+      const rows = endpoint === "Departure" ? data.departures : data.arrivals;
+      const flights = rows
+        .filter((row) => cleanText(row.FDATE).slice(0, 10) === targetDate)
+        .filter((row) => matchKaohsiungFlight(row, query))
+        .slice(0, 60)
+        .map((row) => mapKaohsiungFlight(row, endpoint, data));
       return new Response(JSON.stringify(flights), { headers });
     }
 

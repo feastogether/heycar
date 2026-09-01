@@ -2564,7 +2564,7 @@ textarea { min-height: 100px; resize: vertical; }
 .schedule-details strong { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 .flight-search {
   display: grid;
-  grid-template-columns: 150px 178px 170px minmax(220px, 1fr) auto;
+  grid-template-columns: 150px 150px 178px 170px minmax(220px, 1fr) auto;
   gap: 10px;
   margin-bottom: 18px;
 }
@@ -2619,7 +2619,8 @@ textarea { min-height: 100px; resize: vertical; }
 .flight-toggle input[value="departure"]:checked ~ .flight-toggle-thumb { transform: translateX(100%); }
 .flight-source-toggle input[value="taoyuan"]:checked ~ label:last-of-type { color: white; }
 .flight-source-toggle:has(input[value="taoyuan"]:checked)::before { transform: translateX(100%); }
-.flight-date-field {
+.flight-date-field,
+.flight-airport-field {
   min-height: 44px;
   display: grid;
   grid-template-columns: auto 1fr;
@@ -2630,15 +2631,20 @@ textarea { min-height: 100px; resize: vertical; }
   border-radius: 10px;
   background: white;
 }
-.flight-date-field span {
+.flight-date-field span,
+.flight-airport-field span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
 }
-.flight-date-field input {
+.flight-date-field input,
+.flight-airport-field select {
   border: 0;
   padding: 0;
   min-width: 0;
+  background: transparent;
+  color: var(--ink);
+  font-weight: 850;
 }
 .flight-fallback {
   grid-column: 1 / -1;
@@ -5072,7 +5078,9 @@ tr:last-child td { border-bottom: 0; }
   .service-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .broadcast-grid { grid-template-columns: 1fr; }
   .flight-search { grid-template-columns: 1fr 1fr; }
-  .flight-search input[name="flight"], .flight-search button { grid-column: 1 / -1; }
+  .flight-airport-field,
+  .flight-search input[name="flight"],
+  .flight-search button { grid-column: 1 / -1; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
   .rwd-smart-table, .rwd-smart-table thead, .rwd-smart-table tbody, .rwd-smart-table th, .rwd-smart-table td, .rwd-smart-table tr { display: block; min-width: 0; }
   .rwd-smart-table thead { display: none; }
@@ -5281,7 +5289,8 @@ tr:last-child td { border-bottom: 0; }
   .flight-toggle { min-height: 40px; }
   .flight-source-toggle label,
   .flight-toggle label { min-height: 30px; font-size: 13px; }
-  .flight-date-field { min-height: 40px; grid-column: 1 / -1; }
+  .flight-date-field,
+  .flight-airport-field { min-height: 40px; grid-column: 1 / -1; }
   .flight-search input[name="flight"],
   .flight-search button { grid-column: 1 / -1; }
   .flight-card { min-height: 0; padding: 14px; gap: 11px; }

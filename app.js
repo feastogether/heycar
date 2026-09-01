@@ -1707,6 +1707,34 @@
     return "";
   }
 
+  function platformDeepLink(platform = "") {
+    const text = String(platform || "");
+    if (text.includes("肯驛")) return "https://driver.canlead.com.tw/index.aspx";
+    if (text.includes("格上")) return "carschedule://";
+    if (text.includes("和運")) return "hoyun-driver://";
+    return platformLink(platform);
+  }
+
+  function platformStoreLink(platform = "") {
+    const text = String(platform || "");
+    if (text.includes("格上")) return "https://apps.apple.com/tw/app/%E8%BB%8A%E9%9A%8A%E6%8E%A5%E9%80%81%E9%81%8A/id1331770557";
+    if (text.includes("和運")) return "https://apps.apple.com/tw/app/%E5%92%8C%E9%9B%B2%E5%8F%B8%E6%A9%9F%E5%B9%B3%E5%8F%B0/id6677011032";
+    return platformLink(platform);
+  }
+
+  function openPlatformApp(platform = "") {
+    const deepLink = platformDeepLink(platform);
+    const fallback = platformStoreLink(platform);
+    if (!deepLink && !fallback) return;
+    const startedAt = Date.now();
+    if (deepLink) window.location.href = deepLink;
+    if (fallback && fallback !== deepLink) {
+      setTimeout(() => {
+        if (!document.hidden && Date.now() - startedAt < 1800) window.location.href = fallback;
+      }, 1200);
+    }
+  }
+
   function dispatchSummaryLine(order) {
     return [order.trip_type || "派趟", [order.city, order.district].filter(Boolean).join(""), fmtDate(order.reservation_date)].filter(Boolean).join("｜");
   }
@@ -1849,7 +1877,7 @@
         </div>
         <div class="dispatch-detail-actions">
           ${state.user && item.status !== "completed" ? `<button class="primary-btn" data-dispatch-complete="${escapeHtml(item.id)}">完成</button>` : ""}
-          ${link ? `<a class="ghost-btn" href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">連接平台</a>` : ""}
+          ${link ? `<button class="ghost-btn" type="button" data-open-platform="${escapeHtml(item.source_platform || "")}">連接平台</button>` : ""}
         </div>
       </div>
     </div>`;
@@ -1866,14 +1894,20 @@
       endpoint.searchParams.set("q", order.flight_no);
       endpoint.searchParams.set("direction", String(order.trip_type || "").includes("送") ? "departure" : "arrival");
       endpoint.searchParams.set("date", fmtDate(order.reservation_date));
-      endpoint.searchParams.set("source", "tdx");
+      endpoint.searchParams.set("source", "kaohsiung");
       endpoint.searchParams.set("airport", "KHH");
       const response = await fetch(endpoint, { cache: "no-store" });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "航班查詢失敗");
-      const flight = (Array.isArray(payload) ? payload : payload.flights || [])[0];
+      let flight = (Array.isArray(payload) ? payload : payload.flights || [])[0];
+      if (!flight && fmtDate(order.reservation_date) !== today()) {
+        endpoint.searchParams.set("date", today());
+        const fallbackResponse = await fetch(endpoint, { cache: "no-store" });
+        const fallbackPayload = await fallbackResponse.json();
+        if (fallbackResponse.ok) flight = (Array.isArray(fallbackPayload) ? fallbackPayload : fallbackPayload.flights || [])[0];
+      }
       if (!flight) {
-        box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span>小港機場暫查無此航班狀態</span>`;
+        box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span>高雄機場暫查無此航班狀態</span><small>支援正式班號與共掛班號，若日期太遠可能尚未進入即時資料。</small>`;
         return;
       }
       const status = flightStatusText(flight, String(order.trip_type || "").includes("送") ? "departure" : "arrival");
@@ -2225,6 +2259,13 @@
             <input type="radio" id="sourceTaoyuan" name="source" value="taoyuan">
             <label for="sourceTaoyuan">桃機</label>
           </div>
+          <label class="flight-airport-field">
+            <span>機場</span>
+            <select name="airport">
+              <option value="TPE">桃園機場</option>
+              <option value="KHH">高雄機場</option>
+            </select>
+          </label>
           <div class="flight-toggle" role="radiogroup" aria-label="航班類型">
             <input type="radio" id="flightArrival" name="direction" value="arrival" checked>
             <label for="flightArrival">抵達</label>
@@ -7102,7 +7143,7 @@
     return "雷雨";
   }
 
-  async function loadFlights(query = "", direction = "arrival", date = today(), source = "tdx") {
+  async function loadFlights(query = "", direction = "arrival", date = today(), source = "tdx", airport = "TPE") {
     const box = document.getElementById("flightList");
     if (!box) return;
     if (!cfg.FLIGHT_INFO_URL) {
@@ -7121,13 +7162,13 @@
       endpoint.searchParams.set("q", query);
       endpoint.searchParams.set("direction", direction);
       endpoint.searchParams.set("date", date || today());
-      endpoint.searchParams.set("source", source);
+      endpoint.searchParams.set("airport", airport || "TPE");
+      endpoint.searchParams.set("source", airport === "KHH" ? "kaohsiung" : source);
       const response = await fetch(endpoint, { cache: "no-store" });
       const payload = await response.json();
       if (response.status === 404) throw new Error("航班服務尚未部署到 Supabase");
       if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
-      const flights = (Array.isArray(payload) ? payload : payload.data || payload.flights || [])
-        .filter((flight) => !date || String(flight.scheduledTime || flight.ScheduledTime || "").slice(0, 10) === date);
+      const flights = (Array.isArray(payload) ? payload : payload.data || payload.flights || []);
       box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
         <article class="modern-luxury-item flight-card">
           <div class="flight-card-head">
@@ -7160,7 +7201,7 @@
           </div>
           <div class="flight-update">資料來源：${escapeHtml(flight.source || "TDX")} ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
         </article>
-      `).join("") : `<div class="empty">查無符合的航班。</div>`;
+      `).join("") : `<div class="empty">查無符合的航班。請確認日期、機場與班號是否正確。</div>`;
     } catch (error) {
       box.innerHTML = `<div class="empty">${escapeHtml(error.message || "航班資料讀取失敗")}<br>請使用桃園機場官方查詢。</div>`;
     }
@@ -7177,7 +7218,7 @@
       ["登機門", flight.gate],
       [direction === "departure" ? "報到櫃台" : "行李轉盤", direction === "departure" ? flight.checkInCounter : flight.baggage]
     ];
-    if (flight.sourceType === "taoyuan") {
+    if (flight.sourceType === "taoyuan" || flight.sourceType === "kaohsiung") {
       items.push(
         ["行李轉盤", flight.baggage],
         ["報到櫃台", flight.checkInCounter],
@@ -7208,7 +7249,8 @@
   function flightRouteText(flight, direction) {
     const city = flight.city || flight.destination || flight.origin || flight.City || "-";
     const code = flight.airportCode ? ` (${flight.airportCode})` : "";
-    return direction === "departure" ? `桃園 → ${city}${code}` : `${city}${code} → 桃園`;
+    const base = flight.baseAirport || (flight.sourceType === "kaohsiung" ? "高雄" : "桃園");
+    return direction === "departure" ? `${base} → ${city}${code}` : `${city}${code} → ${base}`;
   }
 
   function flightStatusClass(status) {
@@ -7379,6 +7421,11 @@
     if (target?.dataset.dispatchDetail) {
       e.preventDefault();
       openDispatchDetail(target.dataset.dispatchDetail);
+      return;
+    }
+    if (target?.dataset.openPlatform !== undefined) {
+      e.preventDefault();
+      openPlatformApp(target.dataset.openPlatform || "");
       return;
     }
     if (target?.dataset.dispatchComplete) {
@@ -7821,7 +7868,8 @@
         String(data.get("flight") || "").trim(),
         String(data.get("direction") || "arrival"),
         String(data.get("date") || today()),
-        String(data.get("source") || "tdx")
+        String(data.get("source") || "tdx"),
+        String(data.get("airport") || "TPE")
       );
     }
     if (e.target.id === "driverSearchForm") {
