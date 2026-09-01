@@ -2412,10 +2412,39 @@ textarea { min-height: 100px; resize: vertical; }
   gap: 8px;
 }
 .dispatch-card-list .dispatch-order-row button {
-  grid-template-columns: 60px minmax(120px, 1fr) 52px minmax(90px, .85fr) 92px 52px;
+  grid-template-columns: 60px minmax(120px, 1fr) 52px minmax(90px, .85fr) 92px 52px 52px;
 }
 .dispatch-card-list .dispatch-order-row button > span:last-child {
   display: none;
+}
+.dispatch-flight-mini {
+  justify-self: end;
+  display: inline-grid;
+  min-width: 48px;
+  min-height: 24px;
+  place-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 12px !important;
+  font-weight: 950 !important;
+}
+.dispatch-flight-mini.ontime {
+  background: #dcfce7;
+  color: #15803d;
+}
+.dispatch-flight-mini.delayed {
+  background: #ffedd5;
+  color: #c2410c;
+}
+.dispatch-flight-mini.cancelled {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.dispatch-flight-mini.loading {
+  background: #e0f2fe;
+  color: #0369a1;
 }
 .dispatch-order-row.is-updated {
   border-color: rgba(239,63,53,.78);
@@ -2564,12 +2593,43 @@ textarea { min-height: 100px; resize: vertical; }
 .schedule-details strong { font-size: 14px; color: var(--ink); overflow-wrap: anywhere; }
 .flight-search {
   display: grid;
-  grid-template-columns: 150px 150px 178px 170px minmax(220px, 1fr) auto;
+  grid-template-columns: 190px 160px minmax(190px, 1fr) auto;
   gap: 10px;
   margin-bottom: 18px;
 }
+.flight-source-choice {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  min-height: 44px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f8fafc;
+}
+.flight-source-choice input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.flight-source-choice label {
+  display: grid;
+  min-height: 34px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 900;
+  cursor: pointer;
+}
+.flight-source-choice input:checked + label {
+  color: #fff;
+  background: var(--brand);
+  box-shadow: 0 8px 18px rgba(239,63,53,.18);
+}
 .flight-toggle,
-.flight-source-toggle {
+.flight-source-toggle,
+.flight-airport-toggle {
   position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -2582,13 +2642,15 @@ textarea { min-height: 100px; resize: vertical; }
   isolation: isolate;
 }
 .flight-toggle input,
-.flight-source-toggle input {
+.flight-source-toggle input,
+.flight-airport-toggle input {
   position: absolute;
   opacity: 0;
   pointer-events: none;
 }
 .flight-toggle label,
-.flight-source-toggle label {
+.flight-source-toggle label,
+.flight-airport-toggle label {
   z-index: 2;
   min-height: 34px;
   display: grid;
@@ -2601,7 +2663,8 @@ textarea { min-height: 100px; resize: vertical; }
   transition: color .2s ease;
 }
 .flight-toggle-thumb,
-.flight-source-toggle::before {
+.flight-source-toggle::before,
+.flight-airport-toggle::before {
   position: absolute;
   z-index: 1;
   top: 4px;
@@ -2614,11 +2677,15 @@ textarea { min-height: 100px; resize: vertical; }
   transition: transform .22s ease;
 }
 .flight-source-toggle::before { content: ""; }
+.flight-airport-toggle::before { content: ""; }
 .flight-toggle input:checked + label,
-.flight-source-toggle input:checked + label { color: white; }
+.flight-source-toggle input:checked + label,
+.flight-airport-toggle input:checked + label { color: white; }
 .flight-toggle input[value="departure"]:checked ~ .flight-toggle-thumb { transform: translateX(100%); }
 .flight-source-toggle input[value="taoyuan"]:checked ~ label:last-of-type { color: white; }
 .flight-source-toggle:has(input[value="taoyuan"]:checked)::before { transform: translateX(100%); }
+.flight-airport-toggle input[value="KHH"]:checked ~ label:last-of-type { color: white; }
+.flight-airport-toggle:has(input[value="KHH"]:checked)::before { transform: translateX(100%); }
 .flight-date-field,
 .flight-airport-field {
   min-height: 44px;
@@ -5078,7 +5145,6 @@ tr:last-child td { border-bottom: 0; }
   .service-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .broadcast-grid { grid-template-columns: 1fr; }
   .flight-search { grid-template-columns: 1fr 1fr; }
-  .flight-airport-field,
   .flight-search input[name="flight"],
   .flight-search button { grid-column: 1 / -1; }
   .table-wrap { border: 0; background: transparent; box-shadow: none; overflow: visible; }
@@ -5285,9 +5351,13 @@ tr:last-child td { border-bottom: 0; }
   .loan-row-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .loan-row > .actions { min-width: 0; justify-content: stretch; }
   .flight-search { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .flight-source-choice { min-height: 40px; }
+  .flight-source-choice label { min-height: 30px; font-size: 13px; }
   .flight-source-toggle,
+  .flight-airport-toggle,
   .flight-toggle { min-height: 40px; }
   .flight-source-toggle label,
+  .flight-airport-toggle label,
   .flight-toggle label { min-height: 30px; font-size: 13px; }
   .flight-date-field,
   .flight-airport-field { min-height: 40px; grid-column: 1 / -1; }
@@ -5654,7 +5724,7 @@ tr:last-child td { border-bottom: 0; }
   }
   .dispatch-card-list .dispatch-order-row button {
     min-height: 64px;
-    grid-template-columns: 42px minmax(0, 1fr) 88px;
+    grid-template-columns: 42px minmax(0, 1fr) 88px 48px;
     grid-template-rows: auto auto;
     gap: 5px 8px;
     align-items: center;
@@ -5676,14 +5746,20 @@ tr:last-child td { border-bottom: 0; }
     grid-column: 2;
     grid-row: 2;
   }
-  .dispatch-card-list .dispatch-order-row time {
+  .dispatch-card-list .dispatch-order-row .dispatch-flight-mini {
     grid-column: 3;
     grid-row: 1;
     text-align: right;
   }
-  .dispatch-card-list .dispatch-order-row button > span:nth-of-type(4) {
+  .dispatch-card-list .dispatch-order-row time {
     grid-column: 3;
     grid-row: 2;
+    text-align: right;
+  }
+  .dispatch-card-list .dispatch-order-row button > span:nth-of-type(5) {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    align-self: center;
     text-align: right;
   }
   .dispatch-card-list .dispatch-order-row button > span:last-child {
