@@ -138,6 +138,10 @@ function normalizedFlightQuery(value: unknown) {
   return cleanText(value).replace(/[^A-Z0-9]/gi, "").toUpperCase();
 }
 
+function normalizedFlightNumber(value: unknown) {
+  return normalizedFlightQuery(value).replace(/^([A-Z]{2,3}|[A-Z][0-9]|[0-9][A-Z])0+(\d+)$/, "$1$2");
+}
+
 function taipeiDate() {
   return new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Taipei" }).format(new Date());
 }
@@ -203,7 +207,18 @@ function combineTaoyuanTime(date: string, time: string) {
 }
 
 function matchText(value: string, query: string) {
-  return !query || value.toLowerCase().includes(query.replace(/\s+/g, "").toLowerCase());
+  if (!query) return true;
+  const compactQuery = query.replace(/\s+/g, "").toLowerCase();
+  const normalizedQuery = normalizedFlightNumber(query);
+  const normalizedValue = normalizedFlightNumber(value);
+  return value.toLowerCase().includes(compactQuery) || (!!normalizedQuery && (normalizedFlightValueMatches(value, normalizedQuery) || normalizedValue.includes(normalizedQuery)));
+}
+
+function normalizedFlightValueMatches(value: unknown, normalizedQuery: string) {
+  return cleanText(value)
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+    .some((part) => normalizedFlightNumber(part).includes(normalizedQuery));
 }
 
 function matchTdxFlight(row: Record<string, unknown>, query: string) {
@@ -407,7 +422,7 @@ function kaohsiungNote(rows: Record<string, unknown>[], id: unknown) {
 }
 
 function matchKaohsiungFlight(row: Record<string, unknown>, query: string) {
-  const normalized = normalizedFlightQuery(query);
+  const normalized = normalizedFlightNumber(query);
   if (!normalized) return true;
   return [
     row.airLineNum,
@@ -416,7 +431,7 @@ function matchKaohsiungFlight(row: Record<string, unknown>, query: string) {
     row.DepartureAirportIATA,
     row.ArrivalAirportIATA,
     row.airPlaneType
-  ].some((value) => normalizedFlightQuery(value).includes(normalized));
+  ].some((value) => normalizedFlightValueMatches(value, normalized) || normalizedFlightNumber(value).includes(normalized));
 }
 
 function mapKaohsiungFlight(

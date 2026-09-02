@@ -2288,9 +2288,18 @@ textarea { min-height: 100px; resize: vertical; }
 .dispatch-detail-hero {
   border-radius: 18px 18px 0 0;
 }
-.dispatch-detail-hero.canlead { background: linear-gradient(135deg, #713f12, #ca8a04); }
-.dispatch-detail-hero.hotai { background: linear-gradient(135deg, #7f1d1d, #ef3f35); }
-.dispatch-detail-hero.car-plus { background: linear-gradient(135deg, #1e3a8a, #2563eb); }
+.dispatch-detail-hero.canlead { background: #fef3c7; color: #713f12; }
+.dispatch-detail-hero.hotai { background: #fee2e2; color: #7f1d1d; }
+.dispatch-detail-hero.car-plus { background: #dbeafe; color: #1e3a8a; }
+.dispatch-detail-hero,
+.dispatch-detail-hero small,
+.dispatch-detail-hero h3,
+.dispatch-detail-hero p {
+  color: inherit;
+}
+.dispatch-detail-hero .icon-close-btn {
+  background: rgba(255,255,255,.72);
+}
 .dispatch-detail-body {
   display: grid;
   gap: 16px;
@@ -2542,6 +2551,19 @@ textarea { min-height: 100px; resize: vertical; }
   margin-bottom: 20px;
 }
 .driver-page-head h2 { margin: 0; font-size: 24px; font-weight: 900; }
+.compact-driver-head {
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.compact-driver-head .back-btn {
+  min-width: 88px;
+}
+.driver-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 16px; }
 .actionbar { justify-content: flex-start; }
 .luxury-card-mesh {

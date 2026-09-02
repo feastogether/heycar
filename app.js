@@ -1822,13 +1822,13 @@
     const updated = !admin && dispatchOrderNeedsAttention(order);
     const flightStatus = dispatchFlightStatusLabel(order);
     const areaText = [order.city, order.district].filter(Boolean).join("") || "-";
-    const displayArea = !admin && flightStatus.text !== "-" ? `${areaText} ${flightStatus.text}` : areaText;
+    const displayArea = flightStatus.text ? `${areaText} ${flightStatus.text}` : areaText;
     return `<article class="dispatch-order-card dispatch-order-row ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
       <button type="button" data-dispatch-detail="${escapeHtml(order.id)}">
         <strong class="dispatch-platform">${escapeHtml(order.source_platform || "派趟")}</strong>
         <span class="dispatch-booking">${escapeHtml(order.booking_no || "-")}</span>
         <span>${escapeHtml(order.trip_type || "-")}</span>
-        <span class="dispatch-area-status ${!admin ? flightStatus.className : ""}">${escapeHtml(displayArea)}</span>
+        <span class="dispatch-area-status ${flightStatus.className || ""}">${escapeHtml(displayArea)}</span>
         <time>${escapeHtml(dispatchDisplayDate(order.reservation_date))}</time>
         <span>${escapeHtml(order.reservation_time || "-")}</span>
         <span>${escapeHtml(order.driver_name || "-")}</span>
@@ -1837,13 +1837,13 @@
   }
 
   function dispatchFlightCacheKey(order = {}) {
-    const no = String(order.flight_no || "").replace(/\s+/g, "").toUpperCase();
+    const no = normalizeFlightNumber(order.flight_no);
     if (!no) return "";
     return `${no}|${fmtDate(order.reservation_date)}|${String(order.trip_type || "").includes("送") ? "departure" : "arrival"}`;
   }
 
   function dispatchFlightStatusLabel(order = {}) {
-    if (!order.flight_no) return { text: "-", className: "unknown" };
+    if (!order.flight_no) return { text: "無航班", className: "unknown" };
     const cached = state.dispatchFlightStatuses[dispatchFlightCacheKey(order)];
     if (!cached) return { text: "查詢中", className: "loading" };
     if (cached.loading) return { text: "查詢中", className: "loading" };
@@ -1870,9 +1870,13 @@
   }
 
   function scheduleDispatchFlightMiniStatuses(orders = []) {
-    const targets = orders.filter((order) => order.flight_no).slice(0, 12);
+    const targets = orders.filter((order) => order.flight_no && !state.dispatchFlightStatuses[dispatchFlightCacheKey(order)]);
     if (!targets.length) return;
-    setTimeout(() => targets.forEach((order) => loadDispatchFlightMiniStatus(order)), 0);
+    setTimeout(() => {
+      targets.forEach((order, index) => {
+        setTimeout(() => loadDispatchFlightMiniStatus(order), index * 120);
+      });
+    }, 0);
   }
 
   function dispatchSeenKey(id) {
@@ -1913,7 +1917,7 @@
       </div>
       <div class="dispatch-detail-body">
         <div class="dispatch-flight-box" data-dispatch-flight-status="${escapeHtml(item.id)}">
-          ${item.flight_no ? `<strong>${escapeHtml(item.flight_no)}</strong><span>查詢小港航班狀態中...</span>` : `<span>此訂單沒有航班編號</span>`}
+          ${item.flight_no ? `<strong>${escapeHtml(normalizeFlightNumber(item.flight_no) || item.flight_no)}</strong><span>查詢小港航班狀態中...</span>` : `<span>此訂單沒有航班編號</span>`}
         </div>
         <div class="dispatch-detail-list">
           ${[
@@ -1953,11 +1957,11 @@
       const direction = String(order.trip_type || "").includes("送") ? "departure" : "arrival";
       const flight = await fetchFlightStatus(order.flight_no, direction, fmtDate(order.reservation_date), "KHH", "kaohsiung", true);
       if (!flight) {
-        box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span>高雄機場暫查無此航班狀態</span><small>支援正式班號與共掛班號，若日期太遠可能尚未進入即時資料。</small>`;
+        box.innerHTML = `<strong>${escapeHtml(normalizeFlightNumber(order.flight_no) || order.flight_no)}</strong><span>高雄機場暫查無此航班狀態</span><small>支援正式班號與共掛班號，若日期太遠可能尚未進入即時資料。</small>`;
         return;
       }
       const status = flightStatusText(flight, direction);
-      box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span class="flight-status ${flightStatusClass(status)}">${escapeHtml(status)}</span><small>表定 ${escapeHtml(formatFlightTime(flight.scheduledTime))}｜預計 ${escapeHtml(formatFlightTime(flight.estimatedTime))}</small>`;
+      box.innerHTML = `<strong>${escapeHtml(normalizeFlightNumber(order.flight_no) || order.flight_no)}</strong><span class="flight-status ${flightStatusClass(status)}">${escapeHtml(status)}</span><small>表定 ${escapeHtml(formatFlightTime(flight.scheduledTime))}｜預計 ${escapeHtml(formatFlightTime(flight.estimatedTime))}</small>`;
     } catch (error) {
       box.innerHTML = `<strong>${escapeHtml(order.flight_no)}</strong><span>航班狀態暫時無法讀取</span>`;
     }
@@ -2051,11 +2055,11 @@
   }
 
   function backButton() {
-    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>首頁</span></button>`;
+    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>返回</span></button>`;
   }
 
-  function pageHeader(title) {
-    return `<div class="driver-page-head">${backButton()}<h2>${title}</h2></div>`;
+  function pageHeader(_title = "", actions = "") {
+    return `<div class="driver-page-head compact-driver-head">${backButton()}${actions ? `<div class="driver-head-actions">${actions}</div>` : ""}</div>`;
   }
 
   function driverAnnouncements() {
@@ -2191,8 +2195,7 @@
   function driverFeedback() {
     const items = mine("feedbacks").sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
     return `
-      ${pageHeader("意見反饋")}
-      <div class="section-head feedback-head"><p>遇到問題或有改善建議，可以直接送給管理中心。</p><button class="primary-btn" data-modal="feedback">新增反饋</button></div>
+      ${pageHeader("意見反饋", `<button class="primary-btn" data-modal="feedback">新增反饋</button>`)}
       <div class="feedback-list">
         ${items.length ? items.map((item) => `<article class="feedback-row">
           <div><span class="message-kind personal">${escapeHtml(item.category || "其他")}</span><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.content)}</p></div>
@@ -2259,7 +2262,6 @@
     const items = (state.data.emergency_events || []).filter((item) => item.active !== false);
     return `
       ${pageHeader("緊急事件")}
-      <div class="emergency-intro">遇到突發狀況時，請先確保人身安全，再依照對應流程處理並回報車隊。</div>
       <div class="qa-list">
         ${items.length ? items.map((item) => `
           <details class="qa-item">
@@ -2278,7 +2280,8 @@
   function driverBroadcast() {
     const streams = [
       ["桃園機場即時轉播 1", "y3_x8el5ZJY"],
-      ["桃園機場即時轉播 2", "wWEnxWA7nnY"]
+      ["桃園機場即時轉播 2", "wWEnxWA7nnY"],
+      ["高雄機場即時轉播", "_hx5akJfzso"]
     ];
     return `
       ${pageHeader("機場轉播")}
@@ -4525,6 +4528,7 @@
           && (!timeKeyword || itemTime.includes(timeKeyword));
       })
       .sort(dispatchOrderSort);
+    scheduleDispatchFlightMiniStatuses(items);
     const pending = items.filter((item) => item.status !== "completed").length;
     const platformCounts = ["肯驛", "和運", "格上"].map((platform) => [platform, items.filter((item) => String(item.source_platform || "").includes(platform)).length]);
     return `<div class="dispatch-admin-shell">
@@ -7187,7 +7191,7 @@
   async function fetchFlights(query = "", direction = "arrival", date = today(), airport = "TPE", source = "tdx") {
     if (!cfg.FLIGHT_INFO_URL) return [];
     const endpoint = new URL(cfg.FLIGHT_INFO_URL);
-    endpoint.searchParams.set("q", query);
+    endpoint.searchParams.set("q", normalizeFlightSearchQuery(query));
     endpoint.searchParams.set("direction", direction);
     endpoint.searchParams.set("date", date || today());
     endpoint.searchParams.set("airport", airport || "TPE");
@@ -7207,6 +7211,17 @@
       return fallbackFlights[0] || null;
     }
     return null;
+  }
+
+  function normalizeFlightNumber(value = "") {
+    const code = String(value || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    return code.replace(/^([A-Z]{2,3}|[A-Z][0-9]|[0-9][A-Z])0+(\d+)$/, "$1$2");
+  }
+
+  function normalizeFlightSearchQuery(value = "") {
+    const raw = String(value || "").trim();
+    const normalized = normalizeFlightNumber(raw);
+    return /[A-Za-z0-9]/.test(raw) && normalized ? normalized : raw;
   }
 
   function resolveFlightSource(sourceChoice = "tdx") {
