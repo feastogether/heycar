@@ -1669,7 +1669,7 @@
       return;
     }
     layout(views[state.view]());
-    if (state.view === "flights") loadFlights();
+    if (state.view === "flights") loadFlights("", today(), "taoyuan");
   }
 
   function feature(view, title, desc, count) {
@@ -2303,12 +2303,12 @@
         <form id="flightSearchForm" class="flight-search">
           <button class="ghost-btn flight-back-btn" type="button" data-view="home">返回</button>
           <div class="flight-source-choice" role="radiogroup" aria-label="航班資料">
-            <input type="radio" id="sourceTdx" name="flight_source" value="tdx" checked>
-            <label for="sourceTdx">TDX</label>
-            <input type="radio" id="sourceTaoyuan" name="flight_source" value="taoyuan">
+            <input type="radio" id="sourceTaoyuan" name="flight_source" value="taoyuan" checked>
             <label for="sourceTaoyuan">桃園</label>
             <input type="radio" id="sourceKaohsiung" name="flight_source" value="kaohsiung">
             <label for="sourceKaohsiung">高雄</label>
+            <input type="radio" id="sourceTdx" name="flight_source" value="tdx">
+            <label for="sourceTdx">TDX</label>
           </div>
           <label class="flight-date-field">
             <span>日期</span>
@@ -7224,13 +7224,13 @@
     return /[A-Za-z0-9]/.test(raw) && normalized ? normalized : raw;
   }
 
-  function resolveFlightSource(sourceChoice = "tdx") {
+  function resolveFlightSource(sourceChoice = "taoyuan") {
     if (sourceChoice === "kaohsiung") return { source: "kaohsiung", airport: "KHH", label: "高雄機場" };
     if (sourceChoice === "taoyuan") return { source: "taoyuan", airport: "TPE", label: "桃園機場" };
     return { source: "tdx", airport: "TPE", label: "TDX" };
   }
 
-  async function loadFlights(query = "", date = today(), sourceChoice = "tdx") {
+  async function loadFlights(query = "", date = today(), sourceChoice = "taoyuan") {
     const box = document.getElementById("flightList");
     if (!box) return;
     const { source, airport, label: sourceName } = resolveFlightSource(sourceChoice);
