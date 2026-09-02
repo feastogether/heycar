@@ -1821,13 +1821,14 @@
   function dispatchOrderCard(order, admin = false) {
     const updated = !admin && dispatchOrderNeedsAttention(order);
     const flightStatus = dispatchFlightStatusLabel(order);
+    const areaText = [order.city, order.district].filter(Boolean).join("") || "-";
+    const displayArea = !admin && flightStatus.text !== "-" ? `${areaText} ${flightStatus.text}` : areaText;
     return `<article class="dispatch-order-card dispatch-order-row ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
       <button type="button" data-dispatch-detail="${escapeHtml(order.id)}">
         <strong class="dispatch-platform">${escapeHtml(order.source_platform || "派趟")}</strong>
         <span class="dispatch-booking">${escapeHtml(order.booking_no || "-")}</span>
         <span>${escapeHtml(order.trip_type || "-")}</span>
-        <span>${escapeHtml([order.city, order.district].filter(Boolean).join("") || "-")}</span>
-        ${!admin ? `<span class="dispatch-flight-mini ${flightStatus.className}">${escapeHtml(flightStatus.text)}</span>` : ""}
+        <span class="dispatch-area-status ${!admin ? flightStatus.className : ""}">${escapeHtml(displayArea)}</span>
         <time>${escapeHtml(dispatchDisplayDate(order.reservation_date))}</time>
         <span>${escapeHtml(order.reservation_time || "-")}</span>
         <span>${escapeHtml(order.driver_name || "-")}</span>
@@ -1848,6 +1849,7 @@
     if (cached.loading) return { text: "查詢中", className: "loading" };
     if (cached.error || !cached.flight) return { text: "查無", className: "unknown" };
     const status = flightStatusText(cached.flight, cached.direction);
+    if (/已抵達|抵達|arriv|landed/i.test(status)) return { text: "已抵達", className: "landed" };
     if (/取消|cancel/i.test(status)) return { text: "取消", className: "cancelled" };
     if (/延|delay/i.test(status)) return { text: "延遲", className: "delayed" };
     return { text: "準點", className: "ontime" };
@@ -2294,9 +2296,9 @@
   function driverFlights() {
     const defaultDate = today();
     return `
-      ${pageHeader("航班資訊")}
-      <div class="panel flight-panel">
+      <div class="panel flight-panel flight-page">
         <form id="flightSearchForm" class="flight-search">
+          <button class="ghost-btn flight-back-btn" type="button" data-view="home">返回</button>
           <div class="flight-source-choice" role="radiogroup" aria-label="航班資料">
             <input type="radio" id="sourceTdx" name="flight_source" value="tdx" checked>
             <label for="sourceTdx">TDX</label>
