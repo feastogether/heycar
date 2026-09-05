@@ -70,6 +70,11 @@
     dispatchDriverFilter: "",
     dispatchTimeFilter: "",
     dispatchImportSummary: "",
+    adminChatOpen: false,
+    adminChatContactId: "",
+    adminChatDraft: "",
+    adminChatEmojiOpen: false,
+    adminChatUnreadOnly: false,
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${today().slice(0, 7)}-01`,
@@ -94,6 +99,7 @@
     unlockedSalaryPayments: new Set()
   };
   let dispatchRefreshTimer = null;
+  let adminChatRefreshTimer = null;
   let weatherTicker = null;
   let satelliteMap = null;
   let satelliteMarkerLayer = null;
@@ -140,7 +146,8 @@
     "mail_shipments",
     "hiring_pages",
     "hiring_applications",
-    "dispatch_orders"
+    "dispatch_orders",
+    "admin_chat_messages"
   ];
 
   const insuranceStatuses = [
@@ -265,7 +272,8 @@
       sort_order: 0
     }],
     hiring_applications: [],
-    dispatch_orders: []
+    dispatch_orders: [],
+    admin_chat_messages: []
   };
 
   function uid() {
@@ -1374,6 +1382,7 @@
     }
     saveViewState();
     ensureDispatchAutoRefresh();
+    ensureAdminChatAutoRefresh();
     if (state.admin) renderAdmin();
     else if (state.partner) renderPartnerPortal();
     else renderDriver();
@@ -1399,6 +1408,28 @@
         console.warn("dispatch refresh failed", error);
       }
     }, 20000);
+  }
+
+  function ensureAdminChatAutoRefresh() {
+    const shouldRefresh = Boolean(state.admin && state.adminChatOpen && state.apiSession);
+    if (!shouldRefresh && adminChatRefreshTimer) {
+      clearInterval(adminChatRefreshTimer);
+      adminChatRefreshTimer = null;
+      return;
+    }
+    if (!shouldRefresh || adminChatRefreshTimer) return;
+    adminChatRefreshTimer = setInterval(async () => {
+      if (!state.admin || !state.adminChatOpen || !state.apiSession) {
+        ensureAdminChatAutoRefresh();
+        return;
+      }
+      try {
+        await loadAll();
+        render();
+      } catch (error) {
+        console.warn("admin chat refresh failed", error);
+      }
+    }, 5000);
   }
 
   function driverNotificationCount() {
@@ -1510,6 +1541,7 @@
             </div>
           </header>
           <main class="main admin-main">${content}</main>
+          ${adminChatWidget()}
           ${appLoadingMarkup()}
         </div>
       `;
@@ -3518,6 +3550,98 @@
         <div class="nav-group-items">${items.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${adminNavLabels[key] || text}"><span class="nav-icon">${icon}</span><span class="nav-label">${adminNavLabels[key] || text}</span></button>`).join("")}</div>
       </section>`;
     }).join("");
+  }
+
+  function currentAdminChatId() {
+    return state.adminProfile?.id || "super-admin";
+  }
+
+  function currentAdminChatName() {
+    return state.adminProfile?.name || "最高管理員";
+  }
+
+  function adminChatContacts() {
+    const me = currentAdminChatId();
+    const users = (state.data.admin_users || [])
+      .filter((user) => user.active !== false && user.id && user.id !== me)
+      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
+    if (me !== "super-admin") return [{ id: "super-admin", name: "最高管理員", active: true }, ...users];
+    return users;
+  }
+
+  function adminChatMessages(contactId = state.adminChatContactId) {
+    const me = currentAdminChatId();
+    return (state.data.admin_chat_messages || [])
+      .filter((item) => {
+        const sender = String(item.sender_id || "");
+        const receiver = String(item.receiver_id || "");
+        return (sender === me && receiver === contactId) || (sender === contactId && receiver === me);
+      })
+      .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
+  }
+
+  function adminUnreadChatCount() {
+    const me = currentAdminChatId();
+    return (state.data.admin_chat_messages || []).filter((item) =>
+      String(item.receiver_id || "") === me && !item.read_at
+    ).length;
+  }
+
+  async function markAdminChatRead(contactId = state.adminChatContactId) {
+    if (!contactId || !hasApi || !state.apiSession) return;
+    const me = currentAdminChatId();
+    const unread = (state.data.admin_chat_messages || []).filter((item) =>
+      String(item.sender_id || "") === contactId && String(item.receiver_id || "") === me && !item.read_at
+    );
+    if (!unread.length) return;
+    await Promise.all(unread.map((item) => update("admin_chat_messages", item.id, { read_at: now() })));
+  }
+
+  function adminChatContactName(id) {
+    if (id === "super-admin") return "最高管理員";
+    return (state.data.admin_users || []).find((user) => user.id === id)?.name || "未命名";
+  }
+
+  function adminChatWidget() {
+    if (!state.admin || !adminCan("personalMessages")) return "";
+    const contacts = adminChatContacts();
+    const selectedId = state.adminChatContactId || contacts[0]?.id || "";
+    if (!state.adminChatContactId && selectedId) state.adminChatContactId = selectedId;
+    const unread = adminUnreadChatCount();
+    const messages = selectedId ? adminChatMessages(selectedId) : [];
+    const emojis = ["😀", "😄", "👍", "🙏", "✅", "❤️", "🚗", "✈️", "🔥"];
+    return `<section class="admin-chat-widget ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
+      <button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" aria-label="開啟即時對話">
+        <span>💬</span>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}
+      </button>
+      ${state.adminChatOpen ? `<div class="admin-chat-panel">
+        <header class="admin-chat-head">
+          <div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div>
+          <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" aria-label="關閉對話">×</button>
+        </header>
+        <div class="admin-chat-contact-row">
+          <select data-admin-chat-contact aria-label="選擇聯絡人">
+            ${contacts.length ? contacts.map((user) => `<option value="${user.id}" ${user.id === selectedId ? "selected" : ""}>${escapeHtml(user.name || "未命名")}</option>`).join("") : `<option value="">尚無聯絡人</option>`}
+          </select>
+          <button class="soft-btn" type="button" data-action="refresh-admin-chat">更新</button>
+        </div>
+        <div class="admin-chat-messages" data-admin-chat-messages>
+          ${selectedId ? (messages.length ? messages.map((item) => {
+            const mine = String(item.sender_id || "") === currentAdminChatId();
+            return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
+              <small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
+              <p>${escapeHtml(item.message || "")}</p>
+            </article>`;
+          }).join("") : `<div class="admin-chat-empty">尚無訊息</div>`) : `<div class="admin-chat-empty">請先選擇聯絡人</div>`}
+        </div>
+        <form id="adminChatForm" class="admin-chat-compose">
+          <input name="message" value="${escapeHtml(state.adminChatDraft || "")}" placeholder="輸入訊息..." autocomplete="off" ${selectedId ? "" : "disabled"}>
+          <button class="ghost-btn admin-chat-emoji-btn" type="button" data-action="toggle-admin-chat-emoji">😊</button>
+          <button class="primary-btn" type="submit" ${selectedId ? "" : "disabled"}>送出</button>
+          ${state.adminChatEmojiOpen ? `<div class="admin-chat-emoji-pop">${emojis.map((emoji) => `<button type="button" data-admin-chat-emoji="${emoji}">${emoji}</button>`).join("")}</div>` : ""}
+        </form>
+      </div>` : ""}
+    </section>`;
   }
 
   function renderAdmin() {
@@ -7638,6 +7762,14 @@
       state.adminProfile = null;
       state.apiSession = "";
       state.loginLoading = false;
+      state.adminChatOpen = false;
+      state.adminChatContactId = "";
+      state.adminChatDraft = "";
+      state.adminChatEmojiOpen = false;
+      if (adminChatRefreshTimer) {
+        clearInterval(adminChatRefreshTimer);
+        adminChatRefreshTimer = null;
+      }
       state.data = emptyData();
       state.view = "home";
       clearSession();
@@ -7647,6 +7779,43 @@
       state.adminCollapsed = !state.adminCollapsed;
       localStorage.setItem("afide-admin-collapsed", String(state.adminCollapsed));
       render();
+    }
+    if (target.dataset.action === "toggle-admin-chat") {
+      state.adminChatOpen = !state.adminChatOpen;
+      state.adminChatEmojiOpen = false;
+      if (state.adminChatOpen) {
+        if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
+        await markAdminChatRead();
+      }
+      render();
+      requestAnimationFrame(() => {
+        const box = document.querySelector("[data-admin-chat-messages]");
+        if (box) box.scrollTop = box.scrollHeight;
+        document.querySelector("#adminChatForm input")?.focus();
+      });
+      return;
+    }
+    if (target.dataset.action === "refresh-admin-chat") {
+      await loadAll();
+      await markAdminChatRead();
+      render();
+      return;
+    }
+    if (target.dataset.action === "toggle-admin-chat-emoji") {
+      state.adminChatEmojiOpen = !state.adminChatEmojiOpen;
+      render();
+      return;
+    }
+    if (target.dataset.adminChatEmoji !== undefined) {
+      state.adminChatDraft = `${state.adminChatDraft || ""}${target.dataset.adminChatEmoji}`;
+      state.adminChatEmojiOpen = false;
+      render();
+      requestAnimationFrame(() => {
+        const input = document.querySelector("#adminChatForm input");
+        input?.focus();
+        if (input) input.selectionStart = input.selectionEnd = input.value.length;
+      });
+      return;
     }
     if (target.dataset.vehicleView) {
       state.vehicleViewMode = target.dataset.vehicleView;
@@ -7944,13 +8113,42 @@
       if (state.loginLoading) return;
       await handleLogin(new FormData(e.target).get("login"));
     }
+    if (e.target.id === "adminChatForm") {
+      e.preventDefault();
+      const form = e.target;
+      const message = String(new FormData(form).get("message") || "").trim();
+      const receiverId = state.adminChatContactId || "";
+      if (!message || !receiverId) return;
+      try {
+        await insert("admin_chat_messages", {
+          sender_id: currentAdminChatId(),
+          sender_name: currentAdminChatName(),
+          receiver_id: receiverId,
+          receiver_name: adminChatContactName(receiverId),
+          message,
+          read_at: null
+        });
+        state.adminChatDraft = "";
+        state.adminChatEmojiOpen = false;
+        await loadAll();
+        render();
+        requestAnimationFrame(() => {
+          const box = document.querySelector("[data-admin-chat-messages]");
+          if (box) box.scrollTop = box.scrollHeight;
+          document.querySelector("#adminChatForm input")?.focus();
+        });
+      } catch (error) {
+        await showAlert(error.message || error, "訊息送出失敗");
+      }
+      return;
+    }
     if (e.target.id === "flightSearchForm") {
       e.preventDefault();
       const data = new FormData(e.target);
       await loadFlights(
         String(data.get("flight") || "").trim(),
         String(data.get("date") || today()),
-        String(data.get("flight_source") || "tdx")
+        String(data.get("flight_source") || "taoyuan")
       );
     }
     if (e.target.id === "driverSearchForm") {
@@ -8148,6 +8346,10 @@
   }
 
   document.addEventListener("input", (e) => {
+    if (e.target.closest("#adminChatForm input[name='message']")) {
+      state.adminChatDraft = e.target.value;
+      return;
+    }
     if (e.target.closest("[data-rich-editor]")) {
       syncRichEditors(e.target.closest("form") || document);
       return;
@@ -8197,6 +8399,18 @@
   });
 
   document.addEventListener("change", async (e) => {
+    const adminChatContact = e.target.closest("[data-admin-chat-contact]");
+    if (adminChatContact) {
+      state.adminChatContactId = adminChatContact.value || "";
+      state.adminChatEmojiOpen = false;
+      await markAdminChatRead(state.adminChatContactId);
+      render();
+      requestAnimationFrame(() => {
+        const box = document.querySelector("[data-admin-chat-messages]");
+        if (box) box.scrollTop = box.scrollHeight;
+      });
+      return;
+    }
     const richImageInput = e.target.closest("[data-rich-image-upload]");
     if (richImageInput?.files?.[0]) {
       await insertRichEditorUploadedImage(richImageInput);

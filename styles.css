@@ -25,6 +25,7 @@ body {
   background: radial-gradient(circle at top left, rgba(31,122,140,.08), transparent 40rem), var(--bg);
   color: var(--ink);
   line-height: 1.5;
+  overflow-x: hidden;
 }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; border: 0; }
@@ -2381,6 +2382,8 @@ textarea { min-height: 100px; resize: vertical; }
 .dispatch-admin-row .actions {
   gap: 6px;
   flex-wrap: nowrap;
+  width: 100%;
+  max-width: 100vw;
 }
 .dispatch-admin-row .actions button {
   min-height: 36px;
@@ -5289,6 +5292,14 @@ tr:last-child td { border-bottom: 0; }
 }
 
 @media (max-width: 560px) {
+  html,
+  body,
+  #app,
+  .app-shell {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
   .calendar-detail-grid { grid-template-columns: 1fr; }
   .calendar-detail-title { align-items: flex-start; flex-direction: column; }
   .vehicle-driver-history-panel summary { align-items: flex-start; flex-direction: column; }
@@ -5338,7 +5349,14 @@ tr:last-child td { border-bottom: 0; }
   .brand img { height: 28px; }
   .brand .partner-brand-logo { max-width: 72px; height: 26px; padding-left: 8px; }
   .brand-title { font-size: 14px; }
-  .main { width: calc(100% - 28px); margin-top: 14px; }
+  .main {
+    width: 100%;
+    max-width: 100%;
+    margin: 14px 0 44px;
+    padding-inline: 12px;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
   .partner-workspace { width: calc(100% - 28px); margin: 16px auto 44px; }
   .form-grid { grid-template-columns: 1fr; }
   .dashboard-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; width: 100%; }
@@ -5419,10 +5437,14 @@ tr:last-child td { border-bottom: 0; }
     max-width: 100%;
     padding: 12px;
     border-radius: 14px;
+    overflow: hidden;
   }
   .flight-search {
     grid-template-columns: 62px minmax(0, 1fr);
     gap: 7px;
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
   .flight-source-choice {
     min-height: 38px;
@@ -5447,6 +5469,7 @@ tr:last-child td { border-bottom: 0; }
   .flight-date-field input {
     width: 100%;
     text-align: right;
+    font-size: 13px;
   }
   .flight-search input[name="flight"] {
     grid-column: 1 / 2;
@@ -5454,6 +5477,15 @@ tr:last-child td { border-bottom: 0; }
   }
   .flight-search button[type="submit"] {
     grid-column: 2;
+    min-width: 0;
+  }
+  .flight-grid {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+  .flight-card,
+  .flight-card * {
     min-width: 0;
   }
   .flight-card { min-height: 0; padding: 14px; gap: 11px; }
@@ -5465,10 +5497,10 @@ tr:last-child td { border-bottom: 0; }
   .flight-airline small { font-size: 11px; margin-top: 2px; }
   .flight-status { padding: 5px 9px; font-size: 11px; }
   .flight-time-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .flight-time-grid span { min-height: 50px; padding: 8px 6px; border-radius: 8px; }
+  .flight-time-grid span { min-height: 50px; padding: 8px 5px; border-radius: 8px; }
   .flight-time-grid label,
   .flight-detail-grid label { font-size: 10px; }
-  .flight-time-grid strong { font-size: 12px; word-break: break-word; overflow-wrap: anywhere; }
+  .flight-time-grid strong { font-size: 11px; word-break: break-word; overflow-wrap: anywhere; }
   .flight-detail-grid,
   .taoyuan-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .flight-detail-grid span { font-size: 12px; }
@@ -6393,5 +6425,289 @@ body {
   }
   .storage-file-row .actions {
     justify-content: flex-start;
+  }
+}
+
+/* Flight mobile containment and admin chat */
+.admin-chat-widget {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 180;
+}
+.admin-chat-fab {
+  position: relative;
+  width: 54px;
+  height: 54px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  background: #192231;
+  color: #fff;
+  box-shadow: 0 18px 36px rgba(24,32,51,.2);
+  font-size: 22px;
+}
+.admin-chat-fab b {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 900;
+}
+.admin-chat-panel {
+  position: absolute;
+  right: 0;
+  bottom: 66px;
+  width: min(360px, calc(100vw - 28px));
+  overflow: hidden;
+  border: 1px solid rgba(221,229,239,.9);
+  border-radius: 18px;
+  background: rgba(255,255,255,.96);
+  box-shadow: 0 22px 54px rgba(24,32,51,.2);
+  backdrop-filter: blur(18px);
+}
+.admin-chat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.admin-chat-head strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 950;
+}
+.admin-chat-head small {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+.admin-chat-contact-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.admin-chat-contact-row select {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 10px;
+  font-weight: 850;
+}
+.admin-chat-messages {
+  height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f6f8fb 100%);
+}
+.admin-chat-empty {
+  margin: auto;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+.admin-chat-bubble {
+  max-width: 86%;
+  display: grid;
+  gap: 4px;
+}
+.admin-chat-bubble small {
+  color: #7a8799;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+.admin-chat-bubble p {
+  margin: 0;
+  padding: 9px 11px;
+  border-radius: 13px;
+  font-size: 13px;
+  font-weight: 750;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.admin-chat-bubble.is-mine {
+  align-self: flex-end;
+  justify-items: end;
+}
+.admin-chat-bubble.is-mine p {
+  background: #192231;
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+.admin-chat-bubble.is-other {
+  align-self: flex-start;
+}
+.admin-chat-bubble.is-other p {
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-bottom-left-radius: 5px;
+}
+.admin-chat-compose {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px auto;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line);
+  background: #fff;
+}
+.admin-chat-compose input {
+  min-width: 0;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 11px;
+  font-weight: 750;
+}
+.admin-chat-emoji-btn {
+  width: 42px;
+  min-height: 40px;
+  padding: 0;
+}
+.admin-chat-emoji-pop {
+  position: absolute;
+  right: 76px;
+  bottom: 60px;
+  display: grid;
+  grid-template-columns: repeat(5, 32px);
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 14px 30px rgba(24,32,51,.16);
+}
+.admin-chat-emoji-pop button {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #f8fafc;
+  font-size: 17px;
+}
+
+@media (max-width: 700px) {
+  .app-shell:not(.admin-shell):not(.partner-shell) {
+    width: 100vw;
+    max-width: 100vw;
+    overflow-x: hidden;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell) .topbar,
+  .app-shell:not(.admin-shell):not(.partner-shell) .main,
+  .flight-panel,
+  .flight-page,
+  .flight-grid,
+  .flight-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .flight-panel {
+    padding: 10px;
+  }
+  .flight-search {
+    grid-template-columns: 68px minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .flight-source-choice,
+  .flight-date-field,
+  .flight-search input[name="flight"],
+  .flight-search button[type="submit"] {
+    min-width: 0;
+  }
+  .flight-date-field {
+    padding-inline: 8px;
+  }
+  .flight-date-field span {
+    width: auto;
+  }
+  .flight-date-field input {
+    min-width: 0;
+    text-align: right;
+  }
+  .flight-card-head {
+    align-items: center;
+  }
+  .flight-airline {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+  .flight-airline strong,
+  .flight-airline small,
+  .flight-detail-grid span,
+  .flight-update {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+}
+
+@media (max-width: 420px) {
+  .flight-search {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 6px;
+  }
+  .flight-back-btn,
+  .flight-source-choice label,
+  .flight-date-field,
+  .flight-search input[name="flight"],
+  .flight-search button[type="submit"] {
+    font-size: 12px;
+  }
+  .flight-source-choice {
+    gap: 2px;
+    padding: 3px;
+  }
+  .flight-source-choice label {
+    padding-inline: 2px;
+  }
+  .flight-time-grid {
+    grid-template-columns: 1fr;
+  }
+  .flight-time-grid span {
+    min-height: 0;
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: center;
+  }
+  .flight-detail-grid,
+  .taoyuan-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .admin-chat-widget {
+    right: 12px;
+    bottom: 12px;
+  }
+  .admin-chat-panel {
+    width: calc(100vw - 24px);
+    bottom: 62px;
+  }
+  .admin-chat-messages {
+    height: min(320px, 48vh);
+  }
+  .admin-chat-compose {
+    grid-template-columns: minmax(0, 1fr) 40px 58px;
+    gap: 6px;
+  }
+  .admin-chat-compose .primary-btn {
+    padding-inline: 8px;
   }
 }

@@ -97,6 +97,24 @@ create table if not exists public.payment_notices (
   updated_at timestamptz default now()
 );
 
+create table if not exists public.admin_chat_messages (
+  id uuid primary key default gen_random_uuid(),
+  sender_id text not null,
+  sender_name text not null default '',
+  receiver_id text not null,
+  receiver_name text not null default '',
+  message text not null,
+  read_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists admin_chat_messages_participants_idx
+  on public.admin_chat_messages (sender_id, receiver_id, created_at desc);
+
+create index if not exists admin_chat_messages_receiver_unread_idx
+  on public.admin_chat_messages (receiver_id, read_at, created_at desc);
+
 create table if not exists public.calendar_events (
   id uuid primary key default gen_random_uuid(),
   event_date date not null,
@@ -195,6 +213,7 @@ alter table public.announcements enable row level security;
 alter table public.announcement_reads enable row level security;
 alter table public.maintenance_notifications enable row level security;
 alter table public.personal_messages enable row level security;
+alter table public.admin_chat_messages enable row level security;
 alter table public.payment_notices enable row level security;
 alter table public.calendar_events enable row level security;
 alter table public.marquee_messages enable row level security;

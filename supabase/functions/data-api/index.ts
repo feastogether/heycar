@@ -15,7 +15,7 @@ const tables = [
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
-  "hiring_pages", "hiring_applications", "dispatch_orders"
+  "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -245,7 +245,8 @@ async function loadAdminData(session: Record<string, unknown>) {
     if (table === "admin_users" && !session.is_super_admin) {
       const canAssignOnboarding = await adminCan(session, "driverOnboarding");
       const canManageDrivers = await adminCan(session, "drivers");
-      if (canAssignOnboarding || canManageDrivers) {
+      const canUseMessages = await adminCan(session, "personalMessages");
+      if (canAssignOnboarding || canManageDrivers || canUseMessages) {
         const { data, error } = await db
           .from("admin_users")
           .select("id,name,active")
@@ -268,6 +269,21 @@ async function loadAdminData(session: Record<string, unknown>) {
         .select("id,label,code,active,created_at,updated_at")
         .eq("active", true)
         .order("updated_at", { ascending: false });
+      if (error) throw error;
+      result[table] = data || [];
+      continue;
+    }
+    if (table === "admin_chat_messages") {
+      if (!(await adminCan(session, "personalMessages"))) {
+        result[table] = [];
+        continue;
+      }
+      const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      const { data, error } = await db
+        .from("admin_chat_messages")
+        .select("*")
+        .or(`sender_id.eq.${myChatId},receiver_id.eq.${myChatId}`)
+        .order("created_at", { ascending: true });
       if (error) throw error;
       result[table] = data || [];
       continue;
@@ -522,7 +538,8 @@ const tablePermission: Record<string, string> = {
   mail_shipments: "mailManagement",
   hiring_pages: "hiringManagement",
   hiring_applications: "hiringManagement",
-  dispatch_orders: "dispatchCenter"
+  dispatch_orders: "dispatchCenter",
+  admin_chat_messages: "personalMessages"
 };
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
@@ -1084,6 +1101,26 @@ Deno.serve(async (req) => {
         Object.keys(body.record || {}).every((key) => ["onboarding_progress", "onboarding_completed_at", "updated_at"].includes(key))
       ) {
         permission = "driverOnboarding";
+      }
+      if (body.table === "admin_chat_messages") {
+        if (body.action === "insert") {
+          const senderId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+          const senderName = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
+          body.record = {
+            id: body.record?.id,
+            sender_id: senderId,
+            sender_name: senderName,
+            receiver_id: compactText(body.record?.receiver_id),
+            receiver_name: compactText(body.record?.receiver_name),
+            message: compactText(body.record?.message).slice(0, 2000),
+            read_at: null,
+            created_at: body.record?.created_at || new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          if (!body.record.receiver_id || !body.record.message) return json({ error: "CHAT_MESSAGE_REQUIRED" }, 400);
+        } else if (body.action === "update") {
+          body.record = { read_at: body.record?.read_at || new Date().toISOString(), updated_at: new Date().toISOString() };
+        }
       }
       const isVehicleLoanSelfAction = body.table === "vehicle_loans" && ["insert", "update"].includes(String(body.action || ""));
       if (permission && !isVehicleLoanSelfAction && !(await adminCan(session, permission))) {
