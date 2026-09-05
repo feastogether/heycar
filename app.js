@@ -1514,6 +1514,7 @@
             </div>
           </header>
           <main class="main admin-main">${content}</main>
+          ${adminChatWidget()}
           ${appLoadingMarkup()}
         </div>
       `;
@@ -1541,7 +1542,6 @@
             </div>
           </header>
           <main class="main admin-main">${content}</main>
-          ${adminChatWidget()}
           ${appLoadingMarkup()}
         </div>
       `;

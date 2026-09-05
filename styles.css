@@ -6433,7 +6433,7 @@ body {
   position: fixed;
   right: 18px;
   bottom: 18px;
-  z-index: 180;
+  z-index: 260;
 }
 .admin-chat-fab {
   position: relative;
