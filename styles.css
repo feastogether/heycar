@@ -6508,6 +6508,18 @@ body {
   padding: 8px 10px;
   font-weight: 850;
 }
+.admin-chat-live {
+  min-height: 36px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: #dcfce7;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 900;
+  white-space: nowrap;
+}
 .admin-chat-messages {
   height: 280px;
   display: flex;
@@ -6709,5 +6721,140 @@ body {
   }
   .admin-chat-compose .primary-btn {
     padding-inline: 8px;
+  }
+}
+
+/* Last-mile mobile flight override: keep the page inside the viewport. */
+@media (max-width: 700px) {
+  html,
+  body {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden !important;
+  }
+  #app {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell),
+  .app-shell:not(.admin-shell):not(.partner-shell) .topbar,
+  .app-shell:not(.admin-shell):not(.partner-shell) .main {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell) .brand {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell) .userbox {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .flight-panel.flight-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-inline: 0 !important;
+    padding: 10px !important;
+    overflow: hidden !important;
+  }
+  .flight-search {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) 82px !important;
+    gap: 8px !important;
+    overflow: hidden !important;
+  }
+  .flight-back-btn {
+    grid-column: 1 !important;
+    width: 72px !important;
+    justify-self: start !important;
+    min-height: 40px !important;
+    padding-inline: 8px !important;
+  }
+  .flight-source-choice {
+    grid-column: 1 / -1 !important;
+    margin-left: 80px !important;
+    min-width: 0 !important;
+    min-height: 40px !important;
+    padding: 3px !important;
+  }
+  .flight-source-choice label {
+    min-height: 32px !important;
+    font-size: 13px !important;
+    padding-inline: 2px !important;
+  }
+  .flight-date-field {
+    grid-column: 1 / -1 !important;
+    min-width: 0 !important;
+    min-height: 40px !important;
+  }
+  .flight-search input[name="flight"] {
+    grid-column: 1 / 2 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 44px !important;
+    font-size: 15px !important;
+    padding-inline: 12px !important;
+  }
+  .flight-search button[type="submit"] {
+    grid-column: 2 !important;
+    width: 82px !important;
+    min-width: 0 !important;
+    justify-self: end !important;
+    min-height: 44px !important;
+    padding-inline: 0 !important;
+    font-size: 14px !important;
+  }
+  .flight-grid,
+  .flight-card,
+  .flight-card-head,
+  .flight-airline,
+  .flight-time-grid,
+  .flight-detail-grid {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+  .flight-card {
+    padding: 12px !important;
+  }
+  .flight-time-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .flight-time-grid span {
+    min-height: 0 !important;
+    grid-template-columns: 42px minmax(0, 1fr) !important;
+    align-items: center !important;
+  }
+  .flight-detail-grid,
+  .taoyuan-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+}
+
+@media (max-width: 390px) {
+  .flight-search {
+    grid-template-columns: minmax(0, 1fr) 72px !important;
+    gap: 6px !important;
+  }
+  .flight-source-choice label,
+  .flight-back-btn {
+    font-size: 12px !important;
+  }
+  .flight-search button[type="submit"] {
+    width: 72px !important;
+    font-size: 13px !important;
+  }
+  .flight-source-choice {
+    margin-left: 70px !important;
+  }
+  .flight-detail-grid,
+  .taoyuan-detail-grid {
+    grid-template-columns: 1fr !important;
   }
 }

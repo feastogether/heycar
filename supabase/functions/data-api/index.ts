@@ -1048,6 +1048,60 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json(await pushLineForRecord(body.table, record || {}));
     }
+    if (body.action === "load_admin_chat") {
+      if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      const [users, sent, received] = await Promise.all([
+        db.from("admin_users").select("id,name,active").eq("active", true).order("name", { ascending: true }),
+        db.from("admin_chat_messages").select("*").eq("sender_id", myChatId).order("created_at", { ascending: true }),
+        db.from("admin_chat_messages").select("*").eq("receiver_id", myChatId).order("created_at", { ascending: true })
+      ]);
+      if (users.error) throw users.error;
+      if (sent.error) throw sent.error;
+      if (received.error) throw received.error;
+      const byId = new Map<string, Record<string, unknown>>();
+      [...(sent.data || []), ...(received.data || [])].forEach((item) => byId.set(String(item.id), item));
+      const messages = [...byId.values()].sort((a, b) => compactText(a.created_at).localeCompare(compactText(b.created_at)));
+      return json({ admin_users: users.data || [], admin_chat_messages: messages });
+    }
+    if (body.action === "send_admin_chat_message") {
+      if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      const senderId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      const senderName = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
+      const receiverId = compactText(body.receiver_id);
+      const message = compactText(body.message).slice(0, 2000);
+      if (!receiverId || !message) return json({ error: "CHAT_MESSAGE_REQUIRED" }, 400);
+      const { data, error } = await db
+        .from("admin_chat_messages")
+        .insert({
+          sender_id: senderId,
+          sender_name: senderName,
+          receiver_id: receiverId,
+          receiver_name: compactText(body.receiver_name),
+          message,
+          read_at: null,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select("*")
+        .single();
+      if (error) throw error;
+      return json({ data });
+    }
+    if (body.action === "mark_admin_chat_read") {
+      if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      const contactId = compactText(body.contact_id);
+      if (!contactId) return json({ ok: true });
+      const { error } = await db
+        .from("admin_chat_messages")
+        .update({ read_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+        .eq("sender_id", contactId)
+        .eq("receiver_id", myChatId)
+        .is("read_at", null);
+      if (error) throw error;
+      return json({ ok: true });
+    }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
 
     if (session.session_type === "driver") {

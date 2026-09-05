@@ -1424,8 +1424,8 @@
         return;
       }
       try {
-        await loadAll();
-        render();
+        await loadAdminChat();
+        updateAdminChatDom();
       } catch (error) {
         console.warn("admin chat refresh failed", error);
       }
@@ -3580,6 +3580,44 @@
       .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
   }
 
+  function adminChatMessagesMarkup(contactId = state.adminChatContactId) {
+    const messages = contactId ? adminChatMessages(contactId) : [];
+    if (!contactId) return `<div class="admin-chat-empty">請先選擇聯絡人</div>`;
+    if (!messages.length) return `<div class="admin-chat-empty">尚無訊息</div>`;
+    return messages.map((item) => {
+      const mine = String(item.sender_id || "") === currentAdminChatId();
+      return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
+        <small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
+        <p>${escapeHtml(item.message || "")}</p>
+      </article>`;
+    }).join("");
+  }
+
+  function updateAdminChatDom() {
+    const unread = adminUnreadChatCount();
+    const badge = document.querySelector(".admin-chat-fab b");
+    const fab = document.querySelector(".admin-chat-fab");
+    if (fab) {
+      if (unread && !badge) fab.insertAdjacentHTML("beforeend", `<b>${unread > 99 ? "99+" : unread}</b>`);
+      else if (unread && badge) badge.textContent = unread > 99 ? "99+" : String(unread);
+      else badge?.remove();
+    }
+    const box = document.querySelector("[data-admin-chat-messages]");
+    if (box) {
+      const nearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+      box.innerHTML = adminChatMessagesMarkup();
+      if (nearBottom) box.scrollTop = box.scrollHeight;
+    }
+  }
+
+  async function loadAdminChat() {
+    if (!state.admin || !state.apiSession) return;
+    const result = await apiRequest("load_admin_chat");
+    state.data.admin_users = result.admin_users || state.data.admin_users || [];
+    state.data.admin_chat_messages = result.admin_chat_messages || [];
+    if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
+  }
+
   function adminUnreadChatCount() {
     const me = currentAdminChatId();
     return (state.data.admin_chat_messages || []).filter((item) =>
@@ -3589,12 +3627,10 @@
 
   async function markAdminChatRead(contactId = state.adminChatContactId) {
     if (!contactId || !hasApi || !state.apiSession) return;
-    const me = currentAdminChatId();
-    const unread = (state.data.admin_chat_messages || []).filter((item) =>
-      String(item.sender_id || "") === contactId && String(item.receiver_id || "") === me && !item.read_at
-    );
-    if (!unread.length) return;
-    await Promise.all(unread.map((item) => update("admin_chat_messages", item.id, { read_at: now() })));
+    await apiRequest("mark_admin_chat_read", { contact_id: contactId });
+    (state.data.admin_chat_messages || []).forEach((item) => {
+      if (String(item.sender_id || "") === contactId && String(item.receiver_id || "") === currentAdminChatId()) item.read_at = item.read_at || now();
+    });
   }
 
   function adminChatContactName(id) {
@@ -3608,7 +3644,6 @@
     const selectedId = state.adminChatContactId || contacts[0]?.id || "";
     if (!state.adminChatContactId && selectedId) state.adminChatContactId = selectedId;
     const unread = adminUnreadChatCount();
-    const messages = selectedId ? adminChatMessages(selectedId) : [];
     const emojis = ["😀", "😄", "👍", "🙏", "✅", "❤️", "🚗", "✈️", "🔥"];
     return `<section class="admin-chat-widget ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
       <button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" aria-label="開啟即時對話">
@@ -3623,16 +3658,10 @@
           <select data-admin-chat-contact aria-label="選擇聯絡人">
             ${contacts.length ? contacts.map((user) => `<option value="${user.id}" ${user.id === selectedId ? "selected" : ""}>${escapeHtml(user.name || "未命名")}</option>`).join("") : `<option value="">尚無聯絡人</option>`}
           </select>
-          <button class="soft-btn" type="button" data-action="refresh-admin-chat">更新</button>
+          <span class="admin-chat-live">即時</span>
         </div>
         <div class="admin-chat-messages" data-admin-chat-messages>
-          ${selectedId ? (messages.length ? messages.map((item) => {
-            const mine = String(item.sender_id || "") === currentAdminChatId();
-            return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
-              <small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
-              <p>${escapeHtml(item.message || "")}</p>
-            </article>`;
-          }).join("") : `<div class="admin-chat-empty">尚無訊息</div>`) : `<div class="admin-chat-empty">請先選擇聯絡人</div>`}
+          ${adminChatMessagesMarkup(selectedId)}
         </div>
         <form id="adminChatForm" class="admin-chat-compose">
           <input name="message" value="${escapeHtml(state.adminChatDraft || "")}" placeholder="輸入訊息..." autocomplete="off" ${selectedId ? "" : "disabled"}>
@@ -7785,6 +7814,7 @@
       state.adminChatEmojiOpen = false;
       if (state.adminChatOpen) {
         if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
+        await loadAdminChat();
         await markAdminChatRead();
       }
       render();
@@ -7796,9 +7826,9 @@
       return;
     }
     if (target.dataset.action === "refresh-admin-chat") {
-      await loadAll();
+      await loadAdminChat();
       await markAdminChatRead();
-      render();
+      updateAdminChatDom();
       return;
     }
     if (target.dataset.action === "toggle-admin-chat-emoji") {
@@ -8120,18 +8150,16 @@
       const receiverId = state.adminChatContactId || "";
       if (!message || !receiverId) return;
       try {
-        await insert("admin_chat_messages", {
-          sender_id: currentAdminChatId(),
-          sender_name: currentAdminChatName(),
+        const result = await apiRequest("send_admin_chat_message", {
           receiver_id: receiverId,
           receiver_name: adminChatContactName(receiverId),
-          message,
-          read_at: null
+          message
         });
+        state.data.admin_chat_messages = [...(state.data.admin_chat_messages || []), result.data].filter(Boolean);
         state.adminChatDraft = "";
         state.adminChatEmojiOpen = false;
-        await loadAll();
-        render();
+        form.reset();
+        updateAdminChatDom();
         requestAnimationFrame(() => {
           const box = document.querySelector("[data-admin-chat-messages]");
           if (box) box.scrollTop = box.scrollHeight;
@@ -8403,8 +8431,9 @@
     if (adminChatContact) {
       state.adminChatContactId = adminChatContact.value || "";
       state.adminChatEmojiOpen = false;
+      await loadAdminChat();
       await markAdminChatRead(state.adminChatContactId);
-      render();
+      updateAdminChatDom();
       requestAnimationFrame(() => {
         const box = document.querySelector("[data-admin-chat-messages]");
         if (box) box.scrollTop = box.scrollHeight;
