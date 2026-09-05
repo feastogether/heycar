@@ -243,20 +243,13 @@ async function loadAdminData(session: Record<string, unknown>) {
   for (const table of tables) {
     const permission = tablePermission[table];
     if (table === "admin_users" && !session.is_super_admin) {
-      const canAssignOnboarding = await adminCan(session, "driverOnboarding");
-      const canManageDrivers = await adminCan(session, "drivers");
-      const canUseMessages = await adminCan(session, "personalMessages");
-      if (canAssignOnboarding || canManageDrivers || canUseMessages) {
-        const { data, error } = await db
-          .from("admin_users")
-          .select("id,name,active")
-          .eq("active", true)
-          .order("name", { ascending: true });
-        if (error) throw error;
-        result[table] = data || [];
-      } else {
-        result[table] = [];
-      }
+      const { data, error } = await db
+        .from("admin_users")
+        .select("id,name,active")
+        .eq("active", true)
+        .order("name", { ascending: true });
+      if (error) throw error;
+      result[table] = data || [];
       continue;
     }
     if (table === "login_audit_logs" && !session.is_super_admin) {
@@ -274,10 +267,6 @@ async function loadAdminData(session: Record<string, unknown>) {
       continue;
     }
     if (table === "admin_chat_messages") {
-      if (!(await adminCan(session, "personalMessages"))) {
-        result[table] = [];
-        continue;
-      }
       const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
       const { data, error } = await db
         .from("admin_chat_messages")
@@ -538,8 +527,7 @@ const tablePermission: Record<string, string> = {
   mail_shipments: "mailManagement",
   hiring_pages: "hiringManagement",
   hiring_applications: "hiringManagement",
-  dispatch_orders: "dispatchCenter",
-  admin_chat_messages: "personalMessages"
+  dispatch_orders: "dispatchCenter"
 };
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
@@ -1103,8 +1091,8 @@ Deno.serve(async (req) => {
         permission = "driverOnboarding";
       }
       if (body.table === "admin_chat_messages") {
+        const senderId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
         if (body.action === "insert") {
-          const senderId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
           const senderName = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
           body.record = {
             id: body.record?.id,
@@ -1119,7 +1107,16 @@ Deno.serve(async (req) => {
           };
           if (!body.record.receiver_id || !body.record.message) return json({ error: "CHAT_MESSAGE_REQUIRED" }, 400);
         } else if (body.action === "update") {
+          const { data: current, error: currentError } = await db
+            .from("admin_chat_messages")
+            .select("receiver_id")
+            .eq("id", body.id)
+            .single();
+          if (currentError) throw currentError;
+          if (!current || current.receiver_id !== senderId) return json({ error: "CHAT_ACTION_NOT_ALLOWED" }, 403);
           body.record = { read_at: body.record?.read_at || new Date().toISOString(), updated_at: new Date().toISOString() };
+        } else {
+          return json({ error: "CHAT_ACTION_NOT_ALLOWED" }, 403);
         }
       }
       const isVehicleLoanSelfAction = body.table === "vehicle_loans" && ["insert", "update"].includes(String(body.action || ""));

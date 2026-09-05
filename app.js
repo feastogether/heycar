@@ -3603,7 +3603,7 @@
   }
 
   function adminChatWidget() {
-    if (!state.admin || !adminCan("personalMessages")) return "";
+    if (!state.admin) return "";
     const contacts = adminChatContacts();
     const selectedId = state.adminChatContactId || contacts[0]?.id || "";
     if (!state.adminChatContactId && selectedId) state.adminChatContactId = selectedId;
