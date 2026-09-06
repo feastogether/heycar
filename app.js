@@ -75,6 +75,7 @@
     adminChatDraft: "",
     adminChatEmojiOpen: false,
     adminChatUnreadOnly: false,
+    adminChatError: "",
     adminCollapsed: localStorage.getItem("afide-admin-collapsed") !== "false",
     page: 1,
     calendarMonth: `${today().slice(0, 7)}-01`,
@@ -1427,6 +1428,8 @@
         await loadAdminChat();
         updateAdminChatDom();
       } catch (error) {
+        state.adminChatError = `即時通訊更新失敗：${error.message || error}`;
+        updateAdminChatDom();
         console.warn("admin chat refresh failed", error);
       }
     }, 5000);
@@ -3582,6 +3585,7 @@
 
   function adminChatMessagesMarkup(contactId = state.adminChatContactId) {
     const messages = contactId ? adminChatMessages(contactId) : [];
+    if (state.adminChatError) return `<div class="admin-chat-empty">${escapeHtml(state.adminChatError)}</div>`;
     if (!contactId) return `<div class="admin-chat-empty">請先選擇聯絡人</div>`;
     if (!messages.length) return `<div class="admin-chat-empty">尚無訊息</div>`;
     return messages.map((item) => {
@@ -3616,6 +3620,7 @@
     state.data.admin_users = result.admin_users || state.data.admin_users || [];
     state.data.admin_chat_messages = result.admin_chat_messages || [];
     if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
+    state.adminChatError = "";
   }
 
   function adminUnreadChatCount() {
@@ -3646,13 +3651,13 @@
     const unread = adminUnreadChatCount();
     const emojis = ["😀", "😄", "👍", "🙏", "✅", "❤️", "🚗", "✈️", "🔥"];
     return `<section class="admin-chat-widget ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
-      <button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" aria-label="開啟即時對話">
+      <button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" onclick="this.closest('.admin-chat-widget').classList.toggle('is-open')" aria-label="開啟即時對話">
         <span>💬</span>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}
       </button>
-      ${state.adminChatOpen ? `<div class="admin-chat-panel">
+      <div class="admin-chat-panel">
         <header class="admin-chat-head">
           <div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div>
-          <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" aria-label="關閉對話">×</button>
+          <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" onclick="this.closest('.admin-chat-widget').classList.toggle('is-open')" aria-label="關閉對話">×</button>
         </header>
         <div class="admin-chat-contact-row">
           <select data-admin-chat-contact aria-label="選擇聯絡人">
@@ -3669,7 +3674,7 @@
           <button class="primary-btn" type="submit" ${selectedId ? "" : "disabled"}>送出</button>
           ${state.adminChatEmojiOpen ? `<div class="admin-chat-emoji-pop">${emojis.map((emoji) => `<button type="button" data-admin-chat-emoji="${emoji}">${emoji}</button>`).join("")}</div>` : ""}
         </form>
-      </div>` : ""}
+      </div>
     </section>`;
   }
 
@@ -7814,8 +7819,6 @@
       state.adminChatEmojiOpen = false;
       if (state.adminChatOpen) {
         if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
-        await loadAdminChat();
-        await markAdminChatRead();
       }
       render();
       requestAnimationFrame(() => {
@@ -7823,11 +7826,24 @@
         if (box) box.scrollTop = box.scrollHeight;
         document.querySelector("#adminChatForm input")?.focus();
       });
+      if (state.adminChatOpen) {
+        try {
+          await loadAdminChat();
+          await markAdminChatRead();
+        } catch (error) {
+          state.adminChatError = `即時通訊載入失敗：${error.message || error}`;
+        }
+        updateAdminChatDom();
+      }
       return;
     }
     if (target.dataset.action === "refresh-admin-chat") {
-      await loadAdminChat();
-      await markAdminChatRead();
+      try {
+        await loadAdminChat();
+        await markAdminChatRead();
+      } catch (error) {
+        state.adminChatError = `即時通訊更新失敗：${error.message || error}`;
+      }
       updateAdminChatDom();
       return;
     }
@@ -8158,6 +8174,7 @@
         state.data.admin_chat_messages = [...(state.data.admin_chat_messages || []), result.data].filter(Boolean);
         state.adminChatDraft = "";
         state.adminChatEmojiOpen = false;
+        state.adminChatError = "";
         form.reset();
         updateAdminChatDom();
         requestAnimationFrame(() => {
@@ -8166,7 +8183,8 @@
           document.querySelector("#adminChatForm input")?.focus();
         });
       } catch (error) {
-        await showAlert(error.message || error, "訊息送出失敗");
+        state.adminChatError = `訊息送出失敗：${error.message || error}`;
+        updateAdminChatDom();
       }
       return;
     }
@@ -8431,8 +8449,12 @@
     if (adminChatContact) {
       state.adminChatContactId = adminChatContact.value || "";
       state.adminChatEmojiOpen = false;
-      await loadAdminChat();
-      await markAdminChatRead(state.adminChatContactId);
+      try {
+        await loadAdminChat();
+        await markAdminChatRead(state.adminChatContactId);
+      } catch (error) {
+        state.adminChatError = `即時通訊載入失敗：${error.message || error}`;
+      }
       updateAdminChatDom();
       requestAnimationFrame(() => {
         const box = document.querySelector("[data-admin-chat-messages]");

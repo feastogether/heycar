@@ -6466,6 +6466,7 @@ body {
   position: absolute;
   right: 0;
   bottom: 66px;
+  display: none;
   width: min(360px, calc(100vw - 28px));
   overflow: hidden;
   border: 1px solid rgba(221,229,239,.9);
@@ -6473,6 +6474,9 @@ body {
   background: rgba(255,255,255,.96);
   box-shadow: 0 22px 54px rgba(24,32,51,.2);
   backdrop-filter: blur(18px);
+}
+.admin-chat-widget.is-open .admin-chat-panel {
+  display: block;
 }
 .admin-chat-head {
   display: flex;
@@ -6856,5 +6860,174 @@ body {
   .flight-detail-grid,
   .taoyuan-detail-grid {
     grid-template-columns: 1fr !important;
+  }
+}
+
+/* Stable mobile flight reset: simple single-column layout to prevent horizontal overflow. */
+@media (max-width: 700px) {
+  html,
+  body,
+  #app {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .app-shell:not(.admin-shell):not(.partner-shell) {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .app-shell:not(.admin-shell):not(.partner-shell) .topbar {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  .app-shell:not(.admin-shell):not(.partner-shell) .main {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 12px 10px 48px !important;
+    overflow-x: hidden !important;
+  }
+
+  .flight-panel.flight-page {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 10px !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+  }
+
+  .flight-search {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    overflow: visible !important;
+  }
+
+  .flight-back-btn,
+  .flight-source-choice,
+  .flight-date-field,
+  .flight-search input[name="flight"],
+  .flight-search button[type="submit"] {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
+  .flight-back-btn {
+    width: 76px !important;
+    min-height: 38px !important;
+    justify-self: start !important;
+    padding: 0 10px !important;
+    font-size: 14px !important;
+  }
+
+  .flight-source-choice {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    min-height: 40px !important;
+    padding: 3px !important;
+    border-radius: 12px !important;
+  }
+
+  .flight-source-choice label {
+    min-width: 0 !important;
+    min-height: 32px !important;
+    padding: 0 4px !important;
+    font-size: 13px !important;
+    white-space: nowrap !important;
+  }
+
+  .flight-date-field {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    min-height: 42px !important;
+    padding: 0 10px !important;
+    border-radius: 12px !important;
+  }
+
+  .flight-date-field span {
+    font-size: 12px !important;
+    line-height: 1.1 !important;
+  }
+
+  .flight-date-field input {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: 15px !important;
+  }
+
+  .flight-search input[name="flight"] {
+    min-height: 50px !important;
+    padding: 0 14px !important;
+    border-radius: 12px !important;
+    font-size: 16px !important;
+  }
+
+  .flight-search button[type="submit"] {
+    width: 92px !important;
+    min-height: 38px !important;
+    justify-self: end !important;
+    padding: 0 !important;
+    border-radius: 12px !important;
+    font-size: 14px !important;
+  }
+
+  .flight-grid,
+  .flight-card,
+  .flight-card-head,
+  .flight-airline,
+  .flight-time-grid,
+  .flight-detail-grid,
+  .taoyuan-detail-grid {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .flight-grid {
+    gap: 10px !important;
+  }
+
+  .flight-card {
+    padding: 12px !important;
+    border-radius: 14px !important;
+    overflow: hidden !important;
+  }
+
+  .flight-card-head {
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    gap: 8px !important;
+    align-items: start !important;
+  }
+
+  .flight-airline {
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+  }
+
+  .flight-airline strong,
+  .flight-airline span {
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .flight-time-grid,
+  .flight-detail-grid,
+  .taoyuan-detail-grid {
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
   }
 }
