@@ -303,6 +303,14 @@
     return `${parts.year}-${parts.month}-${parts.day}`;
   }
 
+  function formatDateTime(value) {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    const parts = taipeiParts(date);
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+  }
+
   function taipeiDateTimeInput(value = null) {
     const date = value ? new Date(value) : new Date();
     if (Number.isNaN(date.getTime())) return String(value || "").slice(0, 16);
