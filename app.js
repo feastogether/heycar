@@ -66,6 +66,7 @@
     hiringApplicationFilter: "unnotified",
     dispatchDateFilter: today(),
     dispatchAdminDateFilter: today(),
+    dispatchFiltersOpen: false,
     dispatchSearch: "",
     dispatchDriverFilter: "",
     dispatchTimeFilter: "",
@@ -380,7 +381,7 @@
       if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
       if (saved.onboardingDealerFilter !== undefined) state.onboardingDealerFilter = saved.onboardingDealerFilter;
       if (saved.dispatchDateFilter) state.dispatchDateFilter = saved.dispatchDateFilter;
-      if (saved.dispatchAdminDateFilter) state.dispatchAdminDateFilter = saved.dispatchAdminDateFilter;
+      state.dispatchAdminDateFilter = today();
     } catch {}
   }
 
@@ -1874,7 +1875,8 @@
         <span class="dispatch-area-status ${flightStatus.className || ""}">${escapeHtml(displayArea)}</span>
         <time>${escapeHtml(dispatchDisplayDate(order.reservation_date))}</time>
         <span>${escapeHtml(order.reservation_time || "-")}</span>
-        <span>${escapeHtml(order.driver_name || "-")}</span>
+        <span>${escapeHtml(order.driver_name || "待指派")}</span>
+        ${admin ? `<span class="dispatch-vendor" title="車商">${escapeHtml(order.assigned_vendor || order.vendor_name || "未指定車商")}</span>` : ""}
       </button>
     </article>`;
   }
@@ -1966,6 +1968,7 @@
           ${[
             ["來源平台", item.source_platform],
             ["預約編號", item.booking_no],
+            ["指定車商", item.assigned_vendor || item.vendor_name || "未指定車商"],
             ["會員姓名", item.member_name],
             ["電話", item.phone],
             ["類型", item.trip_type],
@@ -2773,7 +2776,8 @@
   function partnerLayout(content) {
     const nav = [
       ["insurance", "保險進度", "🛡️"],
-      ["garage", "車庫管理", "🚐"]
+      ["garage", "車庫管理", "🚐"],
+      ["dispatchCenter", "派趟中心", "🧭"]
     ];
     layout(`
       <div class="partner-portal-layout ${state.partnerCollapsed ? "" : "is-menu-open"}">
@@ -2798,8 +2802,8 @@
 
   function renderDealerPortal() {
     const requests = dealerInsuranceRequests();
-    if (!["insurance", "garage"].includes(state.partnerView)) state.partnerView = "insurance";
-    const body = state.partnerView === "garage" ? dealerGarageView(requests) : dealerInsuranceView(requests);
+    if (!["insurance", "garage", "dispatchCenter"].includes(state.partnerView)) state.partnerView = "insurance";
+    const body = state.partnerView === "dispatchCenter" ? adminDispatchCenter() : state.partnerView === "garage" ? dealerGarageView(requests) : dealerInsuranceView(requests);
     partnerLayout(body);
   }
 
@@ -4674,7 +4678,16 @@
     `;
   }
 
+  function resetDispatchFilters() {
+    state.dispatchAdminDateFilter = today();
+    state.dispatchSearch = "";
+    state.dispatchDriverFilter = "";
+    state.dispatchTimeFilter = "";
+    state.dispatchFiltersOpen = false;
+  }
+
   function adminDispatchCenter() {
+    const dealer = state.partner?.partner_type === "dealer";
     const selectedDate = state.dispatchAdminDateFilter || today();
     const keyword = normalizedText(state.dispatchSearch || "");
     const driverKeyword = normalizedText(state.dispatchDriverFilter || "");
@@ -4685,7 +4698,7 @@
       .filter((item) => {
         const haystack = normalizedText([
           item.source_platform, item.booking_no, item.trip_type, item.city, item.district,
-          item.member_name, item.phone, item.flight_no, item.stop_address
+          item.member_name, item.phone, item.flight_no, item.stop_address, item.assigned_vendor, item.vendor_name
         ].filter(Boolean).join(" "));
         const driverText = normalizedText([item.driver_name, item.driver_phone].filter(Boolean).join(" "));
         const itemTime = String(item.reservation_time || "");
@@ -4700,16 +4713,17 @@
     return `<div class="dispatch-admin-shell">
     <div class="section-head">
       <div><h2>派趟中心</h2></div>
-      <div class="actions">
+      ${dealer ? "" : `<div class="actions">
         <button class="ghost-btn" data-action="pick-dispatch-excel">匯入 Excel</button>
         <input type="file" accept=".xlsx,.xls" data-dispatch-excel-import hidden>
         <button class="primary-btn" data-modal="dispatchOrder">新增派趟</button>
-      </div>
+      </div>`}
     </div>
-    <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel">
+    <button type="button" class="ghost-btn dispatch-filter-toggle" data-action="toggle-dispatch-filters" aria-expanded="${state.dispatchFiltersOpen}" aria-controls="dispatchSearchForm">${escapeHtml(selectedDate)} · ${state.dispatchFiltersOpen ? "收起篩選 ▴" : "展開篩選 ▾"}</button>
+    <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel ${state.dispatchFiltersOpen ? "is-open" : ""}">
       <div class="dispatch-search-row">
         <input name="date" type="date" value="${escapeHtml(selectedDate)}">
-        <input name="search" value="${escapeHtml(state.dispatchSearch || "")}" placeholder="搜尋訂單、平台、地區、航班">
+        <input name="search" value="${escapeHtml(state.dispatchSearch || "")}" placeholder="搜尋訂單、平台、車商、地區、航班">
         <input name="driver" value="${escapeHtml(state.dispatchDriverFilter || "")}" placeholder="搜尋司機">
         <input name="time" value="${escapeHtml(state.dispatchTimeFilter || "")}" placeholder="時間">
         <button class="primary-btn">篩選</button>
@@ -4726,7 +4740,7 @@
     <div class="dispatch-admin-list">
       ${items.length ? items.map((item) => `<div class="dispatch-admin-row">
         ${dispatchOrderCard(item, true)}
-        <div class="actions"><button class="soft-btn" data-modal="dispatchOrder" data-id="${escapeHtml(item.id)}">編輯</button><button class="danger-btn" data-delete="dispatch_orders:${escapeHtml(item.id)}">刪除</button></div>
+        ${dealer ? (!item.driver_id && !String(item.driver_name || "").trim() && item.status === "pending" ? `<form class="dispatch-assign-form" data-order-id="${escapeHtml(item.id)}"><label>指派司機<select name="driver_id" required><option value="">請選擇司機</option>${(state.data.drivers || []).map(driver => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.name)} · ${escapeHtml(driver.phone || "")}</option>`).join("")}</select></label><button class="primary-btn" type="submit">指派</button></form>` : `<span class="dispatch-assigned-label">${item.status === "pending" ? "已指派" : "已結束"}</span>`) : `<div class="actions"><button class="soft-btn dispatch-edit-btn" data-modal="dispatchOrder" data-id="${escapeHtml(item.id)}" aria-label="編輯派趟" title="編輯派趟"><span aria-hidden="true">✎</span><span class="dispatch-edit-label">編輯</span></button><button class="danger-btn dispatch-delete-btn" data-delete="dispatch_orders:${escapeHtml(item.id)}">刪除</button></div>`}
       </div>`).join("") : `<div class="empty">此日期沒有派趟資料</div>`}
     </div></div>`;
   }
@@ -4757,15 +4771,17 @@
   function findDriverForDispatch(name = "", phone = "") {
     const normalizedName = normalizedText(name);
     const normalizedPhone = String(phone || "").replace(/\D/g, "");
-    return (state.data.drivers || []).find((driver) =>
-      (normalizedName && normalizedText(driver.name) === normalizedName) ||
-      (normalizedPhone && phoneMatches(driver.phone, normalizedPhone))
-    ) || null;
+    const matches = (state.data.drivers || []).filter((driver) =>
+      (!normalizedName || normalizedText(driver.name) === normalizedName) &&
+      (!normalizedPhone || phoneMatches(driver.phone, normalizedPhone))
+    );
+    return (normalizedName || normalizedPhone) && matches.length === 1 ? matches[0] : null;
   }
 
   function dispatchRecordFromExcelRow(row, sourceSheet = "") {
     const get = (key) => row[key] ?? "";
-    const driver = findDriverForDispatch(get("司機姓名"), get("司機電話"));
+    // Resolve imported names against the database in data-api.
+    const driver = null;
     const platform = String(get("來源平台") || get("__YFD_SOURCE") || "").trim();
     const booking = String(get("預約編號") || get("__YFD_BOOKING") || "").trim();
     return {
@@ -7657,6 +7673,11 @@
       document.querySelector("[data-dispatch-excel-import]")?.click();
       return;
     }
+    if (target?.dataset.action === "toggle-dispatch-filters") {
+      state.dispatchFiltersOpen = !state.dispatchFiltersOpen;
+      render();
+      return;
+    }
     if (target?.dataset.action === "dispatch-today") {
       state.dispatchAdminDateFilter = today();
       render();
@@ -7898,6 +7919,7 @@
     }
     if (target.dataset.adminView) {
       state.adminView = target.dataset.adminView;
+      if (state.adminView === "dispatchCenter") resetDispatchFilters();
       state.adminCollapsed = true;
       localStorage.setItem("afide-admin-collapsed", "true");
       render();
@@ -7907,6 +7929,7 @@
     }
     if (target.dataset.partnerView) {
       state.partnerView = target.dataset.partnerView;
+      if (state.partnerView === "dispatchCenter") resetDispatchFilters();
       state.partnerCollapsed = true;
       render();
     }
@@ -8220,6 +8243,20 @@
       state.vehicleFuelFilter = String(data.get("fuel") || "");
       state.vehicleDealerFilter = String(data.get("dealer") || "");
       render();
+    }
+    if (e.target.matches(".dispatch-assign-form")) {
+      e.preventDefault();
+      const form = e.target;
+      const button = form.querySelector('button[type="submit"]');
+      button.disabled = true;
+      try {
+        await apiRequest("assign_dispatch_driver", { id: form.dataset.orderId, driver_id: new FormData(form).get("driver_id") });
+        await loadAll();
+        render();
+      } catch (error) {
+        await showAlert(error.message || "指派失敗，請重新整理後再試", "指派失敗");
+      } finally { button.disabled = false; }
+      return;
     }
     if (e.target.id === "dispatchSearchForm") {
       e.preventDefault();

@@ -574,6 +574,56 @@ async function partnerTypeForSession(session: Record<string, unknown>) {
   return compactText(data?.partner_type);
 }
 
+// Resolve only a unique dealer name; assigned_vendor takes precedence over vendor_name.
+function dispatchDealerId(order: Record<string, unknown>, dealers: Record<string, unknown>[]) {
+  const name = normalizedText(compactText(order.assigned_vendor) || order.vendor_name);
+  if (!name) return null;
+  const matches = dealers.filter(dealer => dealer.partner_type === "dealer" && normalizedText(dealer.name) === name);
+  return matches.length === 1 && matches[0].active === true ? matches[0].id : null;
+}
+
+async function dispatchDealers() {
+  return dispatchRows("insurance_partners", "id,name,partner_type,active", "partner_type", "dealer");
+}
+
+async function dispatchRows(table: string, columns: string, filterKey = "", filterValue = "") {
+  const rows: Record<string, any>[] = [];
+  for (let offset = 0; ; offset += 500) {
+    let query = db.from(table).select(columns).order("id").range(offset, offset + 499);
+    if (filterKey) query = query.eq(filterKey, filterValue);
+    const page = await query;
+    if (page.error) throw page.error;
+    rows.push(...(page.data || []));
+    if (!page.data || page.data.length < 500) return rows;
+  }
+}
+
+function dispatchImportDriver(record: Record<string, unknown>, dealers: Record<string, unknown>[], drivers: Record<string, any>[]) {
+  const dealerId = dispatchDealerId(record, dealers);
+  const name = normalizedText(record.driver_name);
+  const phone = compactText(record.driver_phone).replace(/\D/g, "");
+  const matches = name ? drivers.filter(driver =>
+    normalizedText(driver.name) === name &&
+    (!dealerId || driver.dealer_partner_id === dealerId) &&
+    (!phone || compactText(driver.phone).replace(/\D/g, "") === phone)
+  ) : [];
+  return matches.length === 1 ? matches[0] : null;
+}
+
+async function loadDealerDispatch(partnerId: string) {
+  const dealers = await dispatchDealers();
+  const drivers = await dispatchRows("drivers", "id,name,phone,dealer_partner_id", "dealer_partner_id", partnerId);
+  const orders: Record<string, unknown>[] = [];
+  // Read in pages so orders after Supabase's default row limit are not lost.
+  for (let offset = 0; ; offset += 500) {
+    const page = await db.from("dispatch_orders").select("*").order("id").range(offset, offset + 499);
+    if (page.error) throw page.error;
+    orders.push(...(page.data || []).filter(order => dispatchDealerId(order, dealers) === partnerId));
+    if (!page.data || page.data.length < 500) break;
+  }
+  return { drivers: drivers || [], orders };
+}
+
 async function loadPartnerData(partnerId: string) {
   const { data: partner, error: partnerError } = await db
     .from("insurance_partners")
@@ -637,6 +687,11 @@ async function loadPartnerData(partnerId: string) {
   result.vehicles = vehicles.data || [];
   result.vehicle_types = vehicleTypes.data || [];
   result.insurance_partners = await loadSafePartners();
+  if (partner.partner_type === "dealer") {
+    const dispatch = await loadDealerDispatch(partnerId);
+    result.drivers = dispatch.drivers;
+    result.dispatch_orders = dispatch.orders;
+  }
   return { data: result, partner };
 }
 
@@ -962,12 +1017,33 @@ Deno.serve(async (req) => {
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
       return json(await signStorageUrls(await loadDriverData(session.driver_id)));
     }
+    if (body.action === "assign_dispatch_driver") {
+      if (session.session_type !== "partner") return json({ error: "僅車商可以指派司機" }, 403);
+      const dealers = await dispatchDealers();
+      const dealer = dealers.find(item => item.id === session.partner_id && item.active === true);
+      if (!dealer) return json({ error: "車商帳號無效" }, 403);
+      const { data: order, error: orderError } = await db.from("dispatch_orders").select("*").eq("id", body.id).maybeSingle();
+      if (orderError) throw orderError;
+      if (!order || dispatchDealerId(order, dealers) !== session.partner_id) return json({ error: "無權指派此訂單" }, 403);
+      if (order.driver_id || compactText(order.driver_name) || order.status !== "pending") return json({ error: "訂單已有司機或已結束，請重新整理" }, 409);
+      const { data: driver, error: driverError } = await db.from("drivers").select("id,name,phone,dealer_partner_id").eq("id", body.driver_id).eq("dealer_partner_id", session.partner_id).maybeSingle();
+      if (driverError) throw driverError;
+      if (!driver || !compactText(driver.name)) return json({ error: "請選擇所屬車商的司機" }, 403);
+      const { data, error } = await db.from("dispatch_orders").update({ driver_id: driver.id, driver_name: driver.name, driver_phone: driver.phone || "", updated_at: new Date().toISOString() })
+        .eq("id", order.id).eq("updated_at", order.updated_at).eq("assigned_vendor", order.assigned_vendor).eq("vendor_name", order.vendor_name)
+        .is("driver_id", null).eq("driver_name", order.driver_name).eq("status", "pending").select("id").maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: "訂單已更新，請重新整理後再試" }, 409);
+      return json({ data });
+    }
     if (body.action === "bulk_upsert_dispatch_orders") {
       if (session.session_type !== "admin" || !(await adminCan(session, "dispatchCenter"))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       }
       const records = Array.isArray(body.records) ? body.records : [];
       if (!records.length) return json({ data: [], count: 0 });
+      const dealers = await dispatchDealers();
+      const dispatchDrivers = await dispatchRows("drivers", "id,name,phone,dealer_partner_id");
       const cleaned = records
         .map((record: Record<string, unknown>) => {
           const cleanedRecord: Record<string, unknown> = {
@@ -1006,6 +1082,12 @@ Deno.serve(async (req) => {
             raw_json: record.raw_json && typeof record.raw_json === "object" ? record.raw_json : {},
             updated_at: new Date().toISOString()
           };
+          const driver = dispatchImportDriver(cleanedRecord, dealers, dispatchDrivers);
+          cleanedRecord.driver_id = driver?.id || null;
+          if (driver) {
+            cleanedRecord.driver_name = driver.name;
+            cleanedRecord.driver_phone = driver.phone || "";
+          }
           if (record.id) cleanedRecord.id = record.id;
           return cleanedRecord;
         })

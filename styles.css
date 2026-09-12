@@ -7031,3 +7031,28 @@ body {
     gap: 8px !important;
   }
 }
+
+/* Dispatch center: one order per row, with dealer assignment controls. */
+.dispatch-filter-toggle { display: none; }
+.dispatch-admin-list { grid-template-columns: minmax(0, 1fr); }
+.dispatch-admin-row { min-width: 0; }
+.dispatch-admin-row .dispatch-order-row button { grid-template-columns: 60px minmax(80px, 1fr) 45px minmax(70px, 1fr) 70px 50px 70px minmax(80px, 1fr); }
+.dispatch-admin-row .dispatch-vendor { white-space: normal; overflow-wrap: anywhere; font-weight: 700; }
+.dispatch-assign-form { display: flex; align-items: end; gap: 8px; min-width: 0; }
+.dispatch-assign-form label { display: grid; gap: 4px; min-width: 0; }
+.dispatch-assign-form select { width: 100%; min-width: 0; }
+.dispatch-assigned-label { padding: 8px; }
+@media (max-width: 900px) {
+  .dispatch-filter-toggle { display: block; margin-bottom: 10px; }
+  .dispatch-filter-panel:not(.is-open) { display: none; }
+  .dispatch-admin-row { grid-template-columns: minmax(0, 1fr) 44px; gap: 6px; align-items: center; }
+  .dispatch-admin-row .dispatch-order-row button { display: flex; flex-wrap: wrap; gap: 5px 10px; padding: 10px; min-width: 0; }
+  .dispatch-admin-row .dispatch-order-row button > * { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .dispatch-admin-row .dispatch-order-row .dispatch-booking { flex-basis: calc(100% - 80px); }
+  .dispatch-admin-row .dispatch-order-row .dispatch-vendor { flex-basis: 100%; }
+  .dispatch-admin-row .actions .dispatch-delete-btn, .dispatch-edit-label { display: none; }
+  .dispatch-admin-row .actions .dispatch-edit-btn { width: 44px; min-height: 44px; padding: 8px; font-size: 22px; }
+  .dispatch-admin-row:has(.dispatch-assign-form), .dispatch-admin-row:has(.dispatch-assigned-label) { grid-template-columns: minmax(0, 1fr); }
+  .dispatch-assign-form { justify-content: flex-end; }
+  .dispatch-search-row { grid-template-columns: minmax(0, 1fr); }
+}
