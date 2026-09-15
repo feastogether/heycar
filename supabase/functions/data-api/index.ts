@@ -298,6 +298,10 @@ async function loadAdminData(session: Record<string, unknown>) {
       result[table] = [];
       continue;
     }
+    if (table === "dispatch_orders") {
+      result[table] = await dispatchRows("dispatch_orders", "*");
+      continue;
+    }
     const { data, error } = await db.from(table).select("*");
     if (error) throw error;
     const visibleData = table === "vehicle_loans" && !session.is_super_admin
@@ -412,7 +416,25 @@ function isEupOwnFleet(car: Record<string, unknown>, status: Record<string, unkn
   return values.some((value) => value.includes("自有車隊"));
 }
 
+let eupSnapshotCache: { fetchedAt: number; data: any } | null = null;
+let eupSnapshotRequest: Promise<any> | null = null;
+
 async function loadEupVehicleSnapshot(options: { carUnicode?: string } = {}) {
+  if (!eupSnapshotCache || Date.now() - eupSnapshotCache.fetchedAt >= 10 * 60 * 1000) {
+    if (!eupSnapshotRequest) {
+      eupSnapshotRequest = fetchEupVehicleSnapshot().then(data => {
+        eupSnapshotCache = { fetchedAt: Date.now(), data };
+        return data;
+      }).finally(() => { eupSnapshotRequest = null; });
+    }
+    await eupSnapshotRequest;
+  }
+  const data = eupSnapshotCache!.data;
+  const vehicles = options.carUnicode ? data.vehicles.filter((vehicle: any) => vehicle.car_unicode === options.carUnicode) : data.vehicles;
+  return { ...data, vehicles, total: vehicles.length };
+}
+
+async function fetchEupVehicleSnapshot(options: { carUnicode?: string } = {}) {
   if (!eupCompanyCode || !eupAccount || !eupPassword) {
     return {
       configured: false,
@@ -469,30 +491,29 @@ async function loadEupVehicleSnapshot(options: { carUnicode?: string } = {}) {
   const vehicles = cars.map((car: Record<string, unknown>) => {
     const carUnicode = eupFirstText(car, ["Car_Unicode", "carUnicode", "CarUnicode"]);
     const status = statusByUnicode.get(carUnicode) || {};
-    const lat = eupNumber(status, ["GISY", "gisY", "Latitude", "latitude", "Lat", "lat", "Y"]);
-    const lng = eupNumber(status, ["GISX", "gisX", "Longitude", "longitude", "Lng", "lng", "X"]);
+    const lat = eupNumber(status, ["Log_GISY", "GISY", "gisY", "Latitude", "latitude", "Lat", "lat", "Y"]);
+    const lng = eupNumber(status, ["Log_GISX", "GISX", "gisX", "Longitude", "longitude", "Lng", "lng", "X"]);
     return {
       plate_no: eupFirstText(car, ["Car_Number", "carNumber", "CarNumber", "car_no"]) || eupFirstText(status, ["Car_Number", "carNumber", "CarNumber"]),
       driver: eupFirstText(car, ["Car_Driver", "driverName", "Driver_Name", "DriverName"]) || eupFirstText(status, ["Car_Driver", "driverName", "Driver_Name", "DriverName"]),
       car_unicode: carUnicode,
       fleet_name: eupFirstText(car, ["Team_Name", "TeamName", "Group_Name", "GroupName", "Car_GroupName", "Car_TeamName"]) || eupFirstText(status, ["Team_Name", "TeamName", "Group_Name", "GroupName"]),
       status: eupFirstText(status, ["Status", "status", "Car_Status", "CarStatus"]),
-      speed: eupFirstText(status, ["Speed", "speed", "Car_Speed", "CarSpeed"]),
+      speed: eupFirstText(status, ["Log_Speed", "Speed", "speed", "Car_Speed", "CarSpeed"]),
       address: eupFirstText(status, ["Address", "address", "Position", "position", "Addr", "addr"]),
-      gps_time: eupFirstText(status, ["GPSTime", "gpsTime", "Update_Time", "updateTime", "RecvTime", "recvTime"]),
+      gps_time: eupFirstText(status, ["Log_DTime", "GPSTime", "gpsTime", "Update_Time", "updateTime", "RecvTime", "recvTime"]),
       lat,
       lng,
       has_position: lat !== null && lng !== null,
       is_own_fleet: isEupOwnFleet(car, status)
     };
   })
-    .filter((vehicle) => vehicle.is_own_fleet)
     .filter((vehicle) => !targetCarUnicode || vehicle.car_unicode === targetCarUnicode);
   return {
     configured: true,
     updated_at: new Date().toISOString(),
     account_name: accountInfo.Cust_Name || accountInfo.IM_Cust_Name || "",
-    filter: "自有車隊",
+    filter: "帳號授權車輛",
     mode: targetCarUnicode ? "single_vehicle" : "snapshot",
     total: vehicles.length,
     vehicles
@@ -588,13 +609,14 @@ async function dispatchDealers() {
 
 async function dispatchRows(table: string, columns: string, filterKey = "", filterValue = "") {
   const rows: Record<string, any>[] = [];
-  for (let offset = 0; ; offset += 500) {
+  for (let offset = 0; ;) {
     let query = db.from(table).select(columns).order("id").range(offset, offset + 499);
     if (filterKey) query = query.eq(filterKey, filterValue);
     const page = await query;
     if (page.error) throw page.error;
     rows.push(...(page.data || []));
-    if (!page.data || page.data.length < 500) return rows;
+    if (!page.data?.length) return rows;
+    offset += page.data.length;
   }
 }
 
@@ -615,11 +637,12 @@ async function loadDealerDispatch(partnerId: string) {
   const drivers = await dispatchRows("drivers", "id,name,phone,dealer_partner_id", "dealer_partner_id", partnerId);
   const orders: Record<string, unknown>[] = [];
   // Read in pages so orders after Supabase's default row limit are not lost.
-  for (let offset = 0; ; offset += 500) {
+  for (let offset = 0; ;) {
     const page = await db.from("dispatch_orders").select("*").order("id").range(offset, offset + 499);
     if (page.error) throw page.error;
     orders.push(...(page.data || []).filter(order => dispatchDealerId(order, dealers) === partnerId));
-    if (!page.data || page.data.length < 500) break;
+    if (!page.data?.length) break;
+    offset += page.data.length;
   }
   return { drivers: drivers || [], orders };
 }

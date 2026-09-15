@@ -66,6 +66,7 @@
     hiringApplicationFilter: "unnotified",
     dispatchDateFilter: today(),
     dispatchAdminDateFilter: today(),
+    flightSearch: { query: "", date: today(), source: "taoyuan" },
     dispatchFiltersOpen: false,
     dispatchSearch: "",
     dispatchDriverFilter: "",
@@ -100,12 +101,22 @@
     lastLinePushResult: null,
     unlockedSalaryPayments: new Set()
   };
+  const FLIGHT_CACHE_MS = 10 * 60 * 1000;
+  const flightRequestCache = new Map();
+  const dispatchFlightRequests = new Map();
+  let flightQueryRevision = 0;
+  let dispatchFlightRefreshTimer = null;
   let dispatchRefreshTimer = null;
   let adminChatRefreshTimer = null;
   let weatherTicker = null;
   let satelliteMap = null;
   let satelliteMarkerLayer = null;
   let satelliteLeafletPromise = null;
+
+  window.matchMedia("(max-width: 900px)").addEventListener("change", event => {
+    state.dispatchFiltersOpen = false;
+    document.querySelectorAll(".dispatch-toolbar").forEach(element => { element.open = !event.matches; });
+  });
 
   function requestedDriverView() {
     try {
@@ -1392,10 +1403,29 @@
     }
     saveViewState();
     ensureDispatchAutoRefresh();
+    ensureDispatchFlightRefresh();
     ensureAdminChatAutoRefresh();
     if (state.admin) renderAdmin();
     else if (state.partner) renderPartnerPortal();
     else renderDriver();
+  }
+
+  function dispatchPageVisible() {
+    return Boolean((state.admin && state.adminView === "dispatchCenter") || (state.partner && state.partnerView === "dispatchCenter") || (state.user && state.view === "dispatchCenter"));
+  }
+
+  function ensureDispatchFlightRefresh() {
+    if (!dispatchPageVisible()) {
+      clearInterval(dispatchFlightRefreshTimer);
+      dispatchFlightRefreshTimer = null;
+      return;
+    }
+    if (dispatchFlightRefreshTimer) return;
+    dispatchFlightRefreshTimer = setInterval(() => {
+      if (!dispatchPageVisible() || document.hidden) return;
+      const ids = new Set(Array.from(document.querySelectorAll('[data-dispatch-detail]'), el => el.dataset.dispatchDetail));
+      scheduleDispatchFlightMiniStatuses((state.data.dispatch_orders || []).filter(order => ids.has(String(order.id))));
+    }, FLIGHT_CACHE_MS);
   }
 
   function ensureDispatchAutoRefresh() {
@@ -1713,7 +1743,7 @@
       return;
     }
     layout(views[state.view]());
-    if (state.view === "flights") loadFlights("", today(), "taoyuan");
+    if (state.view === "flights") loadFlights(state.flightSearch.query, state.flightSearch.date, state.flightSearch.source);
   }
 
   function feature(view, title, desc, count) {
@@ -1867,12 +1897,22 @@
     const flightStatus = dispatchFlightStatusLabel(order);
     const areaText = [order.city, order.district].filter(Boolean).join("") || "-";
     const displayArea = flightStatus.text ? `${areaText} ${flightStatus.text}` : areaText;
+    if (admin) return `<article class="dispatch-order-card dispatch-admin-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""}">
+      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}" aria-label="查看訂單 ${escapeHtml(order.booking_no || "")}">
+        <span class="dispatch-clock"><strong>${escapeHtml(order.reservation_time || "--:--")}</strong><small>${escapeHtml(order.trip_type || "接送")}</small></span>
+        <span class="dispatch-card-content">
+          <span class="dispatch-card-heading"><b class="dispatch-platform-tag">${escapeHtml(order.source_platform || "派趟")}</b><b class="dispatch-card-route">${escapeHtml(areaText)}</b><span class="dispatch-status-chip ${flightStatus.className}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}">${escapeHtml(flightStatus.text)}</span></span>
+          <span class="dispatch-card-reference">${escapeHtml(order.booking_no || "-")}${order.flight_no ? ` · ${escapeHtml(normalizeFlightNumber(order.flight_no))}` : ""}</span>
+          <span class="dispatch-card-people"><span class="dispatch-vendor">${escapeHtml(order.assigned_vendor || order.vendor_name || "未指定車商")}</span><span class="${order.driver_name ? "" : "dispatch-unassigned"}">${escapeHtml(order.driver_name || "待指派司機")}</span></span>
+        </span>
+      </button>
+    </article>`;
     return `<article class="dispatch-order-card dispatch-order-row ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
       <button type="button" data-dispatch-detail="${escapeHtml(order.id)}">
         <strong class="dispatch-platform">${escapeHtml(order.source_platform || "派趟")}</strong>
         <span class="dispatch-booking">${escapeHtml(order.booking_no || "-")}</span>
         <span>${escapeHtml(order.trip_type || "-")}</span>
-        <span class="dispatch-area-status ${flightStatus.className || ""}">${escapeHtml(displayArea)}</span>
+        <span class="dispatch-area-status ${flightStatus.className || ""}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}" data-dispatch-area="${escapeHtml(areaText)}">${escapeHtml(displayArea)}</span>
         <time>${escapeHtml(dispatchDisplayDate(order.reservation_date))}</time>
         <span>${escapeHtml(order.reservation_time || "-")}</span>
         <span>${escapeHtml(order.driver_name || "待指派")}</span>
@@ -1900,28 +1940,39 @@
     return { text: "準點", className: "ontime" };
   }
 
+  function dispatchFlightFresh(cached) {
+    return Boolean(cached && Date.now() - cached.fetchedAt < FLIGHT_CACHE_MS);
+  }
+
   async function loadDispatchFlightMiniStatus(order = {}) {
     const key = dispatchFlightCacheKey(order);
-    if (!key || state.dispatchFlightStatuses[key]) return;
-    state.dispatchFlightStatuses[key] = { loading: true };
-    try {
+    if (!key) return null;
+    if (dispatchFlightRequests.has(key)) return dispatchFlightRequests.get(key);
+    if (dispatchFlightFresh(state.dispatchFlightStatuses[key])) return state.dispatchFlightStatuses[key];
+    const request = (async () => {
       const direction = String(order.trip_type || "").includes("送") ? "departure" : "arrival";
-      const flight = await fetchFlightStatus(order.flight_no, direction, fmtDate(order.reservation_date), "KHH", "kaohsiung", true);
-      state.dispatchFlightStatuses[key] = { flight, direction, fetchedAt: Date.now() };
-    } catch (error) {
-      state.dispatchFlightStatuses[key] = { error: error.message || String(error), fetchedAt: Date.now() };
-    }
-    if (state.view === "dispatchCenter") render();
+      try {
+        const flight = await fetchFlightStatus(order.flight_no, direction, fmtDate(order.reservation_date), "KHH", "kaohsiung", false);
+        state.dispatchFlightStatuses[key] = { flight, direction, fetchedAt: Date.now() };
+      } catch (error) {
+        state.dispatchFlightStatuses[key] = { error: error.message || String(error), fetchedAt: Date.now() };
+      }
+      const status = dispatchFlightStatusLabel(order);
+      document.querySelectorAll('[data-dispatch-flight-key]').forEach(element => {
+        if (element.dataset.dispatchFlightKey !== key) return;
+        element.textContent = [element.dataset.dispatchArea, status.text].filter(Boolean).join(" ");
+        element.classList.remove("ontime", "landed", "delayed", "cancelled", "loading", "unknown");
+        element.classList.add(status.className || "unknown");
+      });
+      return state.dispatchFlightStatuses[key];
+    })();
+    dispatchFlightRequests.set(key, request);
+    try { return await request; } finally { dispatchFlightRequests.delete(key); }
   }
 
   function scheduleDispatchFlightMiniStatuses(orders = []) {
-    const targets = orders.filter((order) => order.flight_no && !state.dispatchFlightStatuses[dispatchFlightCacheKey(order)]);
-    if (!targets.length) return;
-    setTimeout(() => {
-      targets.forEach((order, index) => {
-        setTimeout(() => loadDispatchFlightMiniStatus(order), index * 120);
-      });
-    }, 0);
+    const unique = new Map(orders.filter(order => order.flight_no).map(order => [dispatchFlightCacheKey(order), order]));
+    unique.forEach(order => { void loadDispatchFlightMiniStatus(order); });
   }
 
   function dispatchSeenKey(id) {
@@ -2001,7 +2052,9 @@
     if (!box || !cfg.FLIGHT_INFO_URL) return;
     try {
       const direction = String(order.trip_type || "").includes("送") ? "departure" : "arrival";
-      const flight = await fetchFlightStatus(order.flight_no, direction, fmtDate(order.reservation_date), "KHH", "kaohsiung", true);
+      const cached = await loadDispatchFlightMiniStatus(order);
+      if (cached?.error) throw new Error(cached.error);
+      const flight = cached?.flight;
       if (!flight) {
         box.innerHTML = `<strong>${escapeHtml(normalizeFlightNumber(order.flight_no) || order.flight_no)}</strong><span>高雄機場暫查無此航班狀態</span><small>支援正式班號與共掛班號，若日期太遠可能尚未進入即時資料。</small>`;
         return;
@@ -2343,27 +2396,28 @@
   }
 
   function driverFlights() {
-    const defaultDate = today();
+    const defaultDate = state.flightSearch.date || today();
     return `
       <div class="panel flight-panel flight-page">
         <form id="flightSearchForm" class="flight-search">
           <button class="ghost-btn flight-back-btn" type="button" data-view="home">返回</button>
           <div class="flight-source-choice" role="radiogroup" aria-label="航班資料">
-            <input type="radio" id="sourceTaoyuan" name="flight_source" value="taoyuan" checked>
+            <input type="radio" id="sourceTaoyuan" name="flight_source" value="taoyuan" ${state.flightSearch.source === "taoyuan" ? "checked" : ""}>
             <label for="sourceTaoyuan">桃園</label>
-            <input type="radio" id="sourceKaohsiung" name="flight_source" value="kaohsiung">
+            <input type="radio" id="sourceKaohsiung" name="flight_source" value="kaohsiung" ${state.flightSearch.source === "kaohsiung" ? "checked" : ""}>
             <label for="sourceKaohsiung">高雄</label>
-            <input type="radio" id="sourceTdx" name="flight_source" value="tdx">
+            <input type="radio" id="sourceTdx" name="flight_source" value="tdx" ${state.flightSearch.source === "tdx" ? "checked" : ""}>
             <label for="sourceTdx">TDX</label>
           </div>
           <label class="flight-date-field">
             <span>日期</span>
             <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
           </label>
-          <input name="flight" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off" autocapitalize="characters">
+          <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off" autocapitalize="characters">
           <button class="primary-btn" type="submit">查詢</button>
         </form>
-        <div id="flightList" class="luxury-card-mesh flight-grid"><div class="empty">準備航班查詢中...</div></div>
+        <p class="flight-help">選擇機場及日期，輸入班號或航點查詢；同一查詢 10 分鐘內共用資料。</p>
+        <div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"><div class="empty">請選擇機場並查詢航班</div></div>
       </div>
     `;
   }
@@ -2974,22 +3028,18 @@
 
   async function loadSatelliteSnapshot(options = {}) {
     const carUnicode = options.carUnicode || "";
+    if (state.eupLoading) return;
+    if (state.eupSnapshot && Date.now() - Date.parse(state.eupSnapshot.updated_at || "") < FLIGHT_CACHE_MS) {
+      if (carUnicode) { state.eupSelectedVehicle = carUnicode; render(); }
+      return;
+    }
     state.eupLoading = true;
     state.eupError = "";
     if (carUnicode) state.eupSelectedVehicle = carUnicode;
     render();
     try {
-      const result = await apiRequest("eup_vehicle_snapshot", carUnicode ? { car_unicode: carUnicode } : {});
-      if (carUnicode && state.eupSnapshot && Array.isArray(result.vehicles) && result.vehicles.length) {
-        const nextVehicles = Array.isArray(state.eupSnapshot.vehicles) ? [...state.eupSnapshot.vehicles] : [];
-        const updatedVehicle = result.vehicles[0];
-        const index = nextVehicles.findIndex((vehicle) => String(vehicle.car_unicode || "") === String(updatedVehicle.car_unicode || ""));
-        if (index >= 0) nextVehicles[index] = { ...nextVehicles[index], ...updatedVehicle };
-        else nextVehicles.unshift(updatedVehicle);
-        state.eupSnapshot = { ...state.eupSnapshot, updated_at: result.updated_at, vehicles: nextVehicles };
-      } else {
-        state.eupSnapshot = result;
-      }
+      const result = await apiRequest("eup_vehicle_snapshot", {});
+      state.eupSnapshot = result;
     } catch (error) {
       state.eupError = error.message || String(error);
     } finally {
@@ -3001,7 +3051,7 @@
   function satelliteVehicleCoords(vehicle) {
     const lat = Number(vehicle?.lat);
     const lng = Number(vehicle?.lng);
-    return Number.isFinite(lat) && Number.isFinite(lng) ? [lat, lng] : null;
+    return vehicle?.lat != null && vehicle?.lng != null && Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && (lat !== 0 || lng !== 0) ? [lat, lng] : null;
   }
 
   function loadSatelliteMapAssets() {
@@ -3038,7 +3088,7 @@
         satelliteMap = null;
         satelliteMarkerLayer = null;
       }
-      mapEl.innerHTML = `<div class="satellite-map-empty">目前沒有可顯示的位置資料<br><small>請先同步自有車隊，或點選車輛更新位置。</small></div>`;
+      mapEl.innerHTML = `<div class="satellite-map-empty">目前沒有可顯示的位置資料<br><small>請先更新車輛，或點選車輛更新位置。</small></div>`;
       return;
     }
     try {
@@ -3190,9 +3240,9 @@
       ${snapshot.configured === false ? `<div class="empty">衛星犬登入資料尚未設定完成。</div>` : ""}
       <section class="traffic-metric-grid">
         <article class="traffic-metric-card"><span>同步狀態</span><strong>${snapshot.configured ? "已連線" : "待設定"}</strong><small>${snapshot.updated_at ? fmtDateTime(snapshot.updated_at) : "尚未同步"}</small></article>
-        <article class="traffic-metric-card"><span>自有車隊</span><strong>${vehicles.length || snapshot.total || 0}</strong><small>只顯示自有車隊</small></article>
+        <article class="traffic-metric-card"><span>車輛數量</span><strong>${vehicles.length || snapshot.total || 0}</strong><small>顯示此帳號授權車輛</small></article>
         <article class="traffic-metric-card"><span>帳號單位</span><strong>${escapeHtml(snapshot.account_name || "-")}</strong><small>登入後回傳名稱</small></article>
-        <article class="traffic-metric-card"><span>更新方式</span><strong>省流量</strong><small>進頁一次，點車更新</small></article>
+        <article class="traffic-metric-card"><span>更新方式</span><strong>省流量</strong><small>10 分鐘快取，手動更新</small></article>
       </section>
       <section class="satellite-monitor-layout">
         <div class="panel satellite-monitor-panel">
@@ -3205,7 +3255,7 @@
                 <small>${escapeHtml(vehicle.status || "-")}${vehicle.speed ? ` · ${escapeHtml(vehicle.speed)} km/h` : ""}</small>
                 <em>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}</em>
               </button>
-            `).join("") : `<p>尚未取得衛星犬自有車隊資料。</p>`}
+            `).join("") : `<p>尚未取得衛星犬車輛資料。</p>`}
           </div>
         </div>
         <div class="satellite-map-card">
@@ -4711,6 +4761,7 @@
     const pending = items.filter((item) => item.status !== "completed").length;
     const platformCounts = ["肯驛", "和運", "格上"].map((platform) => [platform, items.filter((item) => String(item.source_platform || "").includes(platform)).length]);
     return `<div class="dispatch-admin-shell">
+    <details class="dispatch-toolbar" ${state.dispatchFiltersOpen || window.innerWidth > 900 ? "open" : ""}><summary>日期、篩選與統計 <span>${escapeHtml(selectedDate)} · ${items.length} 筆</span></summary><div class="dispatch-toolbar-body">
     <div class="section-head">
       <div><h2>派趟中心</h2></div>
       ${dealer ? "" : `<div class="actions">
@@ -4719,8 +4770,7 @@
         <button class="primary-btn" data-modal="dispatchOrder">新增派趟</button>
       </div>`}
     </div>
-    <button type="button" class="ghost-btn dispatch-filter-toggle" data-action="toggle-dispatch-filters" aria-expanded="${state.dispatchFiltersOpen}" aria-controls="dispatchSearchForm">${escapeHtml(selectedDate)} · ${state.dispatchFiltersOpen ? "收起篩選 ▴" : "展開篩選 ▾"}</button>
-    <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel ${state.dispatchFiltersOpen ? "is-open" : ""}">
+    <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel">
       <div class="dispatch-search-row">
         <input name="date" type="date" value="${escapeHtml(selectedDate)}">
         <input name="search" value="${escapeHtml(state.dispatchSearch || "")}" placeholder="搜尋訂單、平台、車商、地區、航班">
@@ -4737,6 +4787,7 @@
       <article><small>未完成</small><strong>${pending}</strong></article>
       ${platformCounts.map(([platform, count]) => `<article class="${platformClass(platform)}"><small>${platform}</small><strong>${count}</strong></article>`).join("")}
     </div>
+    </div></details>
     <div class="dispatch-admin-list">
       ${items.length ? items.map((item) => `<div class="dispatch-admin-row">
         ${dispatchOrderCard(item, true)}
@@ -4832,9 +4883,11 @@
       .map((row) => dispatchRecordFromExcelRow(row, sheetName))
       .filter((record) => record.source_platform && record.booking_no);
     if (!records.length) throw new Error("Excel 內找不到可匯入的派趟資料。");
-    const replace_dates = [...new Set(records.map((record) => record.reservation_date).filter(Boolean))];
+    const replace_dates = [...new Set(records.map((record) => record.reservation_date).filter(Boolean))].sort();
     const result = await apiRequest("bulk_upsert_dispatch_orders", { records, replace_dates });
-    state.dispatchImportSummary = `已匯入/更新 ${result.count || records.length} 筆派趟資料（來源工作表：${sheetName}）`;
+    resetDispatchFilters();
+    state.dispatchAdminDateFilter = replace_dates[0] || today();
+    state.dispatchImportSummary = `已匯入/更新 ${result.count ?? records.length} 筆派趟資料；日期：${replace_dates.join("、") || "未提供"}；目前顯示：${state.dispatchAdminDateFilter}（來源工作表：${sheetName}）`;
     await loadAll();
     render();
   }
@@ -7378,11 +7431,24 @@
     endpoint.searchParams.set("date", date || today());
     endpoint.searchParams.set("airport", airport || "TPE");
     endpoint.searchParams.set("source", airport === "KHH" ? "kaohsiung" : source);
-    const response = await fetch(endpoint, { cache: "no-store" });
-    const payload = await response.json();
-    if (response.status === 404) throw new Error("航班服務尚未部署到 Supabase");
-    if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
-    return Array.isArray(payload) ? payload : payload.data || payload.flights || [];
+    const key = endpoint.toString();
+    const cached = flightRequestCache.get(key);
+    if (cached && (cached.pending || Date.now() - cached.fetchedAt < FLIGHT_CACHE_MS)) return cached.promise;
+    for (const [cacheKey, entry] of flightRequestCache) {
+      if (!entry.pending && Date.now() - entry.fetchedAt >= FLIGHT_CACHE_MS) flightRequestCache.delete(cacheKey);
+    }
+    const entry = { pending: true, fetchedAt: Date.now(), promise: null };
+    entry.promise = (async () => {
+      try {
+        const response = await fetch(endpoint, { cache: "no-store" });
+        const payload = await response.json();
+        if (response.status === 404) throw new Error("航班服務尚未部署到 Supabase");
+        if (!response.ok) throw new Error(payload.error || "航班服務暫時無法使用");
+        return Array.isArray(payload) ? payload : payload.data || payload.flights || [];
+      } finally { entry.pending = false; entry.fetchedAt = Date.now(); }
+    })();
+    flightRequestCache.set(key, entry);
+    return entry.promise;
   }
 
   async function fetchFlightStatus(query = "", direction = "arrival", date = today(), airport = "KHH", source = "kaohsiung", allowTodayFallback = false) {
@@ -7426,15 +7492,21 @@
       `;
       return;
     }
+    state.flightSearch = { query, date, source: sourceChoice };
+    const revision = ++flightQueryRevision;
+    const submit = document.querySelector('#flightSearchForm button[type="submit"]');
+    if (submit) { submit.disabled = true; submit.textContent = "查詢中"; }
+    box.setAttribute("aria-busy", "true");
     box.innerHTML = `<div class="empty">查詢航班資訊中...</div>`;
     try {
       const [arrivals, departures] = await Promise.all([
         fetchFlights(query, "arrival", date || today(), airport, source).then((items) => items.map((flight) => ({ ...flight, direction: "arrival" }))),
         fetchFlights(query, "departure", date || today(), airport, source).then((items) => items.map((flight) => ({ ...flight, direction: "departure" })))
       ]);
+      if (revision !== flightQueryRevision || !box.isConnected) return;
       const flights = [...arrivals, ...departures]
         .sort((a, b) => String(a.scheduledTime || "").localeCompare(String(b.scheduledTime || "")));
-      box.innerHTML = flights.length ? flights.slice(0, 20).map((flight) => `
+      box.innerHTML = flights.length ? `<div class="flight-results-summary">${escapeHtml(sourceName)} · ${escapeHtml(date)} · ${flights.length} 筆航班</div>` + flights.map((flight) => `
         <article class="modern-luxury-item flight-card">
           <div class="flight-card-head">
             <div class="flight-airline">
@@ -7442,7 +7514,7 @@
               <span class="airline-fallback">${escapeHtml(flight.airlineCode || String(flight.flightNo || "").slice(0, 2) || "-")}</span>
               <div>
                 <strong>${escapeHtml(flightDisplayName(flight))}</strong>
-                <small>${escapeHtml(flightRouteText(flight, flight.direction || "arrival"))}</small>
+                <small>${flight.direction === "departure" ? "出發" : "抵達"} · ${escapeHtml(flightRouteText(flight, flight.direction || "arrival"))}</small>
               </div>
             </div>
             <span class="flight-status ${flightStatusClass(flightStatusText(flight, flight.direction || "arrival"))}">${escapeHtml(flightStatusText(flight, flight.direction || "arrival"))}</span>
