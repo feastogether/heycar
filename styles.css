@@ -5587,6 +5587,103 @@ tr:last-child td { border-bottom: 0; }
   .service-part-row, .service-parts-head { grid-template-columns: 1fr; }
 }
 
+/* Shared vehicle-loan overview and LINE-style internal chat. */
+.loan-overview {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) repeat(3, minmax(88px, 120px));
+  gap: 10px;
+  align-items: stretch;
+  margin: 0 0 14px;
+}
+.loan-overview-copy,
+.loan-overview-stat {
+  border: 1px solid #dbe5ef;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .045);
+}
+.loan-overview-copy {
+  display: grid;
+  gap: 3px;
+  padding: 15px 17px;
+  background: linear-gradient(135deg, #f8fbff, #eef6ff);
+}
+.loan-overview-copy small,
+.loan-overview-copy span,
+.loan-overview-stat span { color: #64748b; }
+.loan-overview-copy small { font-size: 10px; font-weight: 850; }
+.loan-overview-copy strong { color: #172033; font-size: 17px; }
+.loan-overview-copy span { font-size: 12px; }
+.loan-overview-stat {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  min-height: 86px;
+  padding: 10px;
+}
+.loan-overview-stat strong { color: #172033; font-size: 25px; line-height: 1; }
+.loan-overview-stat span { margin-top: 6px; font-size: 11px; font-weight: 800; }
+.loan-row { border: 1px solid #dfe7ef; border-radius: 15px; background: #fff; box-shadow: 0 7px 18px rgba(15, 23, 42, .04); }
+.loan-row-facts div { border-radius: 10px; background: #f8fafc; }
+.loan-row-facts div:first-child { background: #eff6ff; }
+
+.admin-chat-panel {
+  width: min(680px, calc(100vw - 36px));
+  border-radius: 20px;
+  background: #fff;
+}
+.admin-chat-head { padding: 13px 16px; background: #06c755; color: #fff; border-bottom: 0; }
+.admin-chat-head small { color: rgba(255,255,255,.82); }
+.admin-chat-head .icon-btn { color: #fff; border-color: rgba(255,255,255,.35); background: rgba(255,255,255,.12); }
+.admin-chat-layout { display: grid; grid-template-columns: 230px minmax(0, 1fr); min-height: 430px; }
+.admin-chat-contacts { min-width: 0; border-right: 1px solid #e5e9ef; background: #fff; }
+.admin-chat-contacts-title { min-height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 0 13px; border-bottom: 1px solid #edf0f4; }
+.admin-chat-contacts-title strong { font-size: 13px; }
+.admin-chat-contacts-title span { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: #eef2f6; color: #64748b; font-size: 11px; font-weight: 800; }
+.admin-chat-contact-list { height: 382px; overflow-y: auto; }
+.admin-chat-contacts-empty { padding: 24px 12px; color: #7b8794; text-align: center; font-size: 12px; }
+.admin-chat-contact { width: 100%; display: grid; grid-template-columns: 42px minmax(0, 1fr) auto; gap: 9px; align-items: center; padding: 10px 11px; border-bottom: 1px solid #f0f2f5; background: #fff; color: #1f2937; text-align: left; }
+.admin-chat-contact:hover { background: #f7faf8; }
+.admin-chat-contact.is-active { background: #ebf9f0; box-shadow: inset 3px 0 #06c755; }
+.admin-chat-avatar { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%; background: linear-gradient(145deg, #d8f7e4, #b8edcc); color: #087c39; font-size: 15px; font-weight: 900; }
+.admin-chat-contact-copy { min-width: 0; display: grid; gap: 3px; }
+.admin-chat-contact-copy strong,
+.admin-chat-contact-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.admin-chat-contact-copy strong { font-size: 12px; }
+.admin-chat-contact-copy small { color: #8a949f; font-size: 10px; }
+.admin-chat-contact-meta { align-self: stretch; display: grid; align-content: center; justify-items: end; gap: 5px; }
+.admin-chat-contact-meta time { color: #a0a8b2; font-size: 9px; }
+.admin-chat-contact-meta b { min-width: 19px; height: 19px; display: grid; place-items: center; padding: 0 5px; border-radius: 999px; background: #ff5b5b; color: #fff; font-size: 9px; }
+.admin-chat-conversation { min-width: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; background: #eef4f7; }
+.admin-chat-conversation-head { min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border-bottom: 1px solid #dfe6eb; background: #fff; }
+.admin-chat-conversation-head strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.admin-chat-messages { height: 310px; background: #eef4f7; }
+.admin-chat-bubble.is-mine p { background: #b8ed8e; color: #172033; border: 0; }
+.admin-chat-bubble.is-other p { border: 0; box-shadow: 0 1px 2px rgba(15,23,42,.08); }
+.admin-chat-compose { padding: 10px 12px; }
+
+@media (max-width: 700px) {
+  .loan-overview { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .loan-overview-copy { grid-column: 1 / -1; padding: 12px 14px; }
+  .loan-overview-stat { min-height: 70px; padding: 8px 4px; border-radius: 12px; box-shadow: none; }
+  .loan-overview-stat strong { font-size: 21px; }
+  .loan-search-row { grid-template-columns: minmax(0, 1fr); }
+  .admin-chat-widget { left: 8px; right: 8px; bottom: 8px; }
+  .admin-chat-fab { margin-left: auto; }
+  .admin-chat-panel { position: fixed; left: 8px; right: 8px; bottom: 72px; width: auto; max-height: calc(100vh - 90px); }
+  .admin-chat-layout { grid-template-columns: 118px minmax(0, 1fr); min-height: min(500px, calc(100vh - 154px)); }
+  .admin-chat-contact-list { height: min(452px, calc(100vh - 202px)); }
+  .admin-chat-contact { grid-template-columns: 34px minmax(0, 1fr) auto; gap: 6px; padding: 9px 7px; }
+  .admin-chat-avatar { width: 32px; height: 32px; font-size: 12px; }
+  .admin-chat-contact-meta time { display: none; }
+  .admin-chat-contact-copy strong { font-size: 11px; }
+  .admin-chat-contact-copy small { font-size: 9px; }
+  .admin-chat-messages { height: min(380px, calc(100vh - 274px)); padding: 10px; }
+  .admin-chat-compose { grid-template-columns: minmax(0, 1fr) 38px 52px; gap: 5px; padding: 8px; }
+  .admin-chat-compose input { height: 38px; }
+  .admin-chat-emoji-btn { width: 38px; min-height: 38px; }
+}
+
 .key-code-panel {
   display: flex;
   align-items: center;

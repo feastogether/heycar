@@ -3659,6 +3659,43 @@
     }).join("");
   }
 
+  function adminChatContactMessages(contactId) {
+    return adminChatMessages(contactId);
+  }
+
+  function adminChatContactUnread(contactId) {
+    const me = currentAdminChatId();
+    return adminChatContactMessages(contactId).filter((item) =>
+      String(item.sender_id || "") === String(contactId) &&
+      String(item.receiver_id || "") === me &&
+      !item.read_at
+    ).length;
+  }
+
+  function adminChatContactPreview(contactId) {
+    const messages = adminChatContactMessages(contactId);
+    const last = messages[messages.length - 1];
+    if (!last) return { text: "尚無訊息", time: "" };
+    return {
+      text: `${String(last.sender_id || "") === currentAdminChatId() ? "你：" : ""}${last.message || ""}`,
+      time: formatDateTime(last.created_at).split(" ").pop() || ""
+    };
+  }
+
+  function adminChatContactsMarkup(contacts = adminChatContacts(), selectedId = state.adminChatContactId) {
+    if (!contacts.length) return `<div class="admin-chat-contacts-empty">尚無聯絡人</div>`;
+    return contacts.map((user) => {
+      const preview = adminChatContactPreview(user.id);
+      const unread = adminChatContactUnread(user.id);
+      const initial = String(user.name || "未").trim().slice(0, 1);
+      return `<button type="button" class="admin-chat-contact ${user.id === selectedId ? "is-active" : ""}" data-admin-chat-contact-button="${escapeHtml(user.id)}">
+        <span class="admin-chat-avatar" aria-hidden="true">${escapeHtml(initial)}</span>
+        <span class="admin-chat-contact-copy"><strong>${escapeHtml(user.name || "未命名")}</strong><small>${escapeHtml(preview.text)}</small></span>
+        <span class="admin-chat-contact-meta"><time>${escapeHtml(preview.time)}</time>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}</span>
+      </button>`;
+    }).join("");
+  }
+
   function updateAdminChatDom() {
     const unread = adminUnreadChatCount();
     const badge = document.querySelector(".admin-chat-fab b");
@@ -3674,6 +3711,10 @@
       box.innerHTML = adminChatMessagesMarkup();
       if (nearBottom) box.scrollTop = box.scrollHeight;
     }
+    const contactsBox = document.querySelector("[data-admin-chat-contacts]");
+    if (contactsBox) contactsBox.innerHTML = adminChatContactsMarkup();
+    const contactTitle = document.querySelector("[data-admin-chat-current-name]");
+    if (contactTitle) contactTitle.textContent = state.adminChatContactId ? adminChatContactName(state.adminChatContactId) : "請選擇聯絡人";
   }
 
   async function loadAdminChat() {
@@ -3721,21 +3762,24 @@
           <div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div>
           <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" onclick="this.closest('.admin-chat-widget').classList.toggle('is-open')" aria-label="關閉對話">×</button>
         </header>
-        <div class="admin-chat-contact-row">
-          <select data-admin-chat-contact aria-label="選擇聯絡人">
-            ${contacts.length ? contacts.map((user) => `<option value="${user.id}" ${user.id === selectedId ? "selected" : ""}>${escapeHtml(user.name || "未命名")}</option>`).join("") : `<option value="">尚無聯絡人</option>`}
-          </select>
-          <span class="admin-chat-live">即時</span>
+        <div class="admin-chat-layout">
+          <aside class="admin-chat-contacts" aria-label="聯絡人">
+            <div class="admin-chat-contacts-title"><strong>聯絡人</strong><span>${contacts.length}</span></div>
+            <div class="admin-chat-contact-list" data-admin-chat-contacts>${adminChatContactsMarkup(contacts, selectedId)}</div>
+          </aside>
+          <section class="admin-chat-conversation">
+            <div class="admin-chat-conversation-head"><strong data-admin-chat-current-name>${escapeHtml(selectedId ? adminChatContactName(selectedId) : "請選擇聯絡人")}</strong><span class="admin-chat-live">即時</span></div>
+            <div class="admin-chat-messages" data-admin-chat-messages>
+              ${adminChatMessagesMarkup(selectedId)}
+            </div>
+            <form id="adminChatForm" class="admin-chat-compose">
+              <input name="message" value="${escapeHtml(state.adminChatDraft || "")}" placeholder="輸入訊息..." autocomplete="off" ${selectedId ? "" : "disabled"}>
+              <button class="ghost-btn admin-chat-emoji-btn" type="button" data-action="toggle-admin-chat-emoji">😊</button>
+              <button class="primary-btn" type="submit" ${selectedId ? "" : "disabled"}>送出</button>
+              ${state.adminChatEmojiOpen ? `<div class="admin-chat-emoji-pop">${emojis.map((emoji) => `<button type="button" data-admin-chat-emoji="${emoji}">${emoji}</button>`).join("")}</div>` : ""}
+            </form>
+          </section>
         </div>
-        <div class="admin-chat-messages" data-admin-chat-messages>
-          ${adminChatMessagesMarkup(selectedId)}
-        </div>
-        <form id="adminChatForm" class="admin-chat-compose">
-          <input name="message" value="${escapeHtml(state.adminChatDraft || "")}" placeholder="輸入訊息..." autocomplete="off" ${selectedId ? "" : "disabled"}>
-          <button class="ghost-btn admin-chat-emoji-btn" type="button" data-action="toggle-admin-chat-emoji">😊</button>
-          <button class="primary-btn" type="submit" ${selectedId ? "" : "disabled"}>送出</button>
-          ${state.adminChatEmojiOpen ? `<div class="admin-chat-emoji-pop">${emojis.map((emoji) => `<button type="button" data-admin-chat-emoji="${emoji}">${emoji}</button>`).join("")}</div>` : ""}
-        </form>
       </div>
     </section>`;
   }
@@ -3770,7 +3814,7 @@
       ["feedbacks", "意見反饋", "💬", "feedbacks"],
       ["marquee", "跑馬燈通知", "🚨", "marquee"],
       ["emergencyEvents", "緊急事件", "🆘", "emergencyEvents"]
-    ].filter(([, , , permission]) => !permission || adminCan(permission));
+    ].filter(([key, , , permission]) => key === "vehicleLoans" || !permission || adminCan(permission));
     if (adminCan("loginSlogans") && !nav.some(([key]) => key === "loginSlogans")) {
       const marqueeIndex = nav.findIndex(([key]) => key === "marquee");
       nav.splice(marqueeIndex >= 0 ? marqueeIndex + 1 : nav.length, 0, ["loginSlogans", "\u6a19\u8a9e\u7ba1\u7406", "\u270d", "loginSlogans"]);
@@ -4436,11 +4480,22 @@
       ].join(" ").toUpperCase().includes(search))
       .filter((item) => !date || loanTouchesDate(item, date))
       .sort((a, b) => String(b.borrow_at || "").localeCompare(String(a.borrow_at || "")));
+    const activeLoans = (state.data.vehicle_loans || [])
+      .filter((item) => item.status !== "completed")
+      .sort((a, b) => String(a.borrow_at || "").localeCompare(String(b.borrow_at || "")));
+    const usingCount = activeLoans.filter((item) => loanUsagePhase(item) === "using").length;
+    const upcomingCount = activeLoans.filter((item) => loanUsagePhase(item) === "upcoming").length;
     const keyCodeButton = state.adminProfile?.is_super_admin
       ? `<button class="ghost-btn" data-modal="keyAccessCode" ${activeKeyAccessCode() ? `data-id="${activeKeyAccessCode().id}"` : ""}>密碼管理</button>`
       : "";
     return `
       <div class="section-head"><div><h2>車輛租借</h2><small>登入同仁：${escapeHtml(state.adminProfile?.name || "管理者")}</small></div><div class="actions">${keyCodeButton}<button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div></div>
+      <section class="loan-overview" aria-label="目前租借概況">
+        <div class="loan-overview-copy"><small>所有同仁共用資訊</small><strong>目前借出與預借車輛</strong><span>可查看使用者、預借時間與預計歸還時間</span></div>
+        <div class="loan-overview-stat"><strong>${usingCount}</strong><span>使用中</span></div>
+        <div class="loan-overview-stat"><strong>${upcomingCount}</strong><span>待使用</span></div>
+        <div class="loan-overview-stat"><strong>${activeLoans.length}</strong><span>未結案</span></div>
+      </section>
       <form id="loanSearchForm" class="loan-filter-panel">
         <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button type="button" class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
         <div class="loan-search-row">
@@ -4455,9 +4510,9 @@
           <div class="loan-row-plate"><span class="plate-chip">${escapeHtml(item.plate_no || "-")}</span><span class="status ${loanStatusClass(item.status)}">${escapeHtml(loanStatusText(item.status))}</span></div>
           <div class="loan-row-main">
             <div class="loan-row-facts">
-              <div><small>申請人</small><strong>${escapeHtml(item.requested_by_name || "-")}</strong></div>
+              <div><small>使用者</small><strong>${escapeHtml(item.requested_by_name || "-")}</strong></div>
               <div><small>用途</small><strong>${escapeHtml(item.purpose || "-")}</strong></div>
-              <div><small>借車時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
+              <div><small>預借時間</small><strong>${fmtDateTime(item.borrow_at)}</strong></div>
               <div><small>預計還車</small><strong>${fmtDateTime(item.return_at)}</strong></div>
               <div><small>實際還車</small><strong>${fmtDateTime(item.actual_return_at)}</strong></div>
             </div>
@@ -4494,6 +4549,12 @@
     if (Number.isNaN(borrow)) return String(item.borrow_at || item.return_at || item.actual_return_at || "").includes(date);
     const end = Number.isNaN(plannedReturn) ? borrow : plannedReturn;
     return borrow <= dayEnd && end >= dayStart;
+  }
+
+  function loanUsagePhase(item = {}) {
+    if (item.status === "return_pending") return "returning";
+    const borrowAt = new Date(item.borrow_at || "").getTime();
+    return Number.isFinite(borrowAt) && borrowAt > Date.now() ? "upcoming" : "using";
   }
 
   function loanConflictFor(record, editingId = "") {
@@ -7936,6 +7997,22 @@
         }
         updateAdminChatDom();
       }
+      return;
+    }
+    if (target.dataset.adminChatContactButton !== undefined) {
+      state.adminChatContactId = target.dataset.adminChatContactButton || "";
+      state.adminChatEmojiOpen = false;
+      try {
+        await markAdminChatRead(state.adminChatContactId);
+      } catch (error) {
+        state.adminChatError = `即時通訊載入失敗：${error.message || error}`;
+      }
+      updateAdminChatDom();
+      requestAnimationFrame(() => {
+        const box = document.querySelector("[data-admin-chat-messages]");
+        if (box) box.scrollTop = box.scrollHeight;
+        document.querySelector("#adminChatForm input")?.focus();
+      });
       return;
     }
     if (target.dataset.action === "refresh-admin-chat") {

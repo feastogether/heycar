@@ -281,7 +281,8 @@ async function loadAdminData(session: Record<string, unknown>) {
       const { data, error } = await db
         .from("vehicle_loans")
         .select("*")
-        .eq("requested_by_admin_id", session.admin_user_id);
+        .neq("status", "completed")
+        .order("borrow_at", { ascending: true });
       if (error) throw error;
       result[table] = data || [];
       continue;
@@ -304,9 +305,7 @@ async function loadAdminData(session: Record<string, unknown>) {
     }
     const { data, error } = await db.from(table).select("*");
     if (error) throw error;
-    const visibleData = table === "vehicle_loans" && !session.is_super_admin
-      ? (data || []).filter((item) => item.requested_by_admin_id === session.admin_user_id)
-      : data || [];
+    const visibleData = data || [];
     result[table] = table === "insurance_partners"
       ? (data || []).map(({ login_code_hash: _hash, ...item }) => item)
       : table === "admin_users"
