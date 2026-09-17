@@ -71,6 +71,7 @@ async function main() {
   const loanHtml = ctx.adminVehicleLoans();
   assert(loanHtml.includes('王小明') && loanHtml.includes('陳美麗'));
   assert(loanHtml.includes('預借時間') && loanHtml.includes('目前借出與預借車輛'));
+  assert(loanHtml.includes('目前誰正在使用車輛') && loanHtml.includes('loan-vehicle-icon'));
   const chatHtml = ctx.adminChatWidget();
   assert(chatHtml.includes('data-admin-chat-contact-button="amy"'));
   assert(chatHtml.includes('data-admin-chat-contact-button="ben"'));
@@ -86,15 +87,21 @@ async function main() {
       await page.setViewportSize({ width, height: 900 });
       await page.setContent(`<style>${css}</style><main>${loanHtml}${chatHtml}</main>`);
       assert.equal(await page.locator('.admin-chat-contact').count(), 3);
-      assert(await page.locator('.admin-chat-contacts').isVisible());
-      assert(await page.locator('.admin-chat-conversation').isVisible());
+      if (width <= 700) {
+        assert.equal(await page.locator('.admin-chat-widget').isVisible(), false);
+      } else {
+        assert(await page.locator('.admin-chat-contacts').isVisible());
+        assert(await page.locator('.admin-chat-conversation').isVisible());
+        assert((await page.locator('.admin-chat-conversation').boundingBox()).width >= 400);
+      }
       assert(await page.locator('.loan-overview').isVisible());
+      assert(await page.locator('.loan-in-use-section').isVisible());
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `horizontal overflow at ${width}`);
     }
   } finally {
     await browser.close();
   }
-  console.log('PASS: all staff see active loans; loan overview and LINE-style contact list fit 320/390/768/1440px');
+  console.log('PASS: active vehicle cards fit 320/390px; desktop chat stays wide at 768/1440px and is hidden on mobile');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });

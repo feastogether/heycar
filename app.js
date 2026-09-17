@@ -4483,7 +4483,8 @@
     const activeLoans = (state.data.vehicle_loans || [])
       .filter((item) => item.status !== "completed")
       .sort((a, b) => String(a.borrow_at || "").localeCompare(String(b.borrow_at || "")));
-    const usingCount = activeLoans.filter((item) => loanUsagePhase(item) === "using").length;
+    const usingLoans = activeLoans.filter((item) => loanUsagePhase(item) === "using");
+    const usingCount = usingLoans.length;
     const upcomingCount = activeLoans.filter((item) => loanUsagePhase(item) === "upcoming").length;
     const keyCodeButton = state.adminProfile?.is_super_admin
       ? `<button class="ghost-btn" data-modal="keyAccessCode" ${activeKeyAccessCode() ? `data-id="${activeKeyAccessCode().id}"` : ""}>密碼管理</button>`
@@ -4495,6 +4496,15 @@
         <div class="loan-overview-stat"><strong>${usingCount}</strong><span>使用中</span></div>
         <div class="loan-overview-stat"><strong>${upcomingCount}</strong><span>待使用</span></div>
         <div class="loan-overview-stat"><strong>${activeLoans.length}</strong><span>未結案</span></div>
+      </section>
+      <section class="loan-in-use-section" aria-label="目前使用中的車輛">
+        <div class="loan-in-use-head"><div><small>即時使用狀態</small><h3>目前誰正在使用車輛</h3></div><span>${usingCount} 輛使用中</span></div>
+        <div class="loan-in-use-grid">
+          ${usingLoans.length ? usingLoans.map((item) => `<article class="loan-vehicle-card">
+            <div class="loan-vehicle-icon" aria-hidden="true"><svg viewBox="0 0 64 64" role="img"><path d="M13 34l5-13c1.2-3 3.5-5 7-5h14c3.5 0 5.8 2 7 5l5 13 4 3v11h-5v4h-7v-4H21v4h-7v-4h-5V37l4-3Z"/><path d="M19 33h26l-4-10H23l-4 10Z"/><circle cx="20" cy="40" r="3"/><circle cx="44" cy="40" r="3"/></svg></div>
+            <div class="loan-vehicle-card-main"><div class="loan-vehicle-card-top"><strong>${escapeHtml(item.plate_no || "未填車牌")}</strong><span>使用中</span></div><div class="loan-current-user"><small>目前使用者</small><b>${escapeHtml(item.requested_by_name || "未填寫")}</b></div><div class="loan-current-time"><small>借用時間</small><strong>${fmtDateTime(item.borrow_at)} <i>→</i> ${fmtDateTime(item.return_at)}</strong></div></div>
+          </article>`).join("") : `<div class="loan-in-use-empty"><span aria-hidden="true">🚘</span><div><strong>目前沒有車輛借出</strong><small>核准並開始使用的車輛會顯示在這裡</small></div></div>`}
+        </div>
       </section>
       <form id="loanSearchForm" class="loan-filter-panel">
         <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button type="button" class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
@@ -4552,9 +4562,10 @@
   }
 
   function loanUsagePhase(item = {}) {
-    if (item.status === "return_pending") return "returning";
     const borrowAt = new Date(item.borrow_at || "").getTime();
-    return Number.isFinite(borrowAt) && borrowAt > Date.now() ? "upcoming" : "using";
+    if (Number.isFinite(borrowAt) && borrowAt > Date.now()) return "upcoming";
+    if (item.status === "approved" || item.status === "return_pending") return "using";
+    return "pending";
   }
 
   function loanConflictFor(record, editingId = "") {

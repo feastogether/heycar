@@ -7226,3 +7226,55 @@ body {
   .flight-page .flight-time-grid { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px !important; }
   .flight-page .flight-time-grid strong { font-size: 12px !important; overflow-wrap: anywhere !important; }
 }
+
+/* Vehicle availability cards and final chat sizing overrides. */
+.loan-in-use-section {
+  margin: 0 0 14px;
+  padding: 16px;
+  border: 1px solid #dce6ee;
+  border-radius: 18px;
+  background: linear-gradient(145deg, #f8fbff 0%, #f2faf7 100%);
+}
+.loan-in-use-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.loan-in-use-head small { color: #15803d; font-size: 10px; font-weight: 900; letter-spacing: .08em; }
+.loan-in-use-head h3 { margin: 3px 0 0; color: #172033; font-size: 18px; }
+.loan-in-use-head > span { padding: 6px 10px; border-radius: 999px; background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 900; white-space: nowrap; }
+.loan-in-use-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 10px; }
+.loan-vehicle-card { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 13px; align-items: center; min-width: 0; padding: 14px; border: 1px solid #dce7e1; border-radius: 16px; background: #fff; box-shadow: 0 9px 25px rgba(15, 23, 42, .055); }
+.loan-vehicle-icon { width: 70px; height: 70px; display: grid; place-items: center; border-radius: 18px; background: linear-gradient(145deg, #dcfce7, #bbf7d0); }
+.loan-vehicle-icon svg { width: 48px; height: 48px; fill: #15803d; }
+.loan-vehicle-icon svg path:nth-child(2) { fill: #f0fdf4; }
+.loan-vehicle-icon svg circle { fill: #166534; }
+.loan-vehicle-card-main { min-width: 0; display: grid; gap: 9px; }
+.loan-vehicle-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.loan-vehicle-card-top strong { color: #172033; font-size: 18px; letter-spacing: .035em; }
+.loan-vehicle-card-top span { padding: 4px 8px; border-radius: 999px; background: #dcfce7; color: #15803d; font-size: 10px; font-weight: 900; }
+.loan-current-user, .loan-current-time { display: grid; gap: 2px; }
+.loan-current-user small, .loan-current-time small { color: #7a8795; font-size: 9px; font-weight: 850; }
+.loan-current-user b { overflow: hidden; color: #273447; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.loan-current-time strong { color: #475569; font-size: 11px; line-height: 1.5; }
+.loan-current-time i { padding: 0 3px; color: #16a34a; font-style: normal; }
+.loan-in-use-empty { grid-column: 1 / -1; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 104px; padding: 18px; border: 1px dashed #cbdad2; border-radius: 15px; background: rgba(255,255,255,.72); color: #64748b; }
+.loan-in-use-empty > span { font-size: 34px; }
+.loan-in-use-empty div { display: grid; gap: 3px; }
+.loan-in-use-empty strong { color: #334155; font-size: 14px; }
+.loan-in-use-empty small { font-size: 11px; }
+
+@media (min-width: 701px) {
+  .admin-chat-panel { width: min(720px, calc(100vw - 36px)); }
+  .admin-chat-layout { grid-template-columns: 215px minmax(420px, 1fr); min-height: 480px; }
+  .admin-chat-contact-list { height: 432px; }
+  .admin-chat-messages { height: 360px; }
+}
+
+@media (max-width: 700px) {
+  .admin-chat-widget { display: none !important; }
+  .loan-in-use-section { padding: 12px; border-radius: 15px; }
+  .loan-in-use-head { align-items: center; }
+  .loan-in-use-head h3 { font-size: 15px; }
+  .loan-in-use-grid { grid-template-columns: minmax(0, 1fr); }
+  .loan-vehicle-card { grid-template-columns: 60px minmax(0, 1fr); gap: 10px; padding: 11px; }
+  .loan-vehicle-icon { width: 58px; height: 58px; border-radius: 15px; }
+  .loan-vehicle-icon svg { width: 40px; height: 40px; }
+  .loan-vehicle-card-top strong { font-size: 16px; }
+}
