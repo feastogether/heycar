@@ -107,3 +107,11 @@
 - 新增 `scripts/test-login.cjs`，驗證標語排序、停用過濾、HTML 跳脫、圖片大小與 320／390／430／1440px 登入版面。
 - 前端快取版本更新為 `20260920-2`。
 - Cloudflare Worker 已部署為 version `01441c59-5cd0-4a97-b3e4-97bffe3a6ed2`。
+
+## 2026-09-20：手機航班卡片緊湊化與狀態中文化
+
+- 手機航班時間由完整日期時間擠在窄框改為小字 `MM/DD` 加大字 `HH:mm`，避免日期逐段換行。
+- 航廈、登機門、報到櫃台、航班動態等詳細資料改為緊湊雙欄卡片；空值與 `-` 欄位不再顯示，減少無效垂直空間。
+- 補齊 `Flew`、Airborne、Take off、Final Call、Gate Closed、Go to Gate、Diverted、Returned、Scheduled 等英文狀態的中文對照；無法辨識的純英文狀態統一顯示「狀態更新中」，不直接呈現給司機。
+- 390px 實際渲染的範例卡片高度約 389px，維持無水平溢位；前端快取版本更新為 `20260920-3`。
+- Cloudflare Worker 已部署為 version `3b51e415-6432-47ad-9124-960a279cf216`。

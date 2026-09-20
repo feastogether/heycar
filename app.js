@@ -7575,15 +7575,15 @@
           <div class="flight-time-grid">
             <span>
               <label>表定</label>
-              <strong>${escapeHtml(formatFlightTime(flight.scheduledTime || flight.ScheduledTime))}</strong>
+              <strong>${flightTimeMarkup(flight.scheduledTime || flight.ScheduledTime)}</strong>
             </span>
             <span>
               <label>預計</label>
-              <strong>${escapeHtml(formatFlightTime(flight.estimatedTime || flight.EstimatedTime))}</strong>
+              <strong>${flightTimeMarkup(flight.estimatedTime || flight.EstimatedTime)}</strong>
             </span>
             <span>
               <label>實際</label>
-              <strong>${escapeHtml(formatFlightTime(flight.actualTime || flight.ActualTime))}</strong>
+              <strong>${flightTimeMarkup(flight.actualTime || flight.ActualTime)}</strong>
             </span>
           </div>
           <div class="flight-detail-grid ${flight.sourceType === "taoyuan" ? "taoyuan-detail-grid" : ""}">
@@ -7600,6 +7600,15 @@
   function formatFlightTime(value) {
     if (!value) return "-";
     return String(value).replace("T", " ").slice(0, 16);
+  }
+
+  function flightTimeMarkup(value) {
+    if (!value) return `<b>-</b>`;
+    const normalized = String(value).replace("T", " ");
+    const date = normalized.slice(0, 10);
+    const time = normalized.slice(11, 16) || "-";
+    const shortDate = /^\d{4}-\d{2}-\d{2}$/.test(date) ? `${date.slice(5, 7)}/${date.slice(8, 10)}` : "";
+    return `${shortDate ? `<small>${escapeHtml(shortDate)}</small>` : ""}<b>${escapeHtml(time)}</b>`;
   }
 
   function flightDetailItems(flight, direction) {
@@ -7620,6 +7629,7 @@
     }
     const seen = new Set();
     return items
+      .filter(([, value]) => String(value || "").trim() && String(value).trim() !== "-")
       .filter(([label]) => {
         const key = `${label}`;
         if (seen.has(key)) return false;
@@ -7672,13 +7682,21 @@
     if (/taxiing/.test(text)) return "滑行中";
     if (/to gate/.test(text)) return "抵達機坪";
     if (/arrived|landed/.test(text)) return "已抵達";
+    if (/flew|airborne|take.?off/.test(text)) return "已起飛";
     if (/departed/.test(text)) return "已出發";
     if (/boarding/.test(text)) return "登機中";
+    if (/final call/.test(text)) return "最後登機";
+    if (/gate closed/.test(text)) return "登機門已關閉";
+    if (/go to gate/.test(text)) return "請前往登機門";
     if (/check-in|check in/.test(text)) return "報到中";
     if (/delayed|delay/.test(text)) return "延誤";
     if (/cancel/.test(text)) return "取消";
+    if (/diverted/.test(text)) return "轉降";
+    if (/returned|returning/.test(text)) return "返航";
+    if (/scheduled/.test(text)) return "表定";
+    if (/estimated/.test(text)) return "預計";
     if (/on time/.test(text)) return raw.includes("準時") ? raw.replace(/ON TIME/i, "").trim() : "準時";
-    return raw;
+    return /[\u3400-\u9fff]/.test(raw) ? raw : "狀態更新中";
   }
 
   function flightDelayMinutes(scheduled, compared) {

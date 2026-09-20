@@ -101,7 +101,12 @@ async function main() {
   front.dispatchFlightCacheKey = order => order.flight_no || '';
   front.window = { innerWidth: 390 };
   front.normalizeFlightNumber = value => value || '';
-  for (const name of ['dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights']) vm.runInContext(functionSource(app, name), front);
+  for (const name of ['dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus']) vm.runInContext(functionSource(app, name), front);
+  assert.equal(front.localizedFlightStatus('Flew'), '已起飛');
+  assert.equal(front.localizedFlightStatus('Gate Closed'), '登機門已關閉');
+  assert.equal(front.localizedFlightStatus('Unmapped English Status'), '狀態更新中');
+  assert(front.flightTimeMarkup('2026-09-20T00:05:00').includes('<small>09/20</small><b>00:05</b>'));
+  assert(!front.flightDetailItems({ terminal: 'T2', gate: 'D12', baggage: '-', statusEn: 'Flew', remark: '出發', sourceType: 'taoyuan' }, 'departure').includes('行李轉盤'));
   front.state.dispatchAdminDateFilter = '2020-01-01'; front.resetDispatchFilters();
   assert.equal(front.state.dispatchAdminDateFilter, '2026-09-12');
   front.state.data.dispatch_orders = [{ ...order, reservation_date: '2026-09-12', booking_no: 'BOOKING-123456789', source_platform: '肯驛', city: '高雄市', district: '左營區', reservation_time: '12:30' }, { ...order, id: 'old', reservation_date: '2026-09-11' }];

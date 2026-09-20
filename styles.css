@@ -7420,3 +7420,18 @@ body {
     word-break: break-word !important;
   }
 }
+
+/* Final compact flight card layout for drivers. */
+@media (max-width: 700px) {
+  .flight-page .flight-time-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 7px !important; }
+  .flight-page .flight-time-grid span { min-height: 72px !important; grid-template-columns: 1fr !important; align-content: center !important; justify-items: center !important; gap: 3px !important; padding: 8px 4px !important; text-align: center !important; }
+  .flight-page .flight-time-grid label { font-size: 10px !important; }
+  .flight-page .flight-time-grid strong { display: grid !important; justify-items: center !important; gap: 0 !important; word-break: normal !important; overflow-wrap: normal !important; }
+  .flight-page .flight-time-grid strong small { color: #7a8799 !important; font-size: 9px !important; font-weight: 800 !important; line-height: 1.2 !important; white-space: nowrap !important; }
+  .flight-page .flight-time-grid strong b { color: #172033 !important; font-size: 17px !important; font-weight: 950 !important; line-height: 1.2 !important; white-space: nowrap !important; }
+  .flight-page .flight-detail-grid,
+  .flight-page .taoyuan-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 7px !important; }
+  .flight-page .flight-detail-grid span { min-height: 58px !important; align-content: center !important; gap: 3px !important; padding: 9px 10px !important; border-radius: 10px !important; background: #f8fafc !important; font-size: 13px !important; line-height: 1.35 !important; word-break: normal !important; overflow-wrap: anywhere !important; }
+  .flight-page .flight-detail-grid label { font-size: 9px !important; }
+  .flight-page .flight-update { padding-top: 2px !important; font-size: 10px !important; line-height: 1.5 !important; }
+}
