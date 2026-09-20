@@ -101,12 +101,41 @@ async function main() {
   front.dispatchFlightCacheKey = order => order.flight_no || '';
   front.window = { innerWidth: 390 };
   front.normalizeFlightNumber = value => value || '';
-  for (const name of ['dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus']) vm.runInContext(functionSource(app, name), front);
+  for (const name of ['dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus', 'validFlightNumberQuery']) vm.runInContext(functionSource(app, name), front);
   assert.equal(front.localizedFlightStatus('Flew'), '已起飛');
   assert.equal(front.localizedFlightStatus('Gate Closed'), '登機門已關閉');
   assert.equal(front.localizedFlightStatus('Unmapped English Status'), '狀態更新中');
   assert(front.flightTimeMarkup('2026-09-20T00:05:00').includes('<small>09/20</small><b>00:05</b>'));
   assert(!front.flightDetailItems({ terminal: 'T2', gate: 'D12', baggage: '-', statusEn: 'Flew', remark: '出發', sourceType: 'taoyuan' }, 'departure').includes('行李轉盤'));
+  assert(front.validFlightNumberQuery('JX12'));
+  assert(front.validFlightNumberQuery('BR0108'));
+  assert(front.validFlightNumberQuery('5J310'));
+  assert(!front.validFlightNumberQuery(''));
+  assert(!front.validFlightNumberQuery('HND'));
+  front.state.flightSearch = { query: '', date: '2026-09-20', source: 'taoyuan' };
+  assert(front.driverFlights().includes('請輸入航班號碼後按下查詢'));
+  assert(!functionSource(app, 'renderDriver').includes('loadFlights('), 'entering the flight view must not auto-load flights');
+  const flightBox = { innerHTML: '', isConnected: true, setAttribute(key, value) { this[key] = value; } };
+  const flightSubmit = { disabled: false, textContent: '查詢', isConnected: true };
+  let manualFlightRequests = 0;
+  front.document = {
+    getElementById: id => id === 'flightList' ? flightBox : null,
+    querySelector: selector => selector.includes('button') ? flightSubmit : { focus() {} }
+  };
+  front.cfg = { FLIGHT_INFO_URL: 'https://example.test/flights' };
+  front.resolveFlightSource = () => ({ source: 'taoyuan', airport: 'TPE', label: '桃園機場' });
+  front.fetchFlights = async () => { manualFlightRequests++; return []; };
+  front.airportFlightsUrl = 'https://example.test';
+  vm.runInContext('let flightQueryRevision = 0;', front);
+  vm.runInContext('async ' + functionSource(app, 'loadFlights'), front);
+  await front.loadFlights('', '2026-09-20', 'taoyuan');
+  assert.equal(manualFlightRequests, 0, 'blank query must not call the flight API');
+  assert(flightBox.innerHTML.includes('請輸入完整航班號碼'));
+  await front.loadFlights('JX12', '2026-09-20', 'taoyuan');
+  assert.equal(manualFlightRequests, 2);
+  assert.equal(flightSubmit.disabled, false);
+  assert.equal(flightSubmit.textContent, '查詢');
+  assert.equal(flightBox['aria-busy'], 'false');
   front.state.dispatchAdminDateFilter = '2020-01-01'; front.resetDispatchFilters();
   assert.equal(front.state.dispatchAdminDateFilter, '2026-09-12');
   front.state.data.dispatch_orders = [{ ...order, reservation_date: '2026-09-12', booking_no: 'BOOKING-123456789', source_platform: '肯驛', city: '高雄市', district: '左營區', reservation_time: '12:30' }, { ...order, id: 'old', reservation_date: '2026-09-11' }];

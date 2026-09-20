@@ -1724,7 +1724,6 @@
       return;
     }
     layout(views[state.view]());
-    if (state.view === "flights") loadFlights(state.flightSearch.query, state.flightSearch.date, state.flightSearch.source);
   }
 
   function feature(view, title, desc, count) {
@@ -2394,11 +2393,11 @@
             <span>日期</span>
             <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
           </label>
-          <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼或航點" placeholder="輸入英文代碼或班號，例如 JX12、HND" autocomplete="off" autocapitalize="characters">
+          <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼" placeholder="輸入航班號碼，例如 JX12、BR108" autocomplete="off" autocapitalize="characters">
           <button class="primary-btn" type="submit">查詢</button>
         </form>
-        <p class="flight-help">選擇機場及日期，輸入班號或航點查詢；同一查詢 10 分鐘內共用資料。</p>
-        <div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"><div class="empty">請選擇機場並查詢航班</div></div>
+        <p class="flight-help">選擇機場及日期，再輸入完整航班號碼查詢；同一航班 10 分鐘內共用資料。</p>
+        <div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"><div class="empty">請輸入航班號碼後按下查詢</div></div>
       </div>
     `;
   }
@@ -7525,6 +7524,10 @@
     return /[A-Za-z0-9]/.test(raw) && normalized ? normalized : raw;
   }
 
+  function validFlightNumberQuery(value = "") {
+    return /^(?:[A-Z]{2,3}|[A-Z][0-9]|[0-9][A-Z])\d{1,4}[A-Z]?$/.test(normalizeFlightNumber(value));
+  }
+
   function resolveFlightSource(sourceChoice = "taoyuan") {
     if (sourceChoice === "kaohsiung") return { source: "kaohsiung", airport: "KHH", label: "高雄機場" };
     if (sourceChoice === "taoyuan") return { source: "taoyuan", airport: "TPE", label: "桃園機場" };
@@ -7535,6 +7538,14 @@
     const box = document.getElementById("flightList");
     if (!box) return;
     const { source, airport, label: sourceName } = resolveFlightSource(sourceChoice);
+    const normalizedQuery = normalizeFlightNumber(query);
+    state.flightSearch = { query: normalizedQuery, date, source: sourceChoice };
+    if (!validFlightNumberQuery(normalizedQuery)) {
+      box.setAttribute("aria-busy", "false");
+      box.innerHTML = `<div class="empty">請輸入完整航班號碼，例如 JX12、BR108 或 5J310。</div>`;
+      document.querySelector('#flightSearchForm input[name="flight"]')?.focus();
+      return;
+    }
     if (!cfg.FLIGHT_INFO_URL) {
       box.innerHTML = `
         <div class="flight-fallback">
@@ -7545,7 +7556,6 @@
       `;
       return;
     }
-    state.flightSearch = { query, date, source: sourceChoice };
     const revision = ++flightQueryRevision;
     const submit = document.querySelector('#flightSearchForm button[type="submit"]');
     if (submit) { submit.disabled = true; submit.textContent = "查詢中"; }
@@ -7553,8 +7563,8 @@
     box.innerHTML = `<div class="empty">查詢航班資訊中...</div>`;
     try {
       const [arrivals, departures] = await Promise.all([
-        fetchFlights(query, "arrival", date || today(), airport, source).then((items) => items.map((flight) => ({ ...flight, direction: "arrival" }))),
-        fetchFlights(query, "departure", date || today(), airport, source).then((items) => items.map((flight) => ({ ...flight, direction: "departure" })))
+        fetchFlights(normalizedQuery, "arrival", date || today(), airport, source).then((items) => items.map((flight) => ({ ...flight, direction: "arrival" }))),
+        fetchFlights(normalizedQuery, "departure", date || today(), airport, source).then((items) => items.map((flight) => ({ ...flight, direction: "departure" })))
       ]);
       if (revision !== flightQueryRevision || !box.isConnected) return;
       const flights = [...arrivals, ...departures]
@@ -7594,6 +7604,12 @@
       `).join("") : `<div class="empty">${escapeHtml(sourceName)}查無符合的航班。請確認日期、機場與班號是否正確。</div>`;
     } catch (error) {
       box.innerHTML = `<div class="empty">${escapeHtml(error.message || "航班資料讀取失敗")}<br>請使用桃園機場官方查詢。</div>`;
+    } finally {
+      box.setAttribute("aria-busy", "false");
+      if (submit?.isConnected !== false) {
+        submit.disabled = false;
+        submit.textContent = "查詢";
+      }
     }
   }
 
@@ -8381,8 +8397,9 @@
     if (e.target.id === "flightSearchForm") {
       e.preventDefault();
       const data = new FormData(e.target);
+      const query = String(data.get("flight") || "").trim();
       await loadFlights(
-        String(data.get("flight") || "").trim(),
+        query,
         String(data.get("date") || today()),
         String(data.get("flight_source") || "taoyuan")
       );
