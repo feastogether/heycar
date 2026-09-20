@@ -7278,3 +7278,58 @@ body {
   .loan-vehicle-icon svg { width: 40px; height: 40px; }
   .loan-vehicle-card-top strong { font-size: 16px; }
 }
+
+/* Final iPhone/WebView viewport containment. Keep this after all flight rules. */
+@media (max-width: 700px) {
+  html,
+  body,
+  #app,
+  .app-shell:not(.admin-shell):not(.partner-shell) {
+    inline-size: 100% !important;
+    max-inline-size: 100% !important;
+    min-inline-size: 0 !important;
+    margin-inline: 0 !important;
+    overflow-x: clip !important;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell) > .topbar,
+  .app-shell:not(.admin-shell):not(.partner-shell) > .marquee-alert,
+  .app-shell:not(.admin-shell):not(.partner-shell) > .main {
+    inline-size: 100% !important;
+    max-inline-size: 100% !important;
+    min-inline-size: 0 !important;
+    margin-inline: 0 !important;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell) > .topbar {
+    padding-left: max(10px, env(safe-area-inset-left)) !important;
+    padding-right: max(10px, env(safe-area-inset-right)) !important;
+  }
+  .app-shell:not(.admin-shell):not(.partner-shell) > .main {
+    padding: 12px max(10px, env(safe-area-inset-right)) 48px max(10px, env(safe-area-inset-left)) !important;
+  }
+  .flight-panel.flight-page,
+  .flight-page .flight-search,
+  .flight-page .flight-grid,
+  .flight-page .flight-card,
+  .flight-page .flight-card-head,
+  .flight-page .flight-airline,
+  .flight-page .flight-time-grid,
+  .flight-page .flight-detail-grid,
+  .flight-page .taoyuan-detail-grid {
+    inline-size: 100% !important;
+    max-inline-size: 100% !important;
+    min-inline-size: 0 !important;
+  }
+  .flight-panel.flight-page,
+  .flight-page .flight-card { contain: inline-size; }
+  .flight-page .flight-airline > div,
+  .flight-page .flight-airline strong,
+  .flight-page .flight-airline small,
+  .flight-page .flight-time-grid strong,
+  .flight-page .flight-detail-grid span,
+  .flight-page .flight-update {
+    min-inline-size: 0 !important;
+    max-inline-size: 100% !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+  }
+}

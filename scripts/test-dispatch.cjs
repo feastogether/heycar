@@ -203,12 +203,17 @@ async function main() {
       assert.equal(await page.locator('[data-delete], [data-modal="dispatchOrder"], [data-action="pick-dispatch-excel"]').count(), 0);
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       front.state.flightSearch = { query: 'CI102', date: '2026-09-15', source: 'kaohsiung' };
-      for (const width of [320, 390, 768, 1440]) {
+      for (const width of [320, 390, 414, 430, 768, 1440]) {
         await page.setViewportSize({ width, height: 900 });
-        await page.setContent(`<style>${css}</style>${front.driverFlights()}`);
+        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style><div id="app"><div class="app-shell"><header class="topbar"><div class="brand"><img alt="logo"></div><div class="userbox"><div class="airport-weather">高雄機場 30C</div><button class="ghost-btn">登出</button></div></header><div class="marquee-alert"><div class="marquee-track"><span>航班資訊請依現場公告為準</span></div></div><main class="main">${front.driverFlights()}</main></div></div>`);
         assert(await page.locator('#sourceKaohsiung').isChecked());
         assert.equal(await page.locator('input[name="flight"]').inputValue(), 'CI102');
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `flight overflow at ${width}`);
+        assert(await page.evaluate(() => [...document.querySelectorAll('.app-shell, .topbar, .marquee-alert, .main, .flight-page')].every((node) => {
+          const box = node.getBoundingClientRect();
+          return box.left >= -1 && box.right <= innerWidth + 1;
+        })), `flight shell outside viewport at ${width}`);
+        assert(await page.evaluate(() => Math.abs(document.querySelector('.topbar').getBoundingClientRect().right - innerWidth) <= 1), `right-side gutter at ${width}`);
         if (process.env.DISPATCH_SCREENSHOT_DIR && width === 390) await page.screenshot({ path: path.join(process.env.DISPATCH_SCREENSHOT_DIR, 'flights-mobile.png') });
       }
       console.log('PASS: desktop/mobile layout at 320/390/768/1440px and dealer assignment UI');
