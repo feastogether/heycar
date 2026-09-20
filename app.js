@@ -1628,34 +1628,35 @@
 
   function renderLogin() {
     loadPublicLoginSlogans();
-    const loadingText = state.mode === "driver" ? "正在驗證司機身分" : state.mode === "partner" ? "正在驗證合作單位" : "正在驗證管理權限";
+    const loadingText = "正在驗證登入身分";
     app.innerHTML = `
-      <div class="login-wrap">
+      <div class="login-wrap modern-air-login">
         <div class="login-bg-slides" aria-hidden="true">
           <span class="login-bg-slide login-bg-a350"></span>
           <span class="login-bg-slide login-bg-cabin"></span>
           <span class="login-bg-slide login-bg-wing"></span>
           <span class="login-bg-slide login-bg-engine"></span>
         </div>
-        <section class="login-panel">
-          <div class="login-hero">
+        <header class="login-brand-bar">
+          <div class="login-brand-lockup">
             <img src="${logoUrl}" alt="heycar logo">
-            ${loginSloganMarkup()}
           </div>
+          <span>FLEET OPERATIONS</span>
+        </header>
+        <section class="login-panel single-login-panel" aria-labelledby="loginTitle">
           <div class="login-card">
-            <div class="mode-tabs">
-              <button class="tab-btn ${state.mode === "driver" ? "active" : ""}" data-mode="driver" ${state.loginLoading ? "disabled" : ""}>司機</button>
-              <button class="tab-btn ${state.mode === "partner" ? "active" : ""}" data-mode="partner" ${state.loginLoading ? "disabled" : ""}>保險</button>
-              <button class="tab-btn ${state.mode === "admin" ? "active" : ""}" data-mode="admin" ${state.loginLoading ? "disabled" : ""}>管理</button>
+            <div class="login-card-copy">
+              <span class="login-eyebrow">HEY!CAR SERVICE PORTAL</span>
+              <h1 id="loginTitle">歡迎回來</h1>
+              ${loginSloganMarkup() || `<div class="login-slogans login-slogans-loading" aria-hidden="true"><span></span></div>`}
             </div>
-            <h2>${state.mode === "driver" ? "司機登入" : state.mode === "partner" ? "車商／保經登入" : "後台登入"}</h2>
             <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
-              <div class="field full">
-                <label>${state.mode === "driver" ? "手機號碼" : state.mode === "partner" ? "合作單位登入代碼" : "管理碼"}</label>
-                <input name="login" autocomplete="off" inputmode="numeric" required ${state.loginLoading ? "disabled" : ""}>
+              <div class="field full login-code-field">
+                <label for="loginCode">登入代碼</label>
+                <div class="login-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 7c.8-3.2 3.2-5 7-5s6.2 1.8 7 5"/></svg><input id="loginCode" name="login" autocomplete="one-time-code" inputmode="numeric" placeholder="請輸入手機號碼或登入代碼" required ${state.loginLoading ? "disabled" : ""}></div>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
-                ${state.loginLoading ? `<span>${loadingText}</span>` : "登入"}
+                ${state.loginLoading ? `<span>${loadingText}</span>` : `<span>登入系統</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>`}
               </button>
             </form>
             ${state.loginLoading ? `
@@ -1667,30 +1668,10 @@
             ${state.error ? `<div class="error">${escapeHtml(state.error)}</div>` : ""}
           </div>
         </section>
+        <small class="login-security-note">安全連線 · 亞菲得車隊營運系統</small>
       </div>
     `;
-    const loginWrap = app.querySelector(".login-wrap");
-    const loginPanel = app.querySelector(".login-panel");
-    const loginCard = app.querySelector(".login-card");
-    app.querySelector(".login-hero")?.remove();
-    app.querySelector(".mode-tabs")?.remove();
-    loginWrap?.classList.add("modern-air-login");
-    loginPanel?.classList.add("single-login-panel");
-    loginWrap?.insertAdjacentHTML("afterbegin", `
-      <header class="login-brand-bar">
-        <div class="login-brand-lockup">
-          <img src="${logoUrl}" alt="heycar logo">
-        </div>
-      </header>
-    `);
-    const loginTitle = loginCard?.querySelector("h2");
-    loginTitle?.remove();
-    const loginLabel = loginCard?.querySelector("label");
-    const slogan = loginSloganMarkup();
-    if (loginLabel && slogan) loginLabel.insertAdjacentHTML("afterend", slogan.replace("login-slogans", "login-slogans login-field-slogans"));
-    loginLabel?.remove();
-    const loginInput = loginCard?.querySelector('input[name="login"]');
-    if (loginInput) loginInput.placeholder = "\u8acb\u8f38\u5165\u767b\u5165\u4ee3\u78bc";
+    setTimeout(() => app.querySelector(".login-bg-slides")?.classList.add("is-ready"), 800);
   }
 
   function renderDriver() {
