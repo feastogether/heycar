@@ -97,11 +97,11 @@ async function main() {
   context.adminCan = async () => false;
   assert.equal((await context.loadAdminData({ is_super_admin: true })).data.dispatch_orders.length, 0);
 
-  const front = vm.createContext({ state: { data: { dispatch_orders: [], drivers: [] } }, today: () => '2026-09-12', scheduleDispatchFlightMiniStatuses() {}, dispatchFlightStatusLabel: () => ({ text: '準點' }), dispatchOrderNeedsAttention: () => false, escapeHtml: value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'), normalizedText: value => String(value || '').trim().toUpperCase(), platformClass: () => 'canlead', dispatchDisplayDate: value => value, phoneMatches: (a,b) => a === b });
+  const front = vm.createContext({ state: { user: { name: '林嘉正', fleet_name: '亞菲得車隊' }, data: { dispatch_orders: [], drivers: [] } }, today: () => '2026-09-12', scheduleDispatchFlightMiniStatuses() {}, dispatchFlightStatusLabel: () => ({ text: '準點', className: 'ontime' }), dispatchOrderNeedsAttention: () => false, escapeHtml: value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'), normalizedText: value => String(value || '').trim().toUpperCase(), platformClass: () => 'canlead', dispatchDisplayDate: value => value, phoneMatches: (a,b) => a === b });
   front.dispatchFlightCacheKey = order => order.flight_no || '';
   front.window = { innerWidth: 390 };
   front.normalizeFlightNumber = value => value || '';
-  for (const name of ['dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus', 'validFlightNumberQuery']) vm.runInContext(functionSource(app, name), front);
+  for (const name of ['driverFleet', 'dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus', 'validFlightNumberQuery']) vm.runInContext(functionSource(app, name), front);
   assert.equal(front.localizedFlightStatus('Flew'), '已起飛');
   assert.equal(front.localizedFlightStatus('Gate Closed'), '登機門已關閉');
   assert.equal(front.localizedFlightStatus('Unmapped English Status'), '狀態更新中');
@@ -142,6 +142,10 @@ async function main() {
   let html = front.adminDispatchCenter();
   assert(!html.includes('data-dispatch-detail="old"'));
   assert(html.includes('甲車商'));
+  const driverCardHtml = front.dispatchOrderCard({ ...order, id: 'driver-card', booking_no: 'F15437307', source_platform: '肯驛', reservation_time: '10:10', reservation_date: '2026-09-12', trip_type: '接機', city: '高雄市', district: '苓雅區', assigned_vendor: '亞菲得車隊', driver_name: '林嘉正', flight_no: 'CX432' });
+  assert(driverCardHtml.includes('dispatch-driver-card'));
+  assert(!driverCardHtml.includes('dispatch-order-row'));
+  assert(driverCardHtml.includes('F15437307') && driverCardHtml.includes('航班 CX432'));
   front.state.data.drivers = [driver];
   assert.equal(front.dispatchRecordFromExcelRow({ '司機姓名': '', '司機電話': driver.phone }).driver_id, null);
   let submitted;
@@ -227,6 +231,15 @@ async function main() {
           assert(await page.locator('#dispatchSearchForm').isVisible());
           assert(await page.locator('.dispatch-kpi-grid').isVisible());
         }
+      }
+      for (const width of [320, 390, 768, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.setContent(`<style>${css}</style><main class="main"><section class="driver-dispatch-page"><div class="dispatch-card-list">${driverCardHtml}${driverCardHtml}</div></section></main>`);
+        assert.equal(await page.locator('.dispatch-driver-card').count(), 2);
+        assert.equal(await page.locator('.dispatch-order-row').count(), 0);
+        assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `driver dispatch overflow at ${width}`);
+        const first = await page.locator('.dispatch-driver-card').first().boundingBox();
+        assert(first.height <= 150, `driver dispatch card too tall at ${width}: ${first.height}`);
       }
       front.state.partner = { id: 'a', partner_type: 'dealer' };
       front.window.innerWidth = 390;

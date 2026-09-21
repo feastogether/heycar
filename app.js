@@ -1876,7 +1876,6 @@
     const updated = !admin && dispatchOrderNeedsAttention(order);
     const flightStatus = dispatchFlightStatusLabel(order);
     const areaText = [order.city, order.district].filter(Boolean).join("") || "-";
-    const displayArea = flightStatus.text ? `${areaText} ${flightStatus.text}` : areaText;
     if (admin) return `<article class="dispatch-order-card dispatch-admin-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""}">
       <button type="button" data-dispatch-detail="${escapeHtml(order.id)}" aria-label="查看訂單 ${escapeHtml(order.booking_no || "")}">
         <span class="dispatch-clock"><strong>${escapeHtml(order.reservation_time || "--:--")}</strong><small>${escapeHtml(order.trip_type || "接送")}</small></span>
@@ -1887,16 +1886,14 @@
         </span>
       </button>
     </article>`;
-    return `<article class="dispatch-order-card dispatch-order-row ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
-      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}">
-        <strong class="dispatch-platform">${escapeHtml(order.source_platform || "派趟")}</strong>
-        <span class="dispatch-booking">${escapeHtml(order.booking_no || "-")}</span>
-        <span>${escapeHtml(order.trip_type || "-")}</span>
-        <span class="dispatch-area-status ${flightStatus.className || ""}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}" data-dispatch-area="${escapeHtml(areaText)}">${escapeHtml(displayArea)}</span>
-        <time>${escapeHtml(dispatchDisplayDate(order.reservation_date))}</time>
-        <span>${escapeHtml(order.reservation_time || "-")}</span>
-        <span>${escapeHtml(order.driver_name || "待指派")}</span>
-        ${admin ? `<span class="dispatch-vendor" title="車商">${escapeHtml(order.assigned_vendor || order.vendor_name || "未指定車商")}</span>` : ""}
+    return `<article class="dispatch-order-card dispatch-driver-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
+      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}" aria-label="查看訂單 ${escapeHtml(order.booking_no || "")}">
+        <span class="dispatch-clock"><strong>${escapeHtml(order.reservation_time || "--:--")}</strong><small>${escapeHtml(order.trip_type || "接送")}</small></span>
+        <span class="dispatch-card-content">
+          <span class="dispatch-card-heading"><b class="dispatch-platform-tag">${escapeHtml(order.source_platform || "派趟")}</b><b class="dispatch-card-route">${escapeHtml(areaText)}</b>${updated ? `<em class="dispatch-updated-chip">資料更新</em>` : ""}<span class="dispatch-status-chip ${flightStatus.className}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}">${escapeHtml(flightStatus.text)}</span></span>
+          <span class="dispatch-card-reference"><b>${escapeHtml(order.booking_no || "-")}</b>${order.flight_no ? `<span>航班 ${escapeHtml(normalizeFlightNumber(order.flight_no))}</span>` : `<span>無航班資料</span>`}</span>
+          <span class="dispatch-card-people"><span>${escapeHtml(order.assigned_vendor || order.vendor_name || driverFleet())}</span><span>${escapeHtml(order.driver_name || state.user?.name || "待指派司機")}</span></span>
+        </span>
       </button>
     </article>`;
   }

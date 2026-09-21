@@ -7435,3 +7435,62 @@ body {
   .flight-page .flight-detail-grid label { font-size: 9px !important; }
   .flight-page .flight-update { padding-top: 2px !important; font-size: 10px !important; line-height: 1.5 !important; }
 }
+
+/* Unified driver dispatch cards. */
+.dispatch-card-list { gap: 10px; }
+.dispatch-driver-card {
+  border-color: #dfe7ef;
+  border-radius: 15px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, .055);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+.dispatch-driver-card:hover { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(15, 23, 42, .08); }
+.dispatch-driver-card::before { width: 5px; }
+.dispatch-driver-card > button {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+  min-height: 116px;
+  padding: 13px 15px 13px 18px;
+}
+.dispatch-driver-card .dispatch-clock {
+  min-width: 0;
+  padding-right: 13px;
+  border-right: 1px solid #e5eaf0;
+}
+.dispatch-driver-card .dispatch-clock strong { color: #172033; font-size: 22px; }
+.dispatch-driver-card .dispatch-clock small { color: #64748b; font-size: 11px; font-weight: 850; }
+.dispatch-driver-card .dispatch-card-content { align-content: center; gap: 8px; }
+.dispatch-driver-card .dispatch-card-heading { min-width: 0; flex-wrap: nowrap; }
+.dispatch-driver-card .dispatch-platform-tag { flex: 0 0 auto; color: var(--dispatch-color); background: color-mix(in srgb, var(--dispatch-color) 10%, white); }
+.dispatch-driver-card .dispatch-card-route { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dispatch-driver-card .dispatch-status-chip { flex: 0 0 auto; }
+.dispatch-driver-card .dispatch-card-reference { display: flex; align-items: center; gap: 7px 10px; flex-wrap: wrap; }
+.dispatch-driver-card .dispatch-card-reference b { color: #334155; font-size: 12px; font-weight: 900; }
+.dispatch-driver-card .dispatch-card-reference span { color: #64748b; font-size: 11px; font-weight: 800; }
+.dispatch-driver-card .dispatch-card-people { padding-top: 7px; border-top: 1px solid #f0f3f6; }
+.dispatch-driver-card .dispatch-card-people span { position: relative; padding-left: 15px; }
+.dispatch-driver-card .dispatch-card-people span::before { position: absolute; left: 0; color: #94a3b8; font-size: 10px; }
+.dispatch-driver-card .dispatch-card-people span:first-child::before { content: "◆"; }
+.dispatch-driver-card .dispatch-card-people span:last-child::before { content: "●"; }
+.dispatch-updated-chip { flex: 0 0 auto; padding: 3px 6px; border-radius: 999px; background: #fff1f2; color: #be123c; font-size: 9px; font-style: normal; font-weight: 900; }
+.dispatch-driver-card.is-updated { border-color: rgba(239, 63, 53, .55); box-shadow: 0 9px 24px rgba(239, 63, 53, .11); }
+
+@media (max-width: 700px) {
+  .dispatch-card-list { gap: 9px; }
+  .dispatch-driver-card { border-radius: 13px; box-shadow: 0 5px 16px rgba(15, 23, 42, .05); }
+  .dispatch-driver-card > button { grid-template-columns: 64px minmax(0, 1fr) !important; grid-template-rows: auto !important; gap: 10px !important; min-height: 108px !important; padding: 11px 10px 11px 15px !important; }
+  .dispatch-driver-card .dispatch-clock { grid-column: 1 !important; grid-row: 1 !important; padding-right: 9px; }
+  .dispatch-driver-card .dispatch-clock strong { font-size: 19px; }
+  .dispatch-driver-card .dispatch-card-content { grid-column: 2 !important; grid-row: 1 !important; gap: 6px; }
+  .dispatch-driver-card .dispatch-card-heading { gap: 5px; }
+  .dispatch-driver-card .dispatch-platform-tag { padding: 2px 5px; font-size: 9px; }
+  .dispatch-driver-card .dispatch-card-route { font-size: 13px; }
+  .dispatch-driver-card .dispatch-status-chip { margin-left: auto; font-size: 9px; }
+  .dispatch-driver-card .dispatch-updated-chip { display: none; }
+  .dispatch-driver-card .dispatch-card-reference { gap: 4px 8px; }
+  .dispatch-driver-card .dispatch-card-reference b { font-size: 11px; }
+  .dispatch-driver-card .dispatch-card-reference span { font-size: 10px; }
+  .dispatch-driver-card .dispatch-card-people { gap: 5px 10px; padding-top: 5px; font-size: 11px; }
+}
