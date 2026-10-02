@@ -129,6 +129,20 @@
     }
   }
 
+  function requestedAdminView() {
+    try {
+      const params = new URLSearchParams(location.search || "");
+      const raw = params.get("desktop") || params.get("adminView") || "";
+      const allowed = new Set(["vehicleLoans", "mailManagement"]);
+      return allowed.has(raw) ? raw : "";
+    } catch {
+      return "";
+    }
+  }
+
+  const initialAdminView = requestedAdminView();
+  if (initialAdminView) state.adminView = initialAdminView;
+
   const tables = [
     "drivers",
     "vehicles",
@@ -430,6 +444,7 @@
         state.user = null;
         state.partner = null;
         restoreViewState("admin");
+        if (initialAdminView) state.adminView = initialAdminView;
         return;
       }
       if (saved.type === "partner" && saved.user) {
@@ -7390,6 +7405,7 @@
         saveSession(loginType, state.partner || state.user, result.token, state.adminProfile);
         await loadAll();
         state.view = "home";
+        if (state.admin && initialAdminView) state.adminView = initialAdminView;
         applyRequestedDriverView();
         state.loginLoading = false;
         render();

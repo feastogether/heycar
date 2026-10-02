@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Hey!car 管理列印站</title><link rel="stylesheet" href="launcher.css"></head>
+<body>
+  <main class="station">
+    <div class="brand"><div class="logo">✋</div><div><strong>Hey!car</strong><span>亞菲得車隊管理列印站</span></div></div>
+    <h1>請選擇工作</h1>
+    <div class="actions">
+      <button data-view="vehicleLoans"><span class="icon">🚙</span><span>車輛租借</span><small>查看車輛使用與借用時間</small></button>
+      <button data-view="mailManagement"><span class="icon">✉️</span><span>寄信管理</span><small>建立資料並列印一般／貼紙標籤</small></button>
+    </div>
+    <p class="hint">列印功能會使用 Windows 印表機選擇視窗。</p>
+  </main>
+  <script>document.querySelectorAll("button[data-view]").forEach(b=>b.addEventListener("click",()=>window.heycarDesktop.openAdmin(b.dataset.view)));</script>
+</body>
+</html>

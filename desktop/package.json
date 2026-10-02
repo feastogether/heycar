@@ -1,0 +1,22 @@
+{
+  "name": "heycar-station",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hey!car 車輛租借與寄信管理列印站",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^38.2.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "tw.heycar.station",
+    "productName": "Hey!car 管理列印站",
+    "files": ["**/*"],
+    "win": { "target": "nsis" },
+    "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true }
+  }
+}
