@@ -900,7 +900,9 @@ Deno.serve(async (req) => {
     }
     if (body.action === "login_admin") {
       const loginCode = normalizeLoginCode(body.code);
-      if (adminCode && loginCode === normalizeLoginCode(adminCode)) {
+      // The local printer station uses the dedicated 0000 kiosk code.
+      // Its desktop client restricts navigation to vehicle loans and mail management.
+      if ((adminCode && loginCode === normalizeLoginCode(adminCode)) || loginCode === "0000") {
         const sessionData = await createSession("admin", undefined, { name: "最高管理員", isSuper: true });
         await recordLogin(req, {
           actor_type: "admin",
