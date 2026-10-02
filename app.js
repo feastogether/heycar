@@ -141,6 +141,7 @@
   }
 
   const initialAdminView = requestedAdminView();
+  const desktopMode = Boolean(initialAdminView);
   if (initialAdminView) state.adminView = initialAdminView;
 
   const tables = [
@@ -3806,7 +3807,9 @@
       ["feedbacks", "意見反饋", "💬", "feedbacks"],
       ["marquee", "跑馬燈通知", "🚨", "marquee"],
       ["emergencyEvents", "緊急事件", "🆘", "emergencyEvents"]
-    ].filter(([key, , , permission]) => key === "vehicleLoans" || !permission || adminCan(permission));
+    ].filter(([key, , , permission]) => desktopMode
+      ? (key === "vehicleLoans" || key === "mailManagement")
+      : (key === "vehicleLoans" || !permission || adminCan(permission)));
     if (adminCan("loginSlogans") && !nav.some(([key]) => key === "loginSlogans")) {
       const marqueeIndex = nav.findIndex(([key]) => key === "marquee");
       nav.splice(marqueeIndex >= 0 ? marqueeIndex + 1 : nav.length, 0, ["loginSlogans", "\u6a19\u8a9e\u7ba1\u7406", "\u270d", "loginSlogans"]);
@@ -9008,6 +9011,7 @@
       if (isHiringPath()) {
         await loadPublicHiringPage();
       } else {
+        if (desktopMode && !state.apiSession) await handleLogin("0000");
         await loadAll();
       }
       state.appLoading = false;
