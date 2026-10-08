@@ -5444,6 +5444,12 @@
     document.body.appendChild(modal);
     modal.querySelector("#modalForm").addEventListener("submit", async (e) => {
       e.preventDefault();
+      const form = e.currentTarget;
+      if (form.dataset.saving === "true") return;
+      form.dataset.saving = "true";
+      const saveButton = form.querySelector('button[type="submit"]');
+      const originalSaveText = saveButton?.textContent || "儲存";
+      if (saveButton) { saveButton.disabled = true; saveButton.innerHTML = '<span class="save-spinner" aria-hidden="true"></span>儲存中…'; }
       syncRichEditors(e.currentTarget);
       collectServiceParts(e.currentTarget);
       const formData = new FormData(e.currentTarget);
@@ -5471,6 +5477,13 @@
       if (tableName === "vehicle_service_records") {
         record.record_type = formData.getAll("record_types").filter(Boolean).join("+") || record.record_type || "定期保養";
         delete record.record_types;
+        const duplicate = !id && (state.data.vehicle_service_records || []).find((item) => String(item.vehicle_id) === String(record.vehicle_id) && String(item.service_date || "") === String(record.service_date || "") && String(item.record_type || "") === String(record.record_type || ""));
+        if (duplicate) {
+          form.dataset.saving = "false";
+          if (saveButton) { saveButton.disabled = false; saveButton.textContent = originalSaveText; }
+          await showAlert("同一輛車同一天已有相同履歷類型，請改用編輯或調整日期。", "避免重複履歷");
+          return;
+        }
       }
       if (tableName === "driver_links") {
         record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
@@ -5513,6 +5526,11 @@
         if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
       } catch (err) {
         await showAlert(err.message || err, "儲存失敗");
+      } finally {
+        if (document.body.contains(modal)) {
+          form.dataset.saving = "false";
+          if (saveButton) { saveButton.disabled = false; saveButton.textContent = originalSaveText; }
+        }
       }
     });
   }
