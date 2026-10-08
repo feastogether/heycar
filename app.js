@@ -4681,6 +4681,13 @@
     return type || "其他";
   }
 
+  function serviceTaxBreakdown(item = {}) {
+    const entered = Number(item.labor_cost || 0) + Number(item.parts_cost || 0) + Number(item.other_cost || 0);
+    const gross = item.tax_mode === "未稅" ? entered + Math.round(entered * 0.05) : entered;
+    const net = item.tax_mode === "未稅" ? entered : Math.round(gross / 1.05);
+    return { net, tax: gross - net, gross };
+  }
+
   function serviceRecordsForVehicle(vehicle = {}) {
     return [...(state.data.vehicle_service_records || [])]
       .filter((item) => (vehicle.id && item.vehicle_id === vehicle.id) || (vehicle.plate_no && item.plate_no === vehicle.plate_no))
@@ -5691,7 +5698,7 @@
       if (record.parts_json.length) record.parts_cost = record.parts_json.reduce((sum, part) => sum + Number(part.amount || 0), 0);
       const subtotal = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
       record.tax_mode = record.tax_mode === "未稅" ? "未稅" : "含稅";
-      record.tax_amount = record.tax_mode === "未稅" ? Math.round(subtotal * 0.05) : 0;
+      record.tax_amount = record.tax_mode === "未稅" ? Math.round(subtotal * 0.05) : subtotal - Math.round(subtotal / 1.05);
       record.total_cost = record.tax_mode === "未稅" ? subtotal + record.tax_amount : subtotal;
     }
     if (tableName === "bom_parts") {
@@ -8646,9 +8653,12 @@
       const form = e.target.closest("form");
       if (form) {
         const total = ["labor_cost", "parts_cost", "other_cost"].reduce((sum, key) => sum + Number(form.querySelector(`[name='${key}']`)?.value || 0), 0);
-        const tax = form.querySelector("[name='tax_mode']:checked")?.value === "未稅" ? Math.round(total * .05) : 0;
+        const mode = form.querySelector("[name='tax_mode']:checked")?.value || "含稅";
+        const gross = mode === "未稅" ? total + Math.round(total * .05) : total;
+        const net = mode === "未稅" ? total : Math.round(gross / 1.05);
+        const tax = gross - net;
         const hint = form.querySelector("[data-service-tax-preview]");
-        if (hint) hint.textContent = `稅金 $${tax.toLocaleString()}｜含稅總額 $${(total + tax).toLocaleString()}`;
+        if (hint) hint.textContent = `未稅 $${net.toLocaleString()}　稅額 $${tax.toLocaleString()}　含稅 $${gross.toLocaleString()}`;
       }
     }
     if (e.target.closest("#adminChatForm input[name='message']")) {
