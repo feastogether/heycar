@@ -7494,3 +7494,5 @@ body {
   .dispatch-driver-card .dispatch-card-reference span { font-size: 10px; }
   .dispatch-driver-card .dispatch-card-people { gap: 5px 10px; padding-top: 5px; font-size: 11px; }
 }
+.service-type-dropdown{border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff}.service-type-dropdown summary{cursor:pointer;padding:10px;font-weight:800}.service-type-menu{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0}.service-type-menu label{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#f7fafc}.service-part-row{grid-template-columns:1fr 1fr 1.4fr .5fr .7fr .8fr auto}.service-part-row input{border-radius:10px}
+.service-type-dropdown{border:1px solid var(--line);border-radius:12px;padding:0 12px;background:#fff}.service-type-dropdown summary{cursor:pointer;padding:10px;font-weight:800}.service-type-menu{display:flex;flex-wrap:wrap;gap:8px;padding:10px 0}.service-type-menu label{padding:8px 12px;border:1px solid var(--line);border-radius:999px;background:#f7fafc}.service-part-row{grid-template-columns:1fr 1fr 1.4fr .5fr .7fr .8fr auto}.service-part-row input{border-radius:10px}

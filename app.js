@@ -6707,7 +6707,7 @@
       <label>更換零組件</label>
       <input type="hidden" name="parts_json" value="${escapeHtml(JSON.stringify(parts))}" data-service-parts-json>
       <input type="hidden" name="parts_replaced" value="${escapeHtml(item.parts_replaced || "")}" data-service-parts-text>
-      <div class="service-parts-head"><span>料號／套餐號</span><span>名稱／內容</span><span>數量</span><span>單價</span><span>金額</span><span></span></div>
+      <div class="service-parts-head"><span>履歷類型</span><span>料號／套餐號</span><span>名稱／內容</span><span>數量</span><span>單價</span><span>金額</span><span></span></div>
       <div class="service-parts-rows" data-service-parts-rows>
         ${rows.map(servicePartRow).join("")}
       </div>
@@ -6717,6 +6717,7 @@
 
   function servicePartRow(part = {}) {
     return `<div class="service-part-row" data-service-part-row>
+      <input data-service-part-field="record_type" value="${escapeHtml(part.record_type || "")}" placeholder="保養／維修">
       <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號或套餐號" title="輸入關鍵字後按 Enter 搜尋 BOM">
       <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱或套餐內容" title="輸入關鍵字後按 Enter 搜尋 BOM">
       <input data-service-part-field="quantity" type="number" min="0" step="1" value="${escapeHtml(part.quantity ?? "")}" placeholder="數量">
@@ -6744,6 +6745,7 @@
     const parts = Array.from(editor.querySelectorAll("[data-service-part-row]")).map((row) => {
       const get = (name) => row.querySelector(`[data-service-part-field="${name}"]`)?.value || "";
       return {
+        record_type: get("record_type").trim(),
         part_no: get("part_no").trim(),
         name: get("name").trim(),
         quantity: Number(get("quantity") || 0),
@@ -6893,7 +6895,7 @@
 
   function serviceRecordForm(item) {
     return vehiclePlatePicker(item)
-      + `<div class="field full"><label>履歷類型（可複選）</label><div class="checkbox-grid service-type-options">${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<label><input type="checkbox" name="record_types" value="${value}" ${(String(item.record_type || "定期保養").split(/[+,、／/]/).includes(value)) ? "checked" : ""}> ${value}</label>`).join("")}</div></div>`
+      + `<details class="field full service-type-dropdown" open><summary>履歷類型（可複選）</summary><div class="service-type-menu">${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<label><input type="checkbox" name="record_types" value="${value}" ${(String(item.record_type || "定期保養").split(/[+,、／/]/).includes(value)) ? "checked" : ""}> ${value}</label>`).join("")}</div></details>`
       + input("service_date", "作業日期", formDate(item.service_date) || today(), "date", true)
       + input("odometer", "當下里程（km）", item.odometer, "number")
       + repairShopOptions(item.vendor)
@@ -6903,7 +6905,7 @@
       + input("labor_cost", "工資", item.labor_cost, "number")
       + input("parts_cost", "零件費", item.parts_cost, "number")
       + input("other_cost", "其他費用", item.other_cost, "number")
-      + `<div class="field full"><label>價格計算</label><div class="checkbox-grid"><label><input type="radio" name="tax_mode" value="含稅" ${(item.tax_mode || "含稅") === "含稅" ? "checked" : ""}> 含稅</label><label><input type="radio" name="tax_mode" value="未稅" ${item.tax_mode === "未稅" ? "checked" : ""}> 未稅</label></div><small>含稅會加總細項；未稅會自動計算 5% 稅金。</small></div>`
+      + `<div class="field full"><label>價格計算</label><div class="checkbox-grid"><label><input type="radio" name="tax_mode" value="含稅" ${(item.tax_mode || "含稅") === "含稅" ? "checked" : ""}> 含稅</label><label><input type="radio" name="tax_mode" value="未稅" ${item.tax_mode === "未稅" ? "checked" : ""}> 未稅</label></div><small data-service-tax-preview>稅金 $${Number(item.tax_amount || 0).toLocaleString()}｜含稅總額 $${Number(item.total_cost || 0).toLocaleString()}</small></div>`
       + input("downtime_hours", "停駛時數", item.downtime_hours, "number")
       + input("next_service_date", "下次建議日期", formDate(item.next_service_date), "date")
       + input("next_service_odometer", "下次建議里程", item.next_service_odometer, "number")
@@ -8638,6 +8640,15 @@
   }
 
   document.addEventListener("input", (e) => {
+    if (e.target.closest("[name='labor_cost'],[name='parts_cost'],[name='other_cost'],[name='tax_mode']")) {
+      const form = e.target.closest("form");
+      if (form) {
+        const total = ["labor_cost", "parts_cost", "other_cost"].reduce((sum, key) => sum + Number(form.querySelector(`[name='${key}']`)?.value || 0), 0);
+        const tax = form.querySelector("[name='tax_mode']:checked")?.value === "未稅" ? Math.round(total * .05) : 0;
+        const hint = form.querySelector("[data-service-tax-preview]");
+        if (hint) hint.textContent = `稅金 $${tax.toLocaleString()}｜含稅總額 $${(total + tax).toLocaleString()}`;
+      }
+    }
     if (e.target.closest("#adminChatForm input[name='message']")) {
       state.adminChatDraft = e.target.value;
       return;
