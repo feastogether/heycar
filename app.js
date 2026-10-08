@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
   const cfg = window.AFIDE_CONFIG || {};
   const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
@@ -5675,6 +5675,7 @@
       if (!Array.isArray(record.parts_json)) record.parts_json = [];
       record.parts_json = record.parts_json.map((part) => ({
         part_no: String(part.part_no || "").trim(),
+        record_type: String(part.record_type || "").trim(),
         name: String(part.name || "").trim(),
         quantity: Number(part.quantity || 0),
         unit_price: Number(part.unit_price || 0),
@@ -6867,7 +6868,7 @@
   function servicePartsSummary(item = {}) {
     const parts = parseServiceParts(item);
     if (!parts.length) return `<p>${escapeHtml(item.parts_replaced || "-")}</p>`;
-    return `<div class="service-parts-summary">${parts.map((part) => `<span><b>${escapeHtml(part.part_no || "-")}</b>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
+    return `<div class="service-parts-summary">${parts.map((part) => `<span><b>${escapeHtml(part.record_type || "未分類")}</b><strong>${escapeHtml(part.part_no || "-")}</strong>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
   }
 
   function vehicleLoanForm(item) {
@@ -9054,4 +9055,6 @@
     }
   })();
 })();
+
+
 
