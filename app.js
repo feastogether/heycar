@@ -6868,6 +6868,15 @@
     return null;
   }
 
+  function servicePartTypeClass(type = "") {
+    const value = String(type || "");
+    if (value.includes("保養")) return "service-type-maintenance";
+    if (value.includes("維修") || value.includes("修復")) return "service-type-repair";
+    if (value.includes("檢驗")) return "service-type-inspection";
+    if (value.includes("輪胎")) return "service-type-tire";
+    return "service-type-other";
+  }
+
   function servicePartsToText(parts) {
     return (parts || []).map((part) => `${part.part_no || "-"} ${part.name || "-"} x${Number(part.quantity || 0)} 單價 $${Number(part.unit_price || 0).toLocaleString()} 金額 $${Number(part.amount || 0).toLocaleString()}`).join("\n");
   }
@@ -6875,7 +6884,7 @@
   function servicePartsSummary(item = {}) {
     const parts = parseServiceParts(item);
     if (!parts.length) return `<p>${escapeHtml(item.parts_replaced || "-")}</p>`;
-    return `<div class="service-parts-summary">${parts.map((part) => `<span><b>${escapeHtml(part.record_type || "未分類")}</b><strong>${escapeHtml(part.part_no || "-")}</strong>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
+    return `<div class="service-parts-summary">${parts.map((part) => `<span><b class="${servicePartTypeClass(part.record_type)}">${escapeHtml(part.record_type || "未分類")}</b><strong>${escapeHtml(part.part_no || "-")}</strong>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
   }
 
   function vehicleLoanForm(item) {
@@ -9065,6 +9074,8 @@
     }
   })();
 })();
+
+
 
 
 
