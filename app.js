@@ -6717,7 +6717,7 @@
 
   function servicePartRow(part = {}) {
     return `<div class="service-part-row" data-service-part-row>
-      <input data-service-part-field="record_type" value="${escapeHtml(part.record_type || "")}" placeholder="保養／維修">
+      <select data-service-part-field="record_type" aria-label="零組件履歷類型"><option value="">類型</option>${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<option value="${value}" ${part.record_type === value ? "selected" : ""}>${value}</option>`).join("")}</select>
       <input data-service-part-field="part_no" value="${escapeHtml(part.part_no || "")}" placeholder="料號或套餐號" title="輸入關鍵字後按 Enter 搜尋 BOM">
       <input data-service-part-field="name" value="${escapeHtml(part.name || "")}" placeholder="零件名稱或套餐內容" title="輸入關鍵字後按 Enter 搜尋 BOM">
       <input data-service-part-field="quantity" type="number" min="0" step="1" value="${escapeHtml(part.quantity ?? "")}" placeholder="數量">
@@ -6747,6 +6747,7 @@
       return {
         record_type: get("record_type").trim(),
         part_no: get("part_no").trim(),
+        record_type: get("record_type").trim(),
         name: get("name").trim(),
         quantity: Number(get("quantity") || 0),
         unit_price: Number(get("unit_price") || 0),
