@@ -4653,7 +4653,7 @@
         ${items.length ? items.map((item) => `<article class="service-record-row">
           <div class="service-record-head"><span class="plate-chip">${escapeHtml(item.plate_no)}</span><span class="record-type">${escapeHtml(item.record_type)}</span><strong>${fmtDate(item.service_date)}</strong>${item.odometer ? `<small>${Number(item.odometer).toLocaleString()} km</small>` : ""}</div>
           <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>實際維修／保養內容</small><p>${escapeHtml(item.actual_work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
-          <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>${item.tax_mode || "含稅"}：$${Number(item.total_cost || 0).toLocaleString()}</span><span>稅金：$${Number(item.tax_amount || 0).toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
+          <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>含稅總計：$${serviceTaxBreakdown(item).gross.toLocaleString()}</span><span>未稅金額：$${serviceTaxBreakdown(item).net.toLocaleString()}</span><span>稅額：$${serviceTaxBreakdown(item).tax.toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
           <div class="service-record-actions">${attachmentLink(item)}${rowActions("serviceRecord", "vehicle_service_records", item.id)}</div>
         </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
       </div>
@@ -6913,7 +6913,7 @@
 
   function serviceRecordForm(item) {
     return vehiclePlatePicker(item)
-      + `<details class="field full service-type-dropdown" open><summary>履歷類型（可複選）</summary><div class="service-type-menu">${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<label><input type="checkbox" name="record_types" value="${value}" ${(String(item.record_type || "定期保養").split(/[+,、／/]/).includes(value)) ? "checked" : ""}> ${value}</label>`).join("")}</div></details>`
+      + `<div class="field full service-type-dropdown"><label>履歷類型（可複選）</label><div class="service-type-menu">${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<label><input type="checkbox" name="record_types" value="${value}" ${(String(item.record_type || "定期保養").split(/[+,、／/]/).includes(value)) ? "checked" : ""}> ${value}</label>`).join("")}</div></div>`
       + input("service_date", "作業日期", formDate(item.service_date) || today(), "date", true)
       + input("odometer", "當下里程（km）", item.odometer, "number")
       + repairShopOptions(item.vendor)
