@@ -4653,7 +4653,7 @@
         ${items.length ? items.map((item) => `<article class="service-record-row">
           <div class="service-record-head"><span class="plate-chip">${escapeHtml(item.plate_no)}</span><span class="record-type">${escapeHtml(item.record_type)}</span><strong>${fmtDate(item.service_date)}</strong>${item.odometer ? `<small>${Number(item.odometer).toLocaleString()} km</small>` : ""}</div>
           <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>實際維修／保養內容</small><p>${escapeHtml(item.actual_work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
-          <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>總成本：$${Number(item.total_cost || 0).toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
+          <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>${item.tax_mode || "含稅"}：$${Number(item.total_cost || 0).toLocaleString()}</span><span>稅金：$${Number(item.tax_amount || 0).toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
           <div class="service-record-actions">${attachmentLink(item)}${rowActions("serviceRecord", "vehicle_service_records", item.id)}</div>
         </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
       </div>
@@ -4674,6 +4674,8 @@
 
   function serviceRecordDisplayType(item = {}) {
     const type = String(item.record_type || "");
+    const types = type.split(/[+,、／/]/).map((value) => value.trim()).filter(Boolean);
+    if (types.length > 1) return types.map((value) => value.replace("定期保養", "保養")).join("＋");
     if (type.includes("保養")) return "保養";
     if (type.includes("維修") || type.includes("修復")) return "維修";
     return type || "其他";
@@ -4729,7 +4731,8 @@
         <div><small>車牌</small><strong>${escapeHtml(item.plate_no || vehiclePlate(item.vehicle_id))}</strong></div>
         <div><small>類型</small><strong>${escapeHtml(item.record_type || "-")}</strong></div>
         <div><small>里程</small><strong>${item.odometer ? `${Number(item.odometer).toLocaleString()} km` : "-"}</strong></div>
-        <div><small>總金額</small><strong>$${Number(item.total_cost || 0).toLocaleString()}</strong></div>
+        <div><small>${escapeHtml(item.tax_mode || "含稅")}總金額</small><strong>$${Number(item.total_cost || 0).toLocaleString()}</strong></div>
+        <div><small>稅金</small><strong>$${Number(item.tax_amount || 0).toLocaleString()}</strong></div>
         <div><small>工資</small><strong>$${Number(item.labor_cost || 0).toLocaleString()}</strong></div>
         <div><small>零件費</small><strong>$${Number(item.parts_cost || 0).toLocaleString()}</strong></div>
         <div><small>其他費用</small><strong>$${Number(item.other_cost || 0).toLocaleString()}</strong></div>
@@ -4737,8 +4740,8 @@
       </div>
       <div class="service-detail-section"><small>送修原因／駕駛反映</small><p>${escapeHtml(item.complaint || "-")}</p></div>
       <div class="service-detail-section"><small>檢查與故障診斷</small><p>${escapeHtml(item.diagnosis || "-")}</p></div>
-      <div class="service-detail-section"><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div>
-      <div class="service-detail-section"><small>實際維修／保養內容</small><p>${escapeHtml(item.actual_work_performed || "-")}</p></div>
+      <div class="service-detail-section"><small>送修原因</small><p>${escapeHtml(item.complaint || "-")}</p></div>
+      <div class="service-detail-section"><small>實際維修</small><p>${escapeHtml(item.actual_work_performed || item.work_performed || "-")}</p></div>
       <div class="service-detail-section"><small>更換零組件</small>${servicePartsSummary(item)}</div>
       <div class="service-detail-section"><small>保固資訊／備註</small><p>${escapeHtml([item.warranty_info, item.notes].filter(Boolean).join("\n") || "-")}</p></div>
       <div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button><button class="primary-btn" data-modal="serviceRecord" data-id="${escapeHtml(item.id)}">編輯履歷</button></div>
@@ -5458,6 +5461,10 @@
         delete record.attachment_url;
         delete record.attachment_name;
       }
+      if (tableName === "vehicle_service_records") {
+        record.record_type = formData.getAll("record_types").filter(Boolean).join("+") || record.record_type || "定期保養";
+        delete record.record_types;
+      }
       if (tableName === "driver_links") {
         record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
       }
@@ -5679,9 +5686,12 @@
       ["odometer", "next_service_odometer", "downtime_hours"].forEach((key) => {
         record[key] = Number(record[key] || 0) || null;
       });
-      ["labor_cost", "parts_cost", "other_cost", "total_cost"].forEach((key) => record[key] = Number(record[key] || 0));
+      ["labor_cost", "parts_cost", "other_cost", "total_cost", "tax_amount"].forEach((key) => record[key] = Number(record[key] || 0));
       if (record.parts_json.length) record.parts_cost = record.parts_json.reduce((sum, part) => sum + Number(part.amount || 0), 0);
-      record.total_cost = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
+      const subtotal = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
+      record.tax_mode = record.tax_mode === "未稅" ? "未稅" : "含稅";
+      record.tax_amount = record.tax_mode === "未稅" ? Math.round(subtotal * 0.05) : 0;
+      record.total_cost = record.tax_mode === "未稅" ? subtotal + record.tax_amount : subtotal;
     }
     if (tableName === "bom_parts") {
       record.supplier = record.supplier || "";
@@ -6883,18 +6893,17 @@
 
   function serviceRecordForm(item) {
     return vehiclePlatePicker(item)
-      + select("record_type", "履歷類型", item.record_type || "定期保養", [["定期保養", "定期保養"], ["維修", "維修"], ["檢驗", "檢驗"], ["輪胎", "輪胎"], ["事故修復", "事故修復"], ["召回", "召回"], ["其他", "其他"]])
+      + `<div class="field full"><label>履歷類型（可複選）</label><div class="checkbox-grid service-type-options">${["定期保養", "維修", "檢驗", "輪胎", "事故修復", "召回", "其他"].map((value) => `<label><input type="checkbox" name="record_types" value="${value}" ${(String(item.record_type || "定期保養").split(/[+,、／/]/).includes(value)) ? "checked" : ""}> ${value}</label>`).join("")}</div></div>`
       + input("service_date", "作業日期", formDate(item.service_date) || today(), "date", true)
       + input("odometer", "當下里程（km）", item.odometer, "number")
       + repairShopOptions(item.vendor)
-      + text("complaint", "送修原因／駕駛反映", item.complaint)
-      + text("diagnosis", "檢查與故障診斷", item.diagnosis)
-      + text("work_performed", "處置／保養內容", item.work_performed)
-      + text("actual_work_performed", "實際維修／保養內容", item.actual_work_performed)
+      + text("complaint", "送修原因", item.complaint)
+      + text("actual_work_performed", "實際維修", item.actual_work_performed || item.work_performed)
       + servicePartsEditor(item)
       + input("labor_cost", "工資", item.labor_cost, "number")
       + input("parts_cost", "零件費", item.parts_cost, "number")
       + input("other_cost", "其他費用", item.other_cost, "number")
+      + `<div class="field full"><label>價格計算</label><div class="checkbox-grid"><label><input type="radio" name="tax_mode" value="含稅" ${(item.tax_mode || "含稅") === "含稅" ? "checked" : ""}> 含稅</label><label><input type="radio" name="tax_mode" value="未稅" ${item.tax_mode === "未稅" ? "checked" : ""}> 未稅</label></div><small>含稅會加總細項；未稅會自動計算 5% 稅金。</small></div>`
       + input("downtime_hours", "停駛時數", item.downtime_hours, "number")
       + input("next_service_date", "下次建議日期", formDate(item.next_service_date), "date")
       + input("next_service_odometer", "下次建議里程", item.next_service_odometer, "number")
