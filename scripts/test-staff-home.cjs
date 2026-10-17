@@ -23,15 +23,16 @@ async function backendTests() {
     let mode='select', payload, filters=[], columns='*';
     const query={
       select(value='*'){columns=value;return this},eq(key,value){filters.push(row=>row[key]===value);return this},neq(key,value){filters.push(row=>row[key]!==value);return this},order(){return this},or(){return this},
-      insert(value){mode='insert';payload=value;return this},update(value){mode='update';payload=value;return this},delete(){mode='delete';return this},
+      insert(value){mode='insert';payload=value;return this},upsert(value){mode='upsert';payload=value;return this},update(value){mode='update';payload=value;return this},delete(){mode='delete';return this},
       async execute(single=false){
         let rows=(data[table]||[]).filter(row=>filters.every(fn=>fn(row)));
         if(mode==='insert'){rows=[{id:'new',created_at:today,...payload}];(data[table]||=[]).push(...rows)}
+        if(mode==='upsert'){const current=(data[table]||[]).find(row=>row.owner_id===payload.owner_id);if(current){Object.assign(current,payload);rows=[current]}else{rows=[payload];(data[table]||=[]).push(payload)}}
         if(mode==='update')rows.forEach(row=>Object.assign(row,payload));
         if(mode==='delete')data[table]=(data[table]||[]).filter(row=>!rows.includes(row));
         if(columns!=='*')rows=rows.map(row=>Object.fromEntries(columns.split(',').map(key=>[key,row[key]])));
-        return {data:single?(rows[0]||null):rows,error:null};
-      },single(){return this.execute(true)},then(resolve,reject){return this.execute().then(resolve,reject)}
+        return {data:structuredClone(single?(rows[0]||null):rows),error:null};
+      },single(){return this.execute(true)},maybeSingle(){return this.execute(true)},then(resolve,reject){return this.execute().then(resolve,reject)}
     };return query;
   }};
   const context=vm.createContext({Deno:{env:{get:()=>''},serve:fn=>{handler=fn}},createClient:()=>db,Request,Response,Headers,Date,Map,Set,WeakMap,crypto,TextEncoder,URL,console});
@@ -39,6 +40,15 @@ async function backendTests() {
   context.testSession=()=>({...session});
   vm.runInContext('getSession = async () => testSession();',context);
   const request=(action,table,record,id)=>handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,table,record,id})}));
+  const noteRequest=(payload)=>handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'set_staff_note',...payload})}));
+  let note=await noteRequest({content:'開會中，有事請留言',owner_id:'amy'});
+  assert.equal(note.status,200);assert.equal((await note.json()).data.owner_id,'me');
+  await noteRequest({content:'下午回覆'});
+  assert.equal(data.staff_notes.length,1);assert.equal(data.staff_notes[0].content,'下午回覆');
+  assert.equal((await noteRequest({content:'字'.repeat(61)})).status,400);
+  assert.equal((await request('insert','staff_notes',{owner_id:'amy',content:'forged'})).status,403);
+  assert.equal((await request('update','staff_notes',{content:'forged'},'amy')).status,403);
+  await noteRequest({content:''});assert.equal(data.staff_notes[0].content,'');
   for(const table of ['staff_announcements','staff_calendar_events']) {
     assert.equal((await request('insert',table,{title:'unauthorized'})).status,403);
     assert.equal((await request('update',table,{title:'unauthorized'},'notice')).status,403);
@@ -61,10 +71,22 @@ async function backendTests() {
   assert.equal((await request('delete','staff_announcements',{},notice.id)).status,200);
   for(const session_type of ['driver','partner']){
     session={session_type};
+    assert.equal((await noteRequest({content:'forbidden'})).status,403);
     assert.equal((await request('insert','staff_announcements',{title:'拒絕',content:'拒絕'})).status,403);
     assert.equal((await request('delete','staff_calendar_events',{},'event')).status,403);
   }
-  console.log('PASS: staff-only API, independent edit permissions, server author stamps, read access, calendar validation');
+  session={session_type:'admin',is_super_admin:true,admin_name:'管理員'};
+  const created=await request('insert','admin_users',{id:'code-test',name:'分機測試',active:true,permissions:{},login_code:'8123',extension:'wrong'});
+  assert.equal(created.status,200);assert.equal((await created.json()).data.extension,'8123');
+  const codeUser=data.admin_users.find(row=>row.id==='code-test');
+  await request('update','admin_users',{name:'分機測試',extension:'spoofed'},'code-test');
+  assert.equal(codeUser.extension,'8123');
+  await request('update','admin_users',{login_code:'9345',extension:'wrong'},'code-test');
+  assert.equal(codeUser.extension,'9345');
+  codeUser.extension='old';
+  const logged=await handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'login_admin',code:'9345'})}));
+  assert.equal(logged.status,200);assert.equal((await logged.json()).admin_profile.extension,'9345');
+  console.log('PASS: staff-only API, note ownership/upsert/length, login-code extension sync, edit permissions and calendar validation');
 }
 
 async function uiTests(){
@@ -82,6 +104,7 @@ async function uiTests(){
         if(body.action==='load_admin_chat')result={admin_users:users,admin_chat_messages:[]};
         if(body.action==='insert'){const row={id:'added-'+Date.now(),...body.record,author_name:'王小明'};data[body.table].unshift(row);result={data:row}}
         if(body.action==='update'){const row=data[body.table].find(row=>row.id===body.id);Object.assign(row,body.record);result={data:row}}
+        if(body.action==='set_staff_note'){const row={owner_id:'me',content:body.content,updated_at:today};data.staff_notes=[...data.staff_notes.filter(item=>item.owner_id!=='me'),row];result={data:row}}
         return route.fulfill({json:result});
       }
       if(url.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${['styles.css','heycar-ui-enhance.css','staff-home.css'].map(file=>`<link rel="stylesheet" href="/${file}">`).join('')}</head><body><div id="app"></div><script>window.AFIDE_CONFIG={DATA_API_URL:'/api'};</script><script src="/app.js"></script></body></html>`});
@@ -92,6 +115,17 @@ async function uiTests(){
     await page.addInitScript(()=>{localStorage.setItem('afide-session',JSON.stringify({type:'admin',token:'test',adminProfile:{id:'me',name:'王小明',permissions:{}}}));localStorage.setItem('afide-view-state',JSON.stringify({adminView:'drivers'}));});
     await page.goto('https://staff.test/');
     await page.locator('.staff-home').waitFor();
+    assert.equal(await page.locator('.staff-welcome h1').innerText(),'HEYCAR · 員工辦公室');
+    assert.equal(await page.getByText('COMPANY NEWS',{exact:true}).count(),0);
+    assert.equal(await page.getByText('TEAM SCHEDULE',{exact:true}).count(),0);
+    assert(!(await page.locator('.staff-welcome').innerText()).includes('歡迎回來'));
+    await page.locator('[data-open-staff-chat="me"]').click();
+    await page.locator('#staffNoteContent').fill('午休中，下午回覆你 ☕');
+    await page.locator('#staffNoteForm [type="submit"]').click();
+    await page.locator('#staffNoteForm').waitFor({state:'detached'});
+    assert((await page.locator('[data-open-staff-chat="me"] .staff-note').getAttribute('title')).includes('午休中'));
+    await page.reload();await page.locator('.staff-home').waitFor();
+    assert((await page.locator('[data-open-staff-chat="me"] .staff-note').getAttribute('title')).includes('午休中'));
     // Home is the first sidebar item even without any management permission.
     assert.equal(await page.locator('.side-nav [data-admin-view]').first().getAttribute('data-admin-view'),'home');
     assert.equal(await page.locator('[data-modal="staffAnnouncement"]').count(),0);
@@ -105,6 +139,7 @@ async function uiTests(){
     for(const width of [320,390,768,1440]){
       await page.setViewportSize({width,height:1000});
       assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`overflow at ${width}`);
+      assert(await page.locator('.staff-people-list').evaluate(list=>list.scrollWidth<=list.clientWidth),`colleague grid overflow at ${width}`);
       await page.locator('[data-open-staff-chat="amy"]').click();
       assert(await page.locator('.admin-chat-panel').isVisible());
       assert(await page.locator('#adminChatForm input').isEnabled());
@@ -143,14 +178,19 @@ async function uiTests(){
     await page.locator('[data-staff-avatar-upload]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from(avatar,'base64')});
     await page.getByText('照片已壓縮，儲存帳號後生效',{exact:true}).waitFor();
     assert((await page.locator('[name="avatar_url"]').inputValue()).startsWith('data:image/jpeg'));
-    await page.locator('[name="extension"]').fill('789');
+    assert.equal(await page.locator('[name="extension"]').count(),0);
     await page.locator('[name="permission_internalAnnouncements"][type="checkbox"]').check();
     await page.locator('#modalForm [type="submit"]').click();
     await page.locator('.side-nav [data-admin-view="home"]').click();
-    assert(await page.getByText('分機 789',{exact:true}).isVisible());
+    assert(await page.getByText('分機 456',{exact:true}).isVisible());
     await page.reload();await page.locator('.staff-home').waitFor();
-    assert(await page.getByText('分機 789',{exact:true}).isVisible());
+    assert(await page.getByText('分機 456',{exact:true}).isVisible());
     assert(await page.getByRole('button',{name:'新增員工公告',exact:true}).isVisible());
+    await page.locator('[data-open-staff-chat="me"]').click();
+    await page.locator('[data-staff-note-clear]').click();
+    await page.locator('#staffNoteForm [type="submit"]').click();
+    await page.locator('#staffNoteForm').waitFor({state:'detached'});
+    assert(await page.locator('[data-open-staff-chat="me"] .is-placeholder').isVisible());
     await page.setViewportSize({width:390,height:844});
     await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
     await page.screenshot({path:path.join(root,'tmp/staff-home-mobile.png'),fullPage:true,animations:'disabled'});

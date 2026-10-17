@@ -175,7 +175,7 @@
     "hiring_pages",
     "hiring_applications",
     "dispatch_orders",
-    "admin_chat_messages", "staff_announcements", "staff_calendar_events"
+    "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes"
   ];
 
   const insuranceStatuses = [
@@ -301,7 +301,7 @@
     }],
     hiring_applications: [],
     dispatch_orders: [],
-    admin_chat_messages: [], staff_announcements: [], staff_calendar_events: []
+    admin_chat_messages: [], staff_announcements: [], staff_calendar_events: [], staff_notes: []
   };
 
   function uid() {
@@ -3792,14 +3792,18 @@
   function adminHome() {
     const announcements = [...(state.data.staff_announcements || [])].sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.created_at).localeCompare(String(a.created_at)));
     const people = (state.data.admin_users || []).filter(user => user.active !== false);
+    const me = currentAdminChatId();
+    if (!people.some(user => user.id === me)) people.unshift({ ...state.adminProfile, id: me, name: me === "super-admin" ? "系統管理員" : currentAdminChatName() });
+    if (!people.some(user => user.id === "super-admin")) people.push({ id: "super-admin", name: "系統管理員" });
+    people.sort((a,b) => Number(b.id === me) - Number(a.id === me));
     const todayEvents = (state.data.staff_calendar_events || []).filter(event => event.event_date === today());
     const dateLabel = new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long" }).format(new Date());
     return `<div class="staff-home">
-      <header class="staff-welcome"><div><span class="staff-eyebrow">HEY!CAR · 員工辦公室</span><h1>${escapeHtml(state.adminProfile?.name || "夥伴")}，歡迎回來</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-today"><span>${escapeHtml(dateLabel)}</span><strong>今天有 ${todayEvents.length} 個行程</strong></div></header>
-      <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點選同事頭像，開啟即時對話</p></div></div>
-        <div class="staff-people-list">${people.length ? people.map(user => `<button class="staff-person ${user.id === currentAdminChatId() ? "is-self" : ""}" type="button" data-open-staff-chat="${escapeHtml(user.id)}" ${user.id === currentAdminChatId() ? "disabled" : ""} aria-label="與${escapeHtml(user.name)}聊天">${staffAvatar(user)}<strong>${escapeHtml(user.name)}</strong><small>${user.id === currentAdminChatId() ? "你 · " : ""}${user.extension ? `分機 ${escapeHtml(user.extension)}` : "分機未設定"}</small></button>`).join("") : `<div class="staff-empty">尚未建立夥伴資料，請在權限管理新增內部帳號與頭像。</div>`}</div>
+      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-today"><span>${escapeHtml(dateLabel)}</span><strong>今天有 ${todayEvents.length} 個行程</strong></div></header>
+      <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點自己留小紙條，點同事開啟對話</p></div></div>
+        <div class="staff-people-list">${people.map(staffPersonMarkup).join("")}</div>
       </section>
-      <div class="staff-dashboard"><section class="staff-card staff-notice-board"><div class="staff-section-head"><div><span class="staff-eyebrow">COMPANY NEWS</span><h2>公司內部公告 <span class="staff-count">${announcements.length}</span></h2></div>${adminCan("internalAnnouncements") ? `<button class="staff-create" data-modal="staffAnnouncement">＋ 發布公告</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
+      <div class="staff-dashboard"><section class="staff-card staff-notice-board"><div class="staff-section-head"><div><h2>公司內部公告 <span class="staff-count">${announcements.length}</span></h2></div>${adminCan("internalAnnouncements") ? `<button class="staff-create" data-modal="staffAnnouncement">＋ 發布公告</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
         <div class="staff-notices">${announcements.length ? announcements.map(item => `<article class="staff-notice ${item.pinned ? "is-pinned" : ""}"><div class="staff-notice-meta"><span class="staff-category">${item.pinned ? "置頂公告" : "公司消息"}</span><time>${escapeHtml(fmtDate(item.created_at))}</time></div><button class="staff-notice-title" data-staff-detail="staff_announcements:${escapeHtml(item.id)}">${escapeHtml(item.title)}</button><p>${escapeHtml(item.content)}</p><footer><span>${escapeHtml(item.author_name || "管理員")} 發布</span>${adminCan("internalAnnouncements") ? rowActions("staffAnnouncement", "staff_announcements", item.id) : `<button class="staff-text-btn" data-staff-detail="staff_announcements:${escapeHtml(item.id)}">閱讀全文 →</button>`}</footer></article>`).join("") : `<div class="staff-empty"><span class="staff-empty-icon">▤</span><strong>新的消息，從這裡開始</strong><p>公司公告會顯示在這裡，讓每位夥伴掌握最新動態。</p></div>`}</div>
       </section>${staffCalendar()}</div>
     </div>`;
@@ -3809,6 +3813,49 @@
     const url = String(user.avatar_url || "");
     const safeUrl = /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
     return `<span class="staff-avatar">${safeUrl ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="lazy">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
+  }
+
+  function staffPersonMarkup(user) {
+    const self = user.id === currentAdminChatId();
+    const note = (state.data.staff_notes || []).find(item => item.owner_id === user.id)?.content || "";
+    const extensionLabel = user.id === "super-admin" ? "系統帳號" : user.extension ? `分機 ${user.extension}` : "分機待同步";
+    const actionLabel = self ? "設定我的小紙條" : `與${user.name}聊天`;
+    return `<button class="staff-person ${self ? "is-self" : ""}" type="button" data-open-staff-chat="${escapeHtml(user.id)}" aria-label="${escapeHtml(actionLabel)}${note ? `，小紙條：${escapeHtml(note)}` : ""}"><span class="staff-avatar-wrap">${staffAvatar(user)}${note ? `<span class="staff-note" title="${escapeHtml(note)}"><span class="staff-note-viewport"><span class="staff-note-track"><span>${escapeHtml(note)}</span><span aria-hidden="true">${escapeHtml(note)}</span></span></span></span>` : self ? `<span class="staff-note is-placeholder">留個小紙條…</span>` : ""}</span><strong>${escapeHtml(user.name)}</strong><small>${self ? "你 · " : ""}${escapeHtml(extensionLabel)}</small></button>`;
+  }
+
+  function openStaffNoteEditor() {
+    if (!state.admin) return;
+    const ownerId = currentAdminChatId();
+    const existing = (state.data.staff_notes || []).find(item => item.owner_id === ownerId)?.content || "";
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<section class="modal staff-editor staff-note-editor" role="dialog" aria-modal="true" aria-labelledby="staffNoteTitle"><div class="modal-title"><div><small>與夥伴分享此刻的你</small><h3 id="staffNoteTitle">我的小紙條</h3></div><button type="button" class="staff-text-btn" data-close-modal aria-label="關閉小紙條">×</button></div><form id="staffNoteForm"><div class="staff-note-editor-body">${staffAvatar({ ...state.adminProfile, name: currentAdminChatName() })}<label for="staffNoteContent">現在想說些什麼？</label><textarea id="staffNoteContent" name="content" maxlength="60" rows="3" placeholder="例如：下午在外開會，有事請留言">${escapeHtml(existing)}</textarea><div class="staff-note-help"><span>夥伴會在你的頭像旁看到這段話</span><span data-staff-note-count>${[...existing].length} / 60</span></div><p class="error" data-staff-note-error hidden></p></div><div class="modal-actions"><button class="ghost-btn" type="button" data-staff-note-clear>清除內容</button><button class="primary-btn" type="submit">分享小紙條</button></div></form></section>`;
+    document.body.appendChild(modal);
+    const form = modal.querySelector("form");
+    const textarea = form.querySelector("textarea");
+    textarea.addEventListener("input", () => { form.querySelector("[data-staff-note-count]").textContent = `${[...textarea.value].length} / 60`; });
+    form.querySelector("[data-staff-note-clear]").addEventListener("click", () => { textarea.value = ""; textarea.dispatchEvent(new Event("input")); textarea.focus(); });
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (form.dataset.saving === "true") return;
+      const content = textarea.value.trim().replace(/\s+/g, " ");
+      if ([...content].length > 60) return;
+      form.dataset.saving = "true";
+      const button = form.querySelector('[type="submit"]');
+      button.disabled = true;
+      button.innerHTML = '<span class="save-spinner" aria-hidden="true"></span>儲存中…';
+      try {
+        const { data } = await apiRequest("set_staff_note", { content });
+        state.data.staff_notes = [...(state.data.staff_notes || []).filter(item => item.owner_id !== ownerId), data];
+        modal.remove();
+        render();
+      } catch(error) {
+        const message = form.querySelector("[data-staff-note-error]");
+        message.hidden = false;
+        message.textContent = error.message || "儲存失敗，請再試一次";
+      } finally { form.dataset.saving = "false"; button.disabled = false; button.textContent = "分享小紙條"; }
+    });
+    textarea.focus();
   }
 
   async function compressStaffAvatar(file) {
@@ -3836,7 +3883,7 @@
       const dayEvents = events.filter(event => event.event_date === date);
       cells.push(`<button type="button" class="staff-day ${date === selected ? "is-selected" : ""} ${date === today() ? "is-today" : ""}" data-staff-date="${date}" aria-label="${date}，${dayEvents.length}個行程" aria-pressed="${date === selected}"><span>${day}</span><span class="staff-day-dots">${dayEvents.slice(0,3).map(event=>`<i class="staff-dot-${escapeHtml(event.category || "meeting")}"></i>`).join("")}</span></button>`);
     }
-    return `<section class="staff-card staff-calendar"><div class="staff-section-head"><div><span class="staff-eyebrow">TEAM SCHEDULE</span><h2>亞菲得行事曆</h2></div>${canEdit ? `<button class="staff-create" data-staff-new-event="${selected}">＋ 新增行程</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
+    return `<section class="staff-card staff-calendar"><div class="staff-section-head"><div><h2>亞菲得行事曆</h2></div>${canEdit ? `<button class="staff-create" data-staff-new-event="${selected}">＋ 新增行程</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
       <div class="staff-calendar-toolbar"><strong>${year} 年 ${monthNo} 月</strong><div><button type="button" class="staff-today-btn" data-staff-month="today">今天</button><button type="button" data-staff-month="-1" aria-label="上個月">‹</button><button type="button" data-staff-month="1" aria-label="下個月">›</button></div></div>
       <div class="staff-calendar-grid"><div class="staff-weekdays">${["日","一","二","三","四","五","六"].map(day=>`<span>${day}</span>`).join("")}</div><div class="staff-days">${cells.join("")}</div></div>
       <div class="staff-agenda"><div class="staff-agenda-head"><strong>${escapeHtml(selected.slice(5).replace("-", " / "))} 的行程</strong><small>${selectedEvents.length} 個行程</small></div>${selectedEvents.length ? selectedEvents.map(event=>`<article class="staff-event"><div class="staff-event-time">${event.start_time ? escapeHtml(event.start_time.slice(0,5)) : "全天"}<small>${event.end_time ? escapeHtml(event.end_time.slice(0,5)) : ""}</small></div><div class="staff-event-body"><button data-staff-detail="staff_calendar_events:${escapeHtml(event.id)}">${escapeHtml(event.title)}</button>${event.location ? `<p>${escapeHtml(event.location)}</p>` : ""}<small>${escapeHtml(({ meeting:"會議",event:"活動",reminder:"提醒" })[event.category] || "行程")}</small></div>${canEdit ? `<button class="staff-text-btn" data-modal="staffCalendarEvent" data-id="${escapeHtml(event.id)}">編輯</button>` : ""}</article>`).join("") : `<div class="staff-empty staff-empty-compact">當天沒有安排，留一點空間給新的計畫。</div>`}</div>
@@ -6836,7 +6883,7 @@
     }).join("");
     return input("name", "姓名", item.name, "text", true)
       + input("login_code", item.id ? "更新登入代碼（不修改可留白）" : "登入代碼", "", "password", !item.id)
-      + input("extension", "分機（留空會使用登入代碼）", item.extension)
+      + `<div class="field"><label>分機</label><small>自動使用登入代碼，修改登入代碼後會同步更新。</small></div>`
       + `<div class="field full staff-avatar-upload"><label>夥伴頭像</label><div class="staff-avatar-upload-row"><span data-staff-avatar-preview>${staffAvatar(item)}</span><div><input type="file" accept="image/png,image/jpeg,image/webp" data-staff-avatar-upload><small data-staff-avatar-status>上傳照片，首頁會以圓形頭像顯示</small><button type="button" class="staff-text-btn" data-staff-avatar-clear>移除照片</button></div></div><input type="hidden" name="avatar_url" value="${escapeHtml(item.avatar_url || "")}"><input type="hidden" name="avatar_name" value="${escapeHtml(item.avatar_name || "")}"></div>`
       + checkbox("active", "允許登入", item.active !== false)
       + `<div class="form-section-title field full">功能權限</div>`
@@ -7959,7 +8006,8 @@
       return;
     }
     if (target?.dataset.openStaffChat) {
-      if (!state.admin || target.dataset.openStaffChat === currentAdminChatId()) return;
+      if (!state.admin) return;
+      if (target.dataset.openStaffChat === currentAdminChatId()) { openStaffNoteEditor(); return; }
       state.adminChatContactId = target.dataset.openStaffChat;
       state.adminChatOpen = true;
       state.adminChatFromHome = true;

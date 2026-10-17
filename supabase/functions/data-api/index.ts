@@ -16,7 +16,7 @@ const tables = [
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
   "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages",
-  "staff_announcements", "staff_calendar_events"
+  "staff_announcements", "staff_calendar_events", "staff_notes"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -243,7 +243,7 @@ async function loadAdminData(session: Record<string, unknown>) {
   const result: Record<string, unknown[]> = {};
   await Promise.all(tables.map(async (table) => {
     const permission = tablePermission[table];
-    if (["staff_announcements", "staff_calendar_events"].includes(table)) {
+    if (["staff_announcements", "staff_calendar_events", "staff_notes"].includes(table)) {
       const { data, error } = await db.from(table).select("*");
       if (error) throw error;
       result[table] = data || [];
@@ -961,7 +961,7 @@ Deno.serve(async (req) => {
         .select("id,name,active,permissions,extension,avatar_url,avatar_name").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
       if (!adminUser) return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
-      if (!adminUser.extension) {
+      if (adminUser.extension !== loginCode) {
         const { error: extensionError } = await db.from("admin_users").update({ extension: loginCode }).eq("id", adminUser.id);
         if (extensionError) throw extensionError;
         adminUser.extension = loginCode;
@@ -1047,6 +1047,21 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action === "set_staff_note") {
+      if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      const ownerId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      if (!ownerId) return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      const content = compactText(body.content);
+      if ([...content].length > 60) return json({ error: "小紙條最多 60 個字" }, 400);
+      if (!session.is_super_admin) {
+        const { data: user, error: userError } = await db.from("admin_users").select("active").eq("id", ownerId).single();
+        if (userError) throw userError;
+        if (!user?.active) return json({ error: "ADMIN_DISABLED" }, 403);
+      }
+      const { data, error } = await db.from("staff_notes").upsert({ owner_id: ownerId, content, updated_at: new Date().toISOString() }, { onConflict: "owner_id" }).select().single();
+      if (error) throw error;
+      return json({ data });
+    }
     if (body.action === "eup_vehicle_snapshot") {
       if (session.session_type !== "admin" || !session.is_super_admin) {
         return json({ error: "SUPER_ADMIN_REQUIRED" }, 403);
@@ -1257,6 +1272,7 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
+    if (body.table === "staff_notes") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
     if (["staff_announcements", "staff_calendar_events"].includes(body.table) && session.session_type !== "admin") {
       return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
     }
@@ -1474,7 +1490,7 @@ Deno.serve(async (req) => {
       }
       if (body.table === "admin_users") {
         if (!body.record.login_code) return json({ error: "ADMIN_CODE_REQUIRED" }, 400);
-        body.record.extension = compactText(body.record.extension || normalizeLoginCode(body.record.login_code)).slice(0, 30);
+        body.record.extension = normalizeLoginCode(body.record.login_code);
         body.record.login_code_hash = await hashCode(body.record.login_code);
         delete body.record.login_code;
       }
@@ -1511,9 +1527,11 @@ Deno.serve(async (req) => {
         delete body.record.login_code;
       }
       if (body.table === "admin_users") {
+        delete body.record.extension;
+        body.record.updated_at = new Date().toISOString();
         if (body.record.login_code) {
           body.record.login_code_hash = await hashCode(body.record.login_code);
-          body.record.extension = compactText(body.record.extension || normalizeLoginCode(body.record.login_code)).slice(0, 30);
+          body.record.extension = normalizeLoginCode(body.record.login_code);
         }
         delete body.record.login_code;
       }
