@@ -5325,9 +5325,31 @@
   function adminTaskManager(tableName, title) {
     const modal = tableName === "maintenance_notifications" ? "maintenanceNotification" : tableName === "personal_messages" ? "personalMessage" : "paymentNotice";
     return `
-      <div class="section-head"><h2>${title}</h2><button class="primary-btn" data-modal="${modal}">新增${title}</button></div>
+      <div class="section-head"><h2>${title}</h2><div class="actions">${tableName === "maintenance_notifications" ? `<button class="ghost-btn" data-action="bulk-maintenance-notification">柴油車群發通知</button>` : ""}<button class="primary-btn" data-modal="${modal}">新增${title}</button></div></div>
       ${table(taskHeaders(tableName), state.data[tableName].map((x) => taskRow(tableName, x)))}
     `;
+  }
+
+  async function sendBulkMaintenanceNotification() {
+    const fleet = window.prompt("請輸入車隊／車商名稱（留空代表全部）", "");
+    if (fleet === null) return;
+    const content = window.prompt("請輸入要通知司機的內容", "");
+    if (!content?.trim()) return;
+    const fleetKey = fleet.trim();
+    const vehicles = (state.data.vehicles || []).filter((vehicle) => {
+      const diesel = /柴油|diesel/i.test(String(vehicle.fuel_type || ""));
+      const dealer = partnerName(vehicle.dealer_partner_id);
+      return diesel && (!fleetKey || dealer.includes(fleetKey) || String(vehicle.fleet_name || "").includes(fleetKey)) && vehicle.current_driver_id;
+    });
+    if (!vehicles.length) { await showAlert("找不到符合車隊與柴油條件、且有目前駕駛的車輛。", "群發通知"); return; }
+    let sent = 0;
+    await withAppLoading(`正在發送 ${vehicles.length} 筆通知`, async () => {
+      for (const vehicle of vehicles) {
+        await insert("maintenance_notifications", { driver_id: vehicle.current_driver_id, vehicle_id: vehicle.id, service_date: today(), content: content.trim(), status: "pending", vendor: "", service_time: null });
+        sent++;
+      }
+    });
+    await showAlert(`已發送 ${sent} 筆柴油車保養通知，司機完成後後台會更新狀態。`, "群發完成");
   }
 
   function taskHeaders(tableName) {
@@ -7799,6 +7821,10 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    if (target?.dataset.action === "bulk-maintenance-notification") {
+      await sendBulkMaintenanceNotification();
+      return;
+    }
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
     const helperDetail = e.target.closest("[data-helper-detail]");
     if (!target && !cellDate && !helperDetail) return;
