@@ -25,7 +25,7 @@
     admin: false,
     adminProfile: null,
     view: "home",
-    adminView: "drivers",
+    adminView: "home",
     driverStatusFilter: "全部",
     driverSearch: "",
     vehicleSearch: "",
@@ -214,8 +214,8 @@
     paid: "已確認"
   };
 
-  const vehicleStatuses = ["正常", "待修", "維修中", "閒置", "備用車", "公務車"];
-  const vehicleLeaseStatuses = ["自有", "租購", "月租", "短租", "長租", "集團", "特殊"];
+  const vehicleStatuses = ["正常", "待修", "維修中", "閒置", "備用車", "公務車", "報廢"];
+  const vehicleLeaseStatuses = ["自有", "租購", "月租", "短租", "長租", "集團", "特殊", "出售"];
   const fleets = ["亞菲得車隊", "亞緻車隊", "合作車隊"];
   const loanStatuses = [["", "進行中"], ["pending_approval", "待審核"], ["approved", "已核准借用中"], ["return_pending", "待確認還車"], ["completed", "已結案"]];
 
@@ -1657,7 +1657,7 @@
           <div class="login-brand-lockup">
             <img src="${logoUrl}" alt="heycar logo">
           </div>
-          <span>FLEET OPERATIONS</span>
+          <span></span>
         </header>
         <section class="login-panel single-login-panel" aria-labelledby="loginTitle">
           <div class="login-card">
@@ -1668,11 +1668,11 @@
             </div>
             <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
               <div class="field full login-code-field">
-                <label for="loginCode">登入代碼</label>
+                
                 <div class="login-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 7c.8-3.2 3.2-5 7-5s6.2 1.8 7 5"/></svg><input id="loginCode" name="login" autocomplete="one-time-code" inputmode="numeric" placeholder="請輸入手機號碼或登入代碼" required ${state.loginLoading ? "disabled" : ""}></div>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
-                ${state.loginLoading ? `<span>${loadingText}</span>` : `<span>登入系統</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>`}
+                ${state.loginLoading ? `<span>${loadingText}</span>` : `<span>登入系統</span>`}
               </button>
             </form>
             ${state.loginLoading ? `
@@ -3582,7 +3582,7 @@
 
   const adminNavDepartments = [
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "driverOnboarding", "driverEvaluations", "hiringManagement", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["dispatchCenter", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
@@ -3777,13 +3777,19 @@
     </section>`;
   }
 
+  function adminHome() {
+    const profile = state.adminProfile || {};
+    return `<div class="admin-home-grid"><section class="admin-home-profile"><div class="admin-avatar">${escapeHtml(String(profile.name || "管制中心").slice(0, 1))}</div><div><h2>首頁</h2><p>${escapeHtml(profile.name || "管理員")}　分機／登入代碼：${escapeHtml(profile.login_code || "-")}</p></div></section><section class="admin-home-card"><h3>公告欄</h3><p>最新公告與車隊通知</p><button class="primary-btn" data-admin-view="announcements">查看公告</button></section><section class="admin-home-card"><h3>亞菲得行事曆</h3><p>查看與編輯車隊行程</p><button class="primary-btn" data-admin-view="calendar">開啟行事曆</button></section><section class="admin-home-card"><h3>即時通訊</h3><p>直接聯絡管理團隊與司機</p><button class="primary-btn" data-admin-view="messagesCenter">開啟通訊</button></section></div>`;
+  }
+
   function renderAdmin() {
     const nav = [
+      ["home", "首頁", "🏠", ""],
       ["adminUsers", "權限管理", "🔐", "super"],
       ["loginHistory", "登入紀錄", "🕘", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
-      ["driverEvaluations", "評核表單", "📝", "driverEvaluations"],
+      
       ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
@@ -3816,6 +3822,7 @@
     }
     if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
     const body = {
+      home: adminHome,
       adminUsers,
       loginHistory: adminLoginHistory,
       drivers: adminDrivers,
@@ -7455,7 +7462,7 @@
         saveSession(loginType, state.partner || state.user, result.token, state.adminProfile);
         await loadAll();
         state.view = "home";
-        if (state.admin && initialAdminView) state.adminView = initialAdminView;
+        if (state.admin) state.adminView = initialAdminView || "home";
         applyRequestedDriverView();
         state.loginLoading = false;
         render();
@@ -9092,6 +9099,8 @@
     }
   })();
 })();
+
+
 
 
 
