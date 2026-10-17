@@ -15,7 +15,8 @@ const tables = [
   "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
-  "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages"
+  "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages",
+  "staff_announcements", "staff_calendar_events"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -240,21 +241,27 @@ async function loadDriverData(driverId: string) {
 
 async function loadAdminData(session: Record<string, unknown>) {
   const result: Record<string, unknown[]> = {};
-  for (const table of tables) {
+  await Promise.all(tables.map(async (table) => {
     const permission = tablePermission[table];
+    if (["staff_announcements", "staff_calendar_events"].includes(table)) {
+      const { data, error } = await db.from(table).select("*");
+      if (error) throw error;
+      result[table] = data || [];
+      return;
+    }
     if (table === "admin_users" && !session.is_super_admin) {
       const { data, error } = await db
         .from("admin_users")
-        .select("id,name,active")
+        .select("id,name,active,extension,avatar_url,avatar_name")
         .eq("active", true)
         .order("name", { ascending: true });
       if (error) throw error;
       result[table] = data || [];
-      continue;
+      return;
     }
     if (table === "login_audit_logs" && !session.is_super_admin) {
       result[table] = [];
-      continue;
+      return;
     }
     if (table === "key_access_codes" && !session.is_super_admin) {
       const { data, error } = await db
@@ -264,7 +271,7 @@ async function loadAdminData(session: Record<string, unknown>) {
         .order("updated_at", { ascending: false });
       if (error) throw error;
       result[table] = data || [];
-      continue;
+      return;
     }
     if (table === "admin_chat_messages") {
       const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
@@ -275,7 +282,7 @@ async function loadAdminData(session: Record<string, unknown>) {
         .order("created_at", { ascending: true });
       if (error) throw error;
       result[table] = data || [];
-      continue;
+      return;
     }
     if (table === "vehicle_loans" && !session.is_super_admin) {
       const { data, error } = await db
@@ -285,7 +292,7 @@ async function loadAdminData(session: Record<string, unknown>) {
         .order("borrow_at", { ascending: true });
       if (error) throw error;
       result[table] = data || [];
-      continue;
+      return;
     }
     if (permission && !(await adminCan(session, permission))) {
       if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "serviceRecords")))) {
@@ -294,14 +301,14 @@ async function loadAdminData(session: Record<string, unknown>) {
           .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name");
         if (error) throw error;
         result[table] = data || [];
-        continue;
+        return;
       }
       result[table] = [];
-      continue;
+      return;
     }
     if (table === "dispatch_orders") {
       result[table] = await dispatchRows("dispatch_orders", "*");
-      continue;
+      return;
     }
     const { data, error } = await db.from(table).select("*");
     if (error) throw error;
@@ -311,7 +318,7 @@ async function loadAdminData(session: Record<string, unknown>) {
       : table === "admin_users"
       ? (session.is_super_admin ? (data || []).map(({ login_code_hash: _hash, ...item }) => item) : [])
       : visibleData;
-  }
+  }));
   let adminProfile = {
     id: session.admin_user_id || null,
     name: session.admin_name || "最高管理員",
@@ -319,17 +326,26 @@ async function loadAdminData(session: Record<string, unknown>) {
     permissions: session.is_super_admin ? { all: true } : {}
   };
   if (!session.is_super_admin && session.admin_user_id) {
-    const { data } = await db.from("admin_users").select("id,name,active,permissions").eq("id", session.admin_user_id).single();
+    const { data } = await db.from("admin_users").select("id,name,active,permissions,extension,avatar_url,avatar_name").eq("id", session.admin_user_id).single();
     if (!data?.active) throw new Error("ADMIN_DISABLED");
     adminProfile = { ...adminProfile, ...data, is_super_admin: false };
   }
   return { data: result, admin_profile: adminProfile };
 }
 
+const adminPermissionProfiles = new WeakMap<object, Promise<Record<string, unknown> | null>>();
+
 async function adminCan(session: Record<string, unknown>, permission: string) {
   if (session.is_super_admin) return true;
   if (!session.admin_user_id) return false;
-  const { data } = await db.from("admin_users").select("active,permissions").eq("id", session.admin_user_id).single();
+  if (!adminPermissionProfiles.has(session)) {
+    adminPermissionProfiles.set(session, (async () => {
+      const { data, error } = await db.from("admin_users").select("active,permissions").eq("id", session.admin_user_id).single();
+      if (error) throw error;
+      return data;
+    })());
+  }
+  const data = await adminPermissionProfiles.get(session);
   if (!data?.active) return false;
   const permissions = (data.permissions || {}) as Record<string, boolean>;
   if (permissions[permission]) return true;
@@ -547,8 +563,35 @@ const tablePermission: Record<string, string> = {
   mail_shipments: "mailManagement",
   hiring_pages: "hiringManagement",
   hiring_applications: "hiringManagement",
-  dispatch_orders: "dispatchCenter"
+  dispatch_orders: "dispatchCenter",
+  staff_announcements: "internalAnnouncements",
+  staff_calendar_events: "internalCalendar"
 };
+
+function sanitizeStaffRecord(table: string, input: Record<string, unknown>, session: Record<string, unknown>, creating: boolean) {
+  const title = compactText(input.title).slice(0, 160);
+  if (!title) throw new Error("請填寫標題");
+  const record: Record<string, unknown> = { title, content: compactText(input.content), updated_at: new Date().toISOString() };
+  if (table === "staff_announcements") {
+    if (!record.content) throw new Error("請填寫公告內容");
+    record.pinned = input.pinned === true || input.pinned === "true";
+  } else {
+    const date = compactText(input.event_date);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) throw new Error("請填寫有效活動日期");
+    record.event_date = date;
+    record.start_time = compactText(input.start_time) || null;
+    record.end_time = compactText(input.end_time) || null;
+    if (record.end_time && (!record.start_time || String(record.end_time) < String(record.start_time))) throw new Error("結束時間不可早於開始時間");
+    record.location = compactText(input.location).slice(0, 200);
+    record.category = ["meeting", "event", "reminder"].includes(String(input.category)) ? input.category : "meeting";
+  }
+  if (creating) {
+    if (input.id) record.id = input.id;
+    record.author_id = session.is_super_admin ? "super-admin" : session.admin_user_id;
+    record.author_name = compactText(session.admin_name, "管理員");
+  }
+  return record;
+}
 
 function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
   const output: Record<string, unknown> = { ...item };
@@ -915,9 +958,14 @@ Deno.serve(async (req) => {
       }
       const codeHash = await hashCode(loginCode);
       const { data: adminUser, error } = await db.from("admin_users")
-        .select("id,name,active,permissions").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
+        .select("id,name,active,permissions,extension,avatar_url,avatar_name").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
       if (!adminUser) return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
+      if (!adminUser.extension) {
+        const { error: extensionError } = await db.from("admin_users").update({ extension: loginCode }).eq("id", adminUser.id);
+        if (extensionError) throw extensionError;
+        adminUser.extension = loginCode;
+      }
       const sessionData = await createSession("admin", adminUser.id, { name: adminUser.name });
       await recordLogin(req, {
         actor_type: "admin",
@@ -1158,7 +1206,7 @@ Deno.serve(async (req) => {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
       const [users, sent, received] = await Promise.all([
-        db.from("admin_users").select("id,name,active").eq("active", true).order("name", { ascending: true }),
+        db.from("admin_users").select("id,name,active,extension,avatar_url,avatar_name").eq("active", true).order("name", { ascending: true }),
         db.from("admin_chat_messages").select("*").eq("sender_id", myChatId).order("created_at", { ascending: true }),
         db.from("admin_chat_messages").select("*").eq("receiver_id", myChatId).order("created_at", { ascending: true })
       ]);
@@ -1168,7 +1216,7 @@ Deno.serve(async (req) => {
       const byId = new Map<string, Record<string, unknown>>();
       [...(sent.data || []), ...(received.data || [])].forEach((item) => byId.set(String(item.id), item));
       const messages = [...byId.values()].sort((a, b) => compactText(a.created_at).localeCompare(compactText(b.created_at)));
-      return json({ admin_users: users.data || [], admin_chat_messages: messages });
+      return json(await signStorageUrls({ admin_users: users.data || [], admin_chat_messages: messages }));
     }
     if (body.action === "send_admin_chat_message") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
@@ -1209,6 +1257,9 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
+    if (["staff_announcements", "staff_calendar_events"].includes(body.table) && session.session_type !== "admin") {
+      return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+    }
 
     if (session.session_type === "driver") {
       if (body.action === "insert" && body.table === "announcement_reads") {
@@ -1282,6 +1333,9 @@ Deno.serve(async (req) => {
       const isVehicleLoanSelfAction = body.table === "vehicle_loans" && ["insert", "update"].includes(String(body.action || ""));
       if (permission && !isVehicleLoanSelfAction && !(await adminCan(session, permission))) {
         return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
+      }
+      if (["staff_announcements", "staff_calendar_events"].includes(body.table) && ["insert", "update"].includes(body.action)) {
+        body.record = sanitizeStaffRecord(body.table, body.record || {}, session, body.action === "insert");
       }
       if (body.table === "vehicle_loans") {
         if (body.action === "insert") {
@@ -1420,6 +1474,7 @@ Deno.serve(async (req) => {
       }
       if (body.table === "admin_users") {
         if (!body.record.login_code) return json({ error: "ADMIN_CODE_REQUIRED" }, 400);
+        body.record.extension = compactText(body.record.extension || normalizeLoginCode(body.record.login_code)).slice(0, 30);
         body.record.login_code_hash = await hashCode(body.record.login_code);
         delete body.record.login_code;
       }
@@ -1456,7 +1511,10 @@ Deno.serve(async (req) => {
         delete body.record.login_code;
       }
       if (body.table === "admin_users") {
-        if (body.record.login_code) body.record.login_code_hash = await hashCode(body.record.login_code);
+        if (body.record.login_code) {
+          body.record.login_code_hash = await hashCode(body.record.login_code);
+          body.record.extension = compactText(body.record.extension || normalizeLoginCode(body.record.login_code)).slice(0, 30);
+        }
         delete body.record.login_code;
       }
       let query = db.from(body.table).update(body.record).eq("id", body.id);

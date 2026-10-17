@@ -1,6 +1,6 @@
 (function () {
   const cfg = window.AFIDE_CONFIG || {};
-  const logoUrl = "https://www.heycar.com.tw/images/heycar_logo.png";
+  const logoUrl = "./assets/heycar-afide-logo.png";
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const weatherAirports = [
@@ -175,7 +175,7 @@
     "hiring_pages",
     "hiring_applications",
     "dispatch_orders",
-    "admin_chat_messages"
+    "admin_chat_messages", "staff_announcements", "staff_calendar_events"
   ];
 
   const insuranceStatuses = [
@@ -301,7 +301,7 @@
     }],
     hiring_applications: [],
     dispatch_orders: [],
-    admin_chat_messages: []
+    admin_chat_messages: [], staff_announcements: [], staff_calendar_events: []
   };
 
   function uid() {
@@ -445,7 +445,7 @@
         state.user = null;
         state.partner = null;
         restoreViewState("admin");
-        if (initialAdminView) state.adminView = initialAdminView;
+        state.adminView = initialAdminView || "home";
         return;
       }
       if (saved.type === "partner" && saved.user) {
@@ -1560,7 +1560,7 @@
           <header class="topbar admin-topbar">
             <div class="brand compact-brand">
               <button class="ghost-btn menu-btn" data-action="toggle-admin-sidebar" aria-label="開啟選單">☰</button>
-              <button class="brand-logo-button" data-admin-view="drivers" title="回到駕駛管理"><img src="${logoUrl}" alt="heycar logo"></button>
+              <button class="brand-logo-button" data-admin-view="home" title="回到首頁"><img src="${logoUrl}" alt="heycar logo"></button>
               <div class="brand-copy">
                 <div class="brand-title">管理後台</div>
                 <div class="brand-subtitle">${escapeHtml(state.adminProfile?.name || "亞菲得車隊管理")}</div>
@@ -3549,6 +3549,9 @@
   }
 
   const adminNavLabels = {
+    home: "首頁",
+    internalAnnouncements: "公司內部公告發布",
+    internalCalendar: "員工行事曆編輯",
     adminUsers: "權限管理",
     drivers: "駕駛管理",
     vehicles: "車輛管理",
@@ -3581,6 +3584,7 @@
   };
 
   const adminNavDepartments = [
+    ["員工辦公室", ["home"]],
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["dispatchCenter", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
@@ -3591,11 +3595,11 @@
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
 
   function adminPermissionCatalog() {
-    return adminNavDepartments.flatMap(([department, keys]) =>
+    return [["internalAnnouncements", "公司內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
       keys
-        .filter((key) => !["adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
+        .filter((key) => !["home", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
         .map((key) => [key, adminNavLabels[key] || key, department])
-    );
+    )];
   }
 
   function groupedAdminNav(nav) {
@@ -3713,7 +3717,15 @@
   async function loadAdminChat() {
     if (!state.admin || !state.apiSession) return;
     const result = await apiRequest("load_admin_chat");
-    state.data.admin_users = result.admin_users || state.data.admin_users || [];
+    if (result.admin_users) {
+      const existing = new Map((state.data.admin_users || []).map(user => [user.id, user]));
+      const directory = result.admin_users.map(user => ({ ...existing.get(user.id), ...user }));
+      if (adminCan("super")) {
+        const ids = new Set(directory.map(user => user.id));
+        directory.push(...[...existing.values()].filter(user => !ids.has(user.id)));
+      }
+      state.data.admin_users = directory;
+    }
     state.data.admin_chat_messages = result.admin_chat_messages || [];
     if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
     state.adminChatError = "";
@@ -3746,7 +3758,7 @@
     if (!state.adminChatContactId && selectedId) state.adminChatContactId = selectedId;
     const unread = adminUnreadChatCount();
     const emojis = ["😀", "😄", "👍", "🙏", "✅", "❤️", "🚗", "✈️", "🔥"];
-    return `<section class="admin-chat-widget ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
+    return `<section class="admin-chat-widget ${state.adminChatFromHome ? "is-staff-chat" : ""} ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
       <button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" onclick="this.closest('.admin-chat-widget').classList.toggle('is-open')" aria-label="開啟即時對話">
         <span>💬</span>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}
       </button>
@@ -3778,8 +3790,77 @@
   }
 
   function adminHome() {
-    const profile = state.adminProfile || {};
-    return `<div class="admin-home-grid"><section class="admin-home-profile"><div class="admin-avatar">${escapeHtml(String(profile.name || "管制中心").slice(0, 1))}</div><div><h2>首頁</h2><p>${escapeHtml(profile.name || "管理員")}　分機／登入代碼：${escapeHtml(profile.login_code || "-")}</p></div></section><section class="admin-home-card"><h3>公告欄</h3><p>最新公告與車隊通知</p><button class="primary-btn" data-admin-view="announcements">查看公告</button></section><section class="admin-home-card"><h3>亞菲得行事曆</h3><p>查看與編輯車隊行程</p><button class="primary-btn" data-admin-view="calendar">開啟行事曆</button></section><section class="admin-home-card"><h3>即時通訊</h3><p>直接聯絡管理團隊與司機</p><button class="primary-btn" data-admin-view="messagesCenter">開啟通訊</button></section></div>`;
+    const announcements = [...(state.data.staff_announcements || [])].sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.created_at).localeCompare(String(a.created_at)));
+    const people = (state.data.admin_users || []).filter(user => user.active !== false);
+    const todayEvents = (state.data.staff_calendar_events || []).filter(event => event.event_date === today());
+    const dateLabel = new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long" }).format(new Date());
+    return `<div class="staff-home">
+      <header class="staff-welcome"><div><span class="staff-eyebrow">HEY!CAR · 員工辦公室</span><h1>${escapeHtml(state.adminProfile?.name || "夥伴")}，歡迎回來</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-today"><span>${escapeHtml(dateLabel)}</span><strong>今天有 ${todayEvents.length} 個行程</strong></div></header>
+      <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點選同事頭像，開啟即時對話</p></div></div>
+        <div class="staff-people-list">${people.length ? people.map(user => `<button class="staff-person ${user.id === currentAdminChatId() ? "is-self" : ""}" type="button" data-open-staff-chat="${escapeHtml(user.id)}" ${user.id === currentAdminChatId() ? "disabled" : ""} aria-label="與${escapeHtml(user.name)}聊天">${staffAvatar(user)}<strong>${escapeHtml(user.name)}</strong><small>${user.id === currentAdminChatId() ? "你 · " : ""}${user.extension ? `分機 ${escapeHtml(user.extension)}` : "分機未設定"}</small></button>`).join("") : `<div class="staff-empty">尚未建立夥伴資料，請在權限管理新增內部帳號與頭像。</div>`}</div>
+      </section>
+      <div class="staff-dashboard"><section class="staff-card staff-notice-board"><div class="staff-section-head"><div><span class="staff-eyebrow">COMPANY NEWS</span><h2>公司內部公告 <span class="staff-count">${announcements.length}</span></h2></div>${adminCan("internalAnnouncements") ? `<button class="staff-create" data-modal="staffAnnouncement">＋ 發布公告</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
+        <div class="staff-notices">${announcements.length ? announcements.map(item => `<article class="staff-notice ${item.pinned ? "is-pinned" : ""}"><div class="staff-notice-meta"><span class="staff-category">${item.pinned ? "置頂公告" : "公司消息"}</span><time>${escapeHtml(fmtDate(item.created_at))}</time></div><button class="staff-notice-title" data-staff-detail="staff_announcements:${escapeHtml(item.id)}">${escapeHtml(item.title)}</button><p>${escapeHtml(item.content)}</p><footer><span>${escapeHtml(item.author_name || "管理員")} 發布</span>${adminCan("internalAnnouncements") ? rowActions("staffAnnouncement", "staff_announcements", item.id) : `<button class="staff-text-btn" data-staff-detail="staff_announcements:${escapeHtml(item.id)}">閱讀全文 →</button>`}</footer></article>`).join("") : `<div class="staff-empty"><span class="staff-empty-icon">▤</span><strong>新的消息，從這裡開始</strong><p>公司公告會顯示在這裡，讓每位夥伴掌握最新動態。</p></div>`}</div>
+      </section>${staffCalendar()}</div>
+    </div>`;
+  }
+
+  function staffAvatar(user = {}) {
+    const url = String(user.avatar_url || "");
+    const safeUrl = /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
+    return `<span class="staff-avatar">${safeUrl ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="lazy">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
+  }
+
+  async function compressStaffAvatar(file) {
+    const source = await createImageBitmap(file);
+    const side = Math.min(source.width, source.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 160;
+    canvas.getContext("2d").drawImage(source, (source.width-side)/2, (source.height-side)/2, side, side, 0, 0, 160, 160);
+    source.close?.();
+    return canvas.toDataURL("image/jpeg", 0.8);
+  }
+
+  function staffCalendar() {
+    const month = state.staffMonth || today().slice(0, 7);
+    const [year, monthNo] = month.split("-").map(Number);
+    const firstDay = new Date(year, monthNo - 1, 1).getDay();
+    const days = new Date(year, monthNo, 0).getDate();
+    const events = [...(state.data.staff_calendar_events || [])].sort((a,b) => String(a.event_date).localeCompare(String(b.event_date)) || String(a.start_time || "").localeCompare(String(b.start_time || "")));
+    const selected = state.staffDate?.startsWith(month) ? state.staffDate : today().startsWith(month) ? today() : `${month}-01`;
+    const selectedEvents = events.filter(event => event.event_date === selected);
+    const canEdit = adminCan("internalCalendar");
+    const cells = Array.from({ length: firstDay }, () => `<div class="staff-day is-blank" aria-hidden="true"></div>`);
+    for (let day = 1; day <= days; day++) {
+      const date = `${month}-${String(day).padStart(2,"0")}`;
+      const dayEvents = events.filter(event => event.event_date === date);
+      cells.push(`<button type="button" class="staff-day ${date === selected ? "is-selected" : ""} ${date === today() ? "is-today" : ""}" data-staff-date="${date}" aria-label="${date}，${dayEvents.length}個行程" aria-pressed="${date === selected}"><span>${day}</span><span class="staff-day-dots">${dayEvents.slice(0,3).map(event=>`<i class="staff-dot-${escapeHtml(event.category || "meeting")}"></i>`).join("")}</span></button>`);
+    }
+    return `<section class="staff-card staff-calendar"><div class="staff-section-head"><div><span class="staff-eyebrow">TEAM SCHEDULE</span><h2>亞菲得行事曆</h2></div>${canEdit ? `<button class="staff-create" data-staff-new-event="${selected}">＋ 新增行程</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
+      <div class="staff-calendar-toolbar"><strong>${year} 年 ${monthNo} 月</strong><div><button type="button" class="staff-today-btn" data-staff-month="today">今天</button><button type="button" data-staff-month="-1" aria-label="上個月">‹</button><button type="button" data-staff-month="1" aria-label="下個月">›</button></div></div>
+      <div class="staff-calendar-grid"><div class="staff-weekdays">${["日","一","二","三","四","五","六"].map(day=>`<span>${day}</span>`).join("")}</div><div class="staff-days">${cells.join("")}</div></div>
+      <div class="staff-agenda"><div class="staff-agenda-head"><strong>${escapeHtml(selected.slice(5).replace("-", " / "))} 的行程</strong><small>${selectedEvents.length} 個行程</small></div>${selectedEvents.length ? selectedEvents.map(event=>`<article class="staff-event"><div class="staff-event-time">${event.start_time ? escapeHtml(event.start_time.slice(0,5)) : "全天"}<small>${event.end_time ? escapeHtml(event.end_time.slice(0,5)) : ""}</small></div><div class="staff-event-body"><button data-staff-detail="staff_calendar_events:${escapeHtml(event.id)}">${escapeHtml(event.title)}</button>${event.location ? `<p>${escapeHtml(event.location)}</p>` : ""}<small>${escapeHtml(({ meeting:"會議",event:"活動",reminder:"提醒" })[event.category] || "行程")}</small></div>${canEdit ? `<button class="staff-text-btn" data-modal="staffCalendarEvent" data-id="${escapeHtml(event.id)}">編輯</button>` : ""}</article>`).join("") : `<div class="staff-empty staff-empty-compact">當天沒有安排，留一點空間給新的計畫。</div>`}</div>
+    </section>`;
+  }
+
+  function staffAnnouncementForm(item = {}) {
+    return input("title", "公告標題", item.title, "text", true) + text("content", "公告內容", item.content) + checkbox("pinned", "置頂這則公告", item.pinned === true);
+  }
+
+  function staffCalendarEventForm(item = {}) {
+    return input("title", "行程名稱", item.title, "text", true) + input("event_date", "日期", item.event_date || state.staffDate || today(), "date", true) + input("start_time", "開始時間（留空為全天）", item.start_time?.slice(0,5), "time") + input("end_time", "結束時間", item.end_time?.slice(0,5), "time") + select("category", "行程類型", item.category || "meeting", [["meeting","會議"],["event","活動"],["reminder","提醒"]]) + input("location", "地點", item.location) + text("content", "說明", item.content);
+  }
+
+  function openStaffDetail(tableName, id) {
+    if (!state.admin || !["staff_announcements", "staff_calendar_events"].includes(tableName)) return;
+    const item = (state.data[tableName] || []).find(row=>row.id === id);
+    if (!item) return;
+    const isNotice = tableName === "staff_announcements";
+    const canEdit = adminCan(isNotice ? "internalAnnouncements" : "internalCalendar");
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<div class="modal staff-editor"><div class="modal-title"><div><small>${isNotice ? "公司內部公告" : "亞菲得行事曆"}</small><h3>${escapeHtml(item.title)}</h3></div></div><div class="staff-detail-body">${!isNotice ? `<p class="staff-detail-date">${escapeHtml(item.event_date)} ${escapeHtml(item.start_time?.slice(0,5) || "全天")} ${escapeHtml(item.end_time ? `– ${item.end_time.slice(0,5)}` : "")}</p><p>${escapeHtml(item.location || "")}</p>` : ""}<p class="staff-detail-content">${escapeHtml(item.content)}</p><small>${escapeHtml(item.author_name || "管理員")} · ${escapeHtml(fmtDate(item.created_at))}</small></div><div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button>${canEdit ? rowActions(isNotice ? "staffAnnouncement" : "staffCalendarEvent", tableName, id) : ""}</div></div>`;
+    document.body.appendChild(modal);
   }
 
   function renderAdmin() {
@@ -4319,13 +4400,13 @@
           const permissions = item.permissions || {};
           const enabled = catalog.filter(([key]) => adminPermissionEnabled(permissions, key));
           return `<article class="access-card">
-            <div class="access-avatar">${escapeHtml(String(item.name || "?").slice(-2))}</div>
+            ${staffAvatar(item)}
             <div class="access-card-body">
               <div class="access-card-head">
                 <strong>${escapeHtml(item.name)}</strong>
                 <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
               </div>
-              <small>${item.active === false ? "禁止登入" : "允許登入"}</small>
+              <small>${item.active === false ? "禁止登入" : "允許登入"} · 分機 ${escapeHtml(item.extension || "未設定")}</small>
               <p class="access-summary">${enabled.length ? `已開啟 ${enabled.length} 個功能：${enabled.slice(0, 4).map(([, label]) => label).join("、")}${enabled.length > 4 ? "..." : ""}` : "尚未開啟功能權限"}</p>
               ${rowActions("adminUser", "admin_users", item.id)}
             </div>
@@ -5385,7 +5466,13 @@
   }
 
   function openModal(type, id, preset = {}) {
+    if (["staffAnnouncement", "staffCalendarEvent"].includes(type) && (!state.admin || !adminCan(type === "staffAnnouncement" ? "internalAnnouncements" : "internalCalendar"))) {
+      showAlert("你有閱覽權限；發布或編輯請聯繫管理員開啟權限。", "需要編輯權限");
+      return;
+    }
     const map = {
+      staffAnnouncement: ["公司內部公告", "staff_announcements", staffAnnouncementForm],
+      staffCalendarEvent: ["員工行程", "staff_calendar_events", staffCalendarEventForm],
       adminUser: ["內部帳號", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
       driverOnboarding: ["上線進度", "drivers", driverOnboardingForm],
@@ -5456,7 +5543,8 @@
     }
     const modalClass = [
       type === "driver" ? "driver-editor-modal" : "",
-      type === "vehicle" ? "vehicle-editor-modal" : ""
+      type === "vehicle" ? "vehicle-editor-modal" : "",
+      ["staffAnnouncement", "staffCalendarEvent", "adminUser"].includes(type) ? "staff-editor" : ""
     ].filter(Boolean).join(" ");
     modal.innerHTML = `
       <div class="modal ${modalClass}">
@@ -5674,6 +5762,15 @@
       const permissionKeys = adminPermissionCatalog().map(([key]) => key);
       record.permissions = Object.fromEntries(permissionKeys.map((key) => [key, record[`permission_${key}`] === "true"]));
       Object.keys(record).filter((key) => key.startsWith("permission_")).forEach((key) => delete record[key]);
+    }
+    if (tableName === "staff_announcements") {
+      record.pinned = record.pinned === "true" || record.pinned === true;
+      if (!String(record.content || "").trim()) throw new Error("請填寫公告內容");
+    }
+    if (tableName === "staff_calendar_events") {
+      record.start_time = record.start_time || null;
+      record.end_time = record.end_time || null;
+      if (record.end_time && (!record.start_time || record.end_time < record.start_time)) throw new Error("結束時間不可早於開始時間");
     }
     if (tableName === "vehicle_loans") {
       record.vehicle_id = record.vehicle_id || null;
@@ -6728,7 +6825,7 @@
   function adminUserForm(item) {
     const permissions = item.permissions || { drivers: true, vehicles: true, loans: true, service_records: true, messages: true, finance: true, insurance: false };
     const permissionSections = adminNavDepartments.map(([department, keys]) => {
-      const items = keys.filter((key) => key !== "adminUsers").map((key) => [key, adminNavLabels[key] || key]);
+      const items = keys.filter((key) => !["adminUsers", "home"].includes(key)).map((key) => [key, adminNavLabels[key] || key]);
       if (!items.length) return "";
       return `<div class="permission-section field full">
         <h4>${escapeHtml(department)}</h4>
@@ -6739,8 +6836,11 @@
     }).join("");
     return input("name", "姓名", item.name, "text", true)
       + input("login_code", item.id ? "更新登入代碼（不修改可留白）" : "登入代碼", "", "password", !item.id)
+      + input("extension", "分機（留空會使用登入代碼）", item.extension)
+      + `<div class="field full staff-avatar-upload"><label>夥伴頭像</label><div class="staff-avatar-upload-row"><span data-staff-avatar-preview>${staffAvatar(item)}</span><div><input type="file" accept="image/png,image/jpeg,image/webp" data-staff-avatar-upload><small data-staff-avatar-status>上傳照片，首頁會以圓形頭像顯示</small><button type="button" class="staff-text-btn" data-staff-avatar-clear>移除照片</button></div></div><input type="hidden" name="avatar_url" value="${escapeHtml(item.avatar_url || "")}"><input type="hidden" name="avatar_name" value="${escapeHtml(item.avatar_name || "")}"></div>`
       + checkbox("active", "允許登入", item.active !== false)
       + `<div class="form-section-title field full">功能權限</div>`
+      + `<div class="permission-section field full"><h4>員工首頁</h4><small>所有內部員工皆可閱讀，以下權限控制發布與編輯。</small><div class="permission-form-grid">${checkbox("permission_internalAnnouncements", "公司內部公告發布", Boolean(permissions.internalAnnouncements))}${checkbox("permission_internalCalendar", "員工行事曆編輯", Boolean(permissions.internalCalendar))}</div></div>`
       + permissionSections;
   }
 
@@ -7456,11 +7556,12 @@
       clearSession();
       state.apiSession = "";
       if (hasApi) {
-        const attempts = [
-          ["driver", "login_driver", { phone: loginValue }],
-          ["admin", "login_admin", { code: loginValue }],
-          ["partner", "login_partner", { code: loginValue }]
-        ];
+        const driverAttempt = ["driver", "login_driver", { phone: loginValue }];
+        const adminAttempt = ["admin", "login_admin", { code: loginValue }];
+        const partnerAttempt = ["partner", "login_partner", { code: loginValue }];
+        const attempts = /^09\d{8}$/.test(loginValue)
+          ? [driverAttempt, adminAttempt, partnerAttempt]
+          : [adminAttempt, partnerAttempt, driverAttempt];
         let result = null;
         let loginType = "";
         let lastError = null;
@@ -7821,6 +7922,54 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    if (target?.dataset.staffDate) {
+      state.staffDate = target.dataset.staffDate;
+      render();
+      return;
+    }
+    if (target?.dataset.staffMonth) {
+      if (target.dataset.staffMonth === "today") {
+        state.staffMonth = today().slice(0, 7);
+        state.staffDate = today();
+      } else {
+        const [y,m] = (state.staffMonth || today().slice(0,7)).split("-").map(Number);
+        const next = new Date(y, m - 1 + Number(target.dataset.staffMonth), 1);
+        state.staffMonth = `${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,"0")}`;
+        state.staffDate = `${state.staffMonth}-01`;
+      }
+      render();
+      return;
+    }
+    if (target?.dataset.staffNewEvent) {
+      state.staffDate = target.dataset.staffNewEvent;
+      openModal("staffCalendarEvent", null, { event_date: state.staffDate });
+      return;
+    }
+    if (target?.dataset.staffDetail) {
+      const [tableName, id] = target.dataset.staffDetail.split(":");
+      openStaffDetail(tableName, id);
+      return;
+    }
+    if (target?.dataset.staffAvatarClear !== undefined) {
+      const form = target.closest("form");
+      form.querySelector('[name="avatar_url"]').value = "";
+      form.querySelector('[name="avatar_name"]').value = "";
+      form.querySelector('[data-staff-avatar-preview]').innerHTML = staffAvatar({ name: form.querySelector('[name="name"]').value });
+      form.querySelector('[data-staff-avatar-upload]').value = "";
+      return;
+    }
+    if (target?.dataset.openStaffChat) {
+      if (!state.admin || target.dataset.openStaffChat === currentAdminChatId()) return;
+      state.adminChatContactId = target.dataset.openStaffChat;
+      state.adminChatOpen = true;
+      state.adminChatFromHome = true;
+      state.adminChatError = "";
+      render();
+      try { await loadAdminChat(); await markAdminChatRead(); } catch(error) { state.adminChatError = `即時通訊載入失敗：${error.message || error}`; }
+      updateAdminChatDom();
+      document.querySelector('#adminChatForm input')?.focus();
+      return;
+    }
     if (target?.dataset.action === "bulk-maintenance-notification") {
       await sendBulkMaintenanceNotification();
       return;
@@ -7962,12 +8111,16 @@
     }
     if (target?.dataset.modal) {
       e.preventDefault();
+      if (["staffAnnouncement", "staffCalendarEvent"].includes(target.dataset.modal)) target.closest(".modal-backdrop")?.remove();
       openModal(target.dataset.modal, target.dataset.id);
       return;
     }
     if (target?.dataset.delete) {
       const [tableName, id] = target.dataset.delete.split(":");
-      await remove(tableName, id);
+      try {
+        await remove(tableName, id);
+        if (["staff_announcements", "staff_calendar_events"].includes(tableName) && !(state.data[tableName] || []).some(row => row.id === id)) target.closest(".modal-backdrop")?.remove();
+      } catch(error) { await showAlert(error.message || error, "刪除失敗"); }
       return;
     }
     if (target?.dataset.closeModal !== undefined) {
@@ -8774,6 +8927,25 @@
   });
 
   document.addEventListener("change", async (e) => {
+    if (e.target.matches('[data-staff-avatar-upload]') && e.target.files?.[0]) {
+      const file = e.target.files[0];
+      const form = e.target.closest("form");
+      const status = form.querySelector('[data-staff-avatar-status]');
+      const submit = form.querySelector('[type="submit"]');
+      try {
+        e.target.disabled = true;
+        if (submit) submit.disabled = true;
+        status.textContent = "正在處理照片…";
+        if (!["image/png","image/jpeg","image/webp"].includes(file.type) || file.size > 10*1024*1024) throw new Error("請選擇 10 MB 以內的 JPG、PNG 或 WebP 照片");
+        const url = await compressStaffAvatar(file);
+        form.querySelector('[name="avatar_url"]').value = url;
+        form.querySelector('[name="avatar_name"]').value = file.name;
+        form.querySelector('[data-staff-avatar-preview]').innerHTML = staffAvatar({ name: form.querySelector('[name="name"]').value, avatar_url: url });
+        status.textContent = "照片已壓縮，儲存帳號後生效";
+      } catch(error) { status.textContent = error.message || "照片處理失敗"; }
+      finally { e.target.disabled = false; if (submit) submit.disabled = false; }
+      return;
+    }
     const adminChatContact = e.target.closest("[data-admin-chat-contact]");
     if (adminChatContact) {
       state.adminChatContactId = adminChatContact.value || "";
