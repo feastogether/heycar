@@ -113,6 +113,19 @@ async function uiTests(){
     profile={...profile,is_super_admin:true,permissions:{all:true}};
     await page.reload();await page.locator('.staff-home').waitFor();
     await page.setViewportSize({width:1440,height:1000});
+    const toggle=page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]');
+    await toggle.click();
+    assert(await page.locator('.admin-sidebar').isVisible());
+    const expandedWidth=(await page.locator('.admin-workspace').boundingBox()).width;
+    await page.locator('.admin-sidebar-head [data-action="toggle-admin-sidebar"]').click();
+    assert.equal(await page.locator('.admin-sidebar').isVisible(),false);
+    assert((await page.locator('.admin-workspace').boundingBox()).width>expandedWidth+150);
+    assert.equal(await toggle.getAttribute('aria-expanded'),'false');
+    await page.reload();await page.locator('.staff-home').waitFor();
+    assert.equal(await page.locator('.admin-sidebar').isVisible(),false);
+    await toggle.click();
+    await page.reload();await page.locator('.staff-home').waitFor();
+    assert(await page.locator('.admin-sidebar').isVisible());
     await page.screenshot({path:path.join(root,'tmp/staff-home-desktop.png'),fullPage:true,animations:'disabled'});
     await page.locator('.staff-create[data-modal="staffAnnouncement"]').click();
     await page.locator('#modalForm [name="title"]').fill('新增員工公告');
@@ -124,6 +137,7 @@ async function uiTests(){
     await page.locator('#modalForm [type="submit"]').click();
     await page.getByRole('button',{name:'新增內部會議',exact:true}).waitFor();
     await page.locator('[data-admin-view="adminUsers"]').click();
+    assert(await page.locator('.admin-sidebar').isVisible());
     await page.locator('[data-modal="adminUser"][data-id="amy"]').click();
     const avatar = await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=canvas.height=160;const c=canvas.getContext('2d');c.fillStyle='#395d78';c.fillRect(0,0,160,160);return canvas.toDataURL('image/png').split(',')[1]});
     await page.locator('[data-staff-avatar-upload]').setInputFiles({name:'avatar.png',mimeType:'image/png',buffer:Buffer.from(avatar,'base64')});
@@ -138,6 +152,7 @@ async function uiTests(){
     assert(await page.getByText('分機 789',{exact:true}).isVisible());
     assert(await page.getByRole('button',{name:'新增員工公告',exact:true}).isVisible());
     await page.setViewportSize({width:390,height:844});
+    await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
     await page.screenshot({path:path.join(root,'tmp/staff-home-mobile.png'),fullPage:true,animations:'disabled'});
     assert.deepEqual(errors,[]);
     console.log('PASS: full app navigation, notice/calendar save and reload, avatar upload, permissions, teammate chat, 320/390/768/1440 layouts');

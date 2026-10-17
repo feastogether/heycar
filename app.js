@@ -1559,7 +1559,7 @@
         <div class="app-shell admin-shell">
           <header class="topbar admin-topbar">
             <div class="brand compact-brand">
-              <button class="ghost-btn menu-btn" data-action="toggle-admin-sidebar" aria-label="開啟選單">☰</button>
+              <button class="ghost-btn menu-btn" data-action="toggle-admin-sidebar" aria-label="${state.adminCollapsed ? "開啟選單" : "收合選單"}" aria-expanded="${!state.adminCollapsed}" aria-controls="adminSidebar">☰</button>
               <button class="brand-logo-button" data-admin-view="home" title="回到首頁"><img src="${logoUrl}" alt="heycar logo"></button>
               <div class="brand-copy">
                 <div class="brand-title">管理後台</div>
@@ -3938,7 +3938,7 @@
     layout(`
       <div class="admin-layout ${state.adminCollapsed ? "" : "is-menu-open"}">
         ${state.adminCollapsed ? "" : `<button class="admin-menu-backdrop" data-action="toggle-admin-sidebar" aria-label="關閉選單"></button>`}
-        <aside class="admin-sidebar">
+        <aside class="admin-sidebar" id="adminSidebar">
           <div class="admin-sidebar-head">
             <strong>功能選單</strong>
             <button class="ghost-btn icon-btn" data-action="toggle-admin-sidebar" title="關閉選單">×</button>
@@ -8344,8 +8344,10 @@
     if (target.dataset.adminView) {
       state.adminView = target.dataset.adminView;
       if (state.adminView === "dispatchCenter") resetDispatchFilters();
-      state.adminCollapsed = true;
-      localStorage.setItem("afide-admin-collapsed", "true");
+      if (window.matchMedia("(max-width: 1199px)").matches) {
+        state.adminCollapsed = true;
+        localStorage.setItem("afide-admin-collapsed", "true");
+      }
       render();
       if (state.adminView === "storage" && !state.storageFiles.length) await loadStorageUsage();
       if (state.adminView === "trafficMonitor" && !state.storageFiles.length) await loadStorageUsage();
