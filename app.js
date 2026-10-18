@@ -112,6 +112,38 @@
   let satelliteMap = null;
   let satelliteMarkerLayer = null;
   let satelliteLeafletPromise = null;
+  let adminFullDataReady = false;
+  let adminFullDataPromise = null;
+  let adminWarmupScheduled = false;
+  let officeWeatherPromise = null;
+  let officeWeatherData = null;
+  let officeWeatherFailedAt = 0;
+  const optionalLibraryPromises = new Map();
+
+  function ensureOptionalLibrary(name) {
+    const libraries = {
+      excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
+      ocr: ["Tesseract", "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"],
+      line: ["liff", "https://static.line-scdn.net/liff/edge/2/sdk.js"]
+    };
+    const library = libraries[name];
+    if (!library) return Promise.reject(new Error("未知的功能套件"));
+    if (window[library[0]]) return Promise.resolve(window[library[0]]);
+    if (optionalLibraryPromises.has(name)) return optionalLibraryPromises.get(name);
+    const promise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      const fail = () => { clearTimeout(timeout); script.remove(); optionalLibraryPromises.delete(name); reject(new Error("功能套件載入失敗，請稍後再試")); };
+      const timeout = setTimeout(fail, 20000);
+      script.async = true;
+      script.src = library[1];
+      script.dataset.optionalLibrary = name;
+      script.onload = () => { if (!window[library[0]]) return fail(); clearTimeout(timeout); resolve(window[library[0]]); };
+      script.onerror = fail;
+      document.head.appendChild(script);
+    });
+    optionalLibraryPromises.set(name, promise);
+    return promise;
+  }
 
   window.matchMedia("(max-width: 900px)").addEventListener("change", event => {
     state.dispatchFiltersOpen = false;
@@ -175,7 +207,7 @@
     "hiring_pages",
     "hiring_applications",
     "dispatch_orders",
-    "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes"
+    "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes", "maintenance_notification_batches"
   ];
 
   const insuranceStatuses = [
@@ -301,7 +333,7 @@
     }],
     hiring_applications: [],
     dispatch_orders: [],
-    admin_chat_messages: [], staff_announcements: [], staff_calendar_events: [], staff_notes: []
+    admin_chat_messages: [], staff_announcements: [], staff_calendar_events: [], staff_notes: [], maintenance_notification_batches: []
   };
 
   function uid() {
@@ -518,7 +550,11 @@
   }
 
   async function initLiffAutoLogin() {
-    if (state.lineAutoLoginTried || state.apiSession || !cfg.LIFF_ID || !window.liff) return;
+    if (state.lineAutoLoginTried || state.apiSession || !cfg.LIFF_ID) return;
+    if (!window.liff) {
+      if (!/Line\//i.test(navigator.userAgent)) return;
+      try { await ensureOptionalLibrary("line"); } catch { return; }
+    }
     if (typeof window.liff.isInClient === "function" && !window.liff.isInClient()) return;
     state.lineAutoLoginTried = true;
     state.loginLoading = true;
@@ -713,11 +749,15 @@
     return result;
   }
 
-  async function loadAll() {
+  async function loadAll(options = {}) {
     state.error = "";
     if (hasApi && state.apiSession) {
-      const result = await apiRequest("load");
-      state.data = result.data || emptyData();
+      const session = state.apiSession;
+      const scope = state.admin && options.homeOnly ? "home" : state.admin && options.workspaceOnly ? "workspace" : "all";
+      const result = await apiRequest("load", { scope });
+      if (session !== state.apiSession) return;
+      state.data = scope === "workspace" ? { ...state.data, ...result.data } : { ...emptyData(), ...result.data };
+      if (state.admin && scope !== "home") adminFullDataReady = true;
       if (result.user) state.user = result.user;
       if (result.partner) state.partner = result.partner;
       if (result.admin_profile) state.adminProfile = result.admin_profile;
@@ -728,6 +768,14 @@
       return;
     }
     state.data = emptyData();
+  }
+
+  function ensureAdminWorkspaceData() {
+    if (!state.admin || !state.apiSession || adminFullDataReady) return Promise.resolve();
+    if (!adminFullDataPromise) {
+      adminFullDataPromise = loadAll({ workspaceOnly: true }).finally(() => { adminFullDataPromise = null; });
+    }
+    return adminFullDataPromise;
   }
 
   async function insert(table, record) {
@@ -1264,10 +1312,11 @@
   }
 
   async function runDriverLicenseOcr(file, field) {
-    if (!window.Tesseract || !file?.type?.startsWith("image/")) return;
+    if (!file?.type?.startsWith("image/")) return;
     const form = field?.closest("form");
     const status = field?.querySelector("[data-attachment-status]");
     try {
+      await ensureOptionalLibrary("ocr");
       if (status) status.textContent = "OCR \u8fa8\u8b58\u4e2d...";
       const source = await prepareOcrImage(file);
       const result = await window.Tesseract.recognize(source, "chi_tra+eng", {
@@ -1577,6 +1626,7 @@
         </div>
       `;
       loadAirportWeather();
+      if (state.adminView === "home") loadOfficeWeather();
       return;
     }
 
@@ -3537,7 +3587,6 @@
       marquee: ["messages"],
       emergencyEvents: ["messages"],
       driverHelperArticles: ["messages"],
-      driverEvaluations: ["drivers"],
       loginSlogans: ["messages"],
       driverLinks: ["messages"],
       payments: ["finance"],
@@ -3550,7 +3599,7 @@
 
   const adminNavLabels = {
     home: "首頁",
-    internalAnnouncements: "公司內部公告發布",
+    internalAnnouncements: "內部公告發布",
     internalCalendar: "員工行事曆編輯",
     adminUsers: "權限管理",
     drivers: "駕駛管理",
@@ -3558,7 +3607,6 @@
     vehicleLoans: "車輛租借",
     driverOnboarding: "上線管理",
     dispatchCenter: "派趟中心",
-    driverEvaluations: "評核表單",
     serviceRecords: "車輛履歷",
     insuranceCenter: "保險中心",
     insurancePartners: "廠商管理",
@@ -3595,7 +3643,7 @@
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
 
   function adminPermissionCatalog() {
-    return [["internalAnnouncements", "公司內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
+    return [["internalAnnouncements", "內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
       keys
         .filter((key) => !["home", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
         .map((key) => [key, adminNavLabels[key] || key, department])
@@ -3796,23 +3844,32 @@
     if (!people.some(user => user.id === me)) people.unshift({ ...state.adminProfile, id: me, name: me === "super-admin" ? "系統管理員" : currentAdminChatName() });
     if (!people.some(user => user.id === "super-admin")) people.push({ id: "super-admin", name: "系統管理員" });
     people.sort((a,b) => Number(b.id === me) - Number(a.id === me));
-    const todayEvents = (state.data.staff_calendar_events || []).filter(event => event.event_date === today());
     const dateLabel = new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long" }).format(new Date());
     return `<div class="staff-home">
-      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-today"><span>${escapeHtml(dateLabel)}</span><strong>今天有 ${todayEvents.length} 個行程</strong></div></header>
+      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><aside class="staff-office-weather"><div class="staff-weather-heading"><strong>台中市北區</strong><span>${escapeHtml(dateLabel)}</span></div><div data-office-weather>${officeWeatherMarkup()}</div></aside></header>
       <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點自己留小紙條，點同事開啟對話</p></div></div>
         <div class="staff-people-list">${people.map(staffPersonMarkup).join("")}</div>
       </section>
-      <div class="staff-dashboard"><section class="staff-card staff-notice-board"><div class="staff-section-head"><div><h2>公司內部公告 <span class="staff-count">${announcements.length}</span></h2></div>${adminCan("internalAnnouncements") ? `<button class="staff-create" data-modal="staffAnnouncement">＋ 發布公告</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
-        <div class="staff-notices">${announcements.length ? announcements.map(item => `<article class="staff-notice ${item.pinned ? "is-pinned" : ""}"><div class="staff-notice-meta"><span class="staff-category">${item.pinned ? "置頂公告" : "公司消息"}</span><time>${escapeHtml(fmtDate(item.created_at))}</time></div><button class="staff-notice-title" data-staff-detail="staff_announcements:${escapeHtml(item.id)}">${escapeHtml(item.title)}</button><p>${escapeHtml(item.content)}</p><footer><span>${escapeHtml(item.author_name || "管理員")} 發布</span>${adminCan("internalAnnouncements") ? rowActions("staffAnnouncement", "staff_announcements", item.id) : `<button class="staff-text-btn" data-staff-detail="staff_announcements:${escapeHtml(item.id)}">閱讀全文 →</button>`}</footer></article>`).join("") : `<div class="staff-empty"><span class="staff-empty-icon">▤</span><strong>新的消息，從這裡開始</strong><p>公司公告會顯示在這裡，讓每位夥伴掌握最新動態。</p></div>`}</div>
+      <div class="staff-dashboard"><section class="staff-card staff-notice-board"><div class="staff-section-head"><div><h2>內部公告 <span class="staff-count">${announcements.length}</span></h2></div>${adminCan("internalAnnouncements") ? `<button class="staff-create" data-modal="staffAnnouncement">＋ 發布公告</button>` : `<span class="staff-read-label">員工閱覽</span>`}</div>
+        <div class="staff-notices">${announcements.length ? announcements.map(staffNoticeRow).join("") : `<div class="staff-empty"><span class="staff-empty-icon">▤</span><strong>新的消息，從這裡開始</strong><p>內部公告會顯示在這裡。</p></div>`}</div>
       </section>${staffCalendar()}</div>
     </div>`;
   }
 
   function staffAvatar(user = {}) {
-    const url = String(user.avatar_url || "");
-    const safeUrl = /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
-    return `<span class="staff-avatar">${safeUrl ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="lazy">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
+    const isSuper = user.id === "super-admin";
+    const url = isSuper ? "./assets/heycar-afide-logo.png" : String(user.avatar_url || "");
+    const safeUrl = isSuper || /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
+    return `<span class="staff-avatar">${safeUrl ? `<img ${isSuper ? 'class="staff-super-avatar"' : ""} src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="lazy">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
+  }
+
+  function staffNoticeAuthor(item) {
+    const user = (state.data.admin_users || []).find(user => user.id === item.author_id);
+    return user || { id: item.author_id, name: item.author_name || "管理員" };
+  }
+
+  function staffNoticeRow(item) {
+    return `<article class="staff-notice staff-notice-compact ${item.pinned ? "is-pinned" : ""}"><div class="staff-notice-line"><span class="staff-category">公司消息</span><button class="staff-notice-title" data-staff-detail="staff_announcements:${escapeHtml(item.id)}" title="${escapeHtml(item.title)}">${item.pinned ? '<span class="staff-pin" aria-label="置頂">●</span>' : ""}${escapeHtml(item.title)}</button><span class="staff-notice-author" title="${escapeHtml(item.author_name || "管理員")}">${staffAvatar(staffNoticeAuthor(item))}</span></div><div class="staff-notice-bottom"><time>${escapeHtml(fmtDate(item.created_at))}</time>${adminCan("internalAnnouncements") ? rowActions("staffAnnouncement", "staff_announcements", item.id) : ""}</div></article>`;
   }
 
   function staffPersonMarkup(user) {
@@ -3829,7 +3886,7 @@
     const existing = (state.data.staff_notes || []).find(item => item.owner_id === ownerId)?.content || "";
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
-    modal.innerHTML = `<section class="modal staff-editor staff-note-editor" role="dialog" aria-modal="true" aria-labelledby="staffNoteTitle"><div class="modal-title"><div><small>與夥伴分享此刻的你</small><h3 id="staffNoteTitle">我的小紙條</h3></div><button type="button" class="staff-text-btn" data-close-modal aria-label="關閉小紙條">×</button></div><form id="staffNoteForm"><div class="staff-note-editor-body">${staffAvatar({ ...state.adminProfile, name: currentAdminChatName() })}<label for="staffNoteContent">現在想說些什麼？</label><textarea id="staffNoteContent" name="content" maxlength="60" rows="3" placeholder="例如：下午在外開會，有事請留言">${escapeHtml(existing)}</textarea><div class="staff-note-help"><span>夥伴會在你的頭像旁看到這段話</span><span data-staff-note-count>${[...existing].length} / 60</span></div><p class="error" data-staff-note-error hidden></p></div><div class="modal-actions"><button class="ghost-btn" type="button" data-staff-note-clear>清除內容</button><button class="primary-btn" type="submit">分享小紙條</button></div></form></section>`;
+    modal.innerHTML = `<section class="modal staff-editor staff-note-editor" role="dialog" aria-modal="true" aria-labelledby="staffNoteTitle"><div class="modal-title"><div><small>與夥伴分享此刻的你</small><h3 id="staffNoteTitle">我的小紙條</h3></div><button type="button" class="staff-text-btn" data-close-modal aria-label="關閉小紙條">×</button></div><form id="staffNoteForm"><div class="staff-note-editor-body">${staffAvatar({ ...state.adminProfile, id: ownerId, name: currentAdminChatName() })}<label for="staffNoteContent">現在想說些什麼？</label><textarea id="staffNoteContent" name="content" maxlength="60" rows="3" placeholder="例如：下午在外開會，有事請留言">${escapeHtml(existing)}</textarea><div class="staff-note-help"><span>夥伴會在你的頭像旁看到這段話</span><span data-staff-note-count>${[...existing].length} / 60</span></div><p class="error" data-staff-note-error hidden></p></div><div class="modal-actions"><button class="ghost-btn" type="button" data-staff-note-clear>清除內容</button><button class="primary-btn" type="submit">分享小紙條</button></div></form></section>`;
     document.body.appendChild(modal);
     const form = modal.querySelector("form");
     const textarea = form.querySelector("textarea");
@@ -3906,7 +3963,7 @@
     const canEdit = adminCan(isNotice ? "internalAnnouncements" : "internalCalendar");
     const modal = document.createElement("div");
     modal.className = "modal-backdrop";
-    modal.innerHTML = `<div class="modal staff-editor"><div class="modal-title"><div><small>${isNotice ? "公司內部公告" : "亞菲得行事曆"}</small><h3>${escapeHtml(item.title)}</h3></div></div><div class="staff-detail-body">${!isNotice ? `<p class="staff-detail-date">${escapeHtml(item.event_date)} ${escapeHtml(item.start_time?.slice(0,5) || "全天")} ${escapeHtml(item.end_time ? `– ${item.end_time.slice(0,5)}` : "")}</p><p>${escapeHtml(item.location || "")}</p>` : ""}<p class="staff-detail-content">${escapeHtml(item.content)}</p><small>${escapeHtml(item.author_name || "管理員")} · ${escapeHtml(fmtDate(item.created_at))}</small></div><div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button>${canEdit ? rowActions(isNotice ? "staffAnnouncement" : "staffCalendarEvent", tableName, id) : ""}</div></div>`;
+    modal.innerHTML = `<div class="modal staff-editor"><div class="modal-title"><div><small>${isNotice ? "內部公告" : "亞菲得行事曆"}</small><h3>${escapeHtml(item.title)}</h3></div></div><div class="staff-detail-body">${!isNotice ? `<p class="staff-detail-date">${escapeHtml(item.event_date)} ${escapeHtml(item.start_time?.slice(0,5) || "全天")} ${escapeHtml(item.end_time ? `– ${item.end_time.slice(0,5)}` : "")}</p><p>${escapeHtml(item.location || "")}</p>` : ""}<p class="staff-detail-content">${escapeHtml(item.content)}</p><div class="staff-detail-author" title="${escapeHtml(item.author_name || "管理員")}">${staffAvatar(staffNoticeAuthor(item))}<time>${escapeHtml(fmtDate(item.created_at))}</time></div></div><div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button>${canEdit ? rowActions(isNotice ? "staffAnnouncement" : "staffCalendarEvent", tableName, id) : ""}</div></div>`;
     document.body.appendChild(modal);
   }
 
@@ -3955,7 +4012,6 @@
       loginHistory: adminLoginHistory,
       drivers: adminDrivers,
       driverOnboarding: adminDriverOnboarding,
-      driverEvaluations: adminDriverEvaluations,
       hiringManagement: adminHiringManagement,
       vehicleTypes: adminVehicleTypes,
       dispatchCenter: adminDispatchCenter,
@@ -4000,6 +4056,14 @@
         <section class="admin-workspace">${body}</section>
       </div>
     `);
+    if (state.adminView === "home" && !adminFullDataReady && !adminWarmupScheduled && state.apiSession) {
+      adminWarmupScheduled = true;
+      const session = state.apiSession;
+      setTimeout(() => {
+        if (state.apiSession !== session) return;
+        ensureAdminWorkspaceData().catch(error => console.warn("Workspace prefetch deferred", error.message));
+      }, 250);
+    }
   }
 
   function adminDrivers() {
@@ -4022,281 +4086,6 @@
       </form>
       ${driverManagementRows()}
     `;
-  }
-
-  function adminDriverEvaluations() {
-    const drivers = [...(state.data.drivers || [])].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
-    return `
-      <div class="section-head">
-        <div>
-          <h2>評核表單</h2>
-          <small>將 CS-08-V2 亞菲得車隊司機評核表數位化，填寫後可列印或另存 PDF。</small>
-        </div>
-      </div>
-      <form id="driverEvaluationForm" class="evaluation-builder panel">
-        <div class="form-section-title field full">面訪基本資料</div>
-        <div class="field">
-          <label>帶入既有司機資料</label>
-          <select name="driver_id" data-evaluation-driver-select>
-            <option value="">不帶入，手動填寫</option>
-            ${drivers.map((driver) => `<option value="${driver.id}">${escapeHtml(driver.name || "-")}｜${escapeHtml(driver.phone || "-")}</option>`).join("")}
-          </select>
-        </div>
-        ${input("referrer", "推薦人", "", "text")}
-        ${input("interview_date", "面訪日期", today(), "date")}
-        ${input("driver_name", "姓名", "", "text", true)}
-        ${input("national_id", "身分證字號", "", "text")}
-        ${select("gender", "性別", "", [["", "未填寫"], ["男", "男"], ["女", "女"]])}
-        ${input("birth_date", "出生日期", "", "date")}
-        ${input("phone", "連絡電話", "", "tel")}
-        ${select("marital_status", "婚姻狀況", "", [["", "未填寫"], ["已婚", "已婚"], ["未婚", "未婚"]])}
-        ${input("address", "居住地址", "", "text")}
-        ${input("email", "信箱", "", "email")}
-        ${input("service_area", "服務區域", "", "text")}
-        ${select("has_car", "自有車輛", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${input("vehicle_plate", "車號", "", "text")}
-        ${select("license_type", "駕照種類", "", [["", "未填寫"], ["職業駕照", "職業駕照"], ["一般駕照", "一般駕照"]])}
-        ${select("parking_type", "家中停車位", "", [["", "未填寫"], ["無", "無"], ["機械", "機械"], ["平面", "平面"]])}
-        ${select("language", "語言", "", [["", "未填寫"], ["英", "英"], ["日", "日"], ["其他", "其他"]])}
-        ${input("language_other", "其他語言", "", "text")}
-        ${select("smoking", "是否抽菸", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
-        ${select("drinking", "是否酗酒", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
-        ${select("betel_nut", "是否吃檳榔", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
-        ${select("major_violation", "曾有重大違規", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
-        <div class="form-section-title field full">家庭狀況</div>
-        ${evaluationFamilyFields(1)}
-        ${evaluationFamilyFields(2)}
-        <div class="form-section-title field full">學歷與經歷</div>
-        ${input("school_name", "學校名稱", "", "text")}
-        ${input("department", "科系", "", "text")}
-        ${input("study_period", "就讀期間", "", "text")}
-        ${select("graduation_status", "畢肄業", "", [["", "未填寫"], ["畢業", "畢業"], ["肄業", "肄業"]])}
-        ${evaluationWorkFields(1)}
-        ${evaluationWorkFields(2)}
-        <div class="form-section-title field full">經濟狀況與專長</div>
-        ${input("income_source", "目前主要收入來源", "", "text")}
-        ${input("monthly_income", "收入金額／月", "", "number")}
-        ${input("trips_per_week", "趟數／週", "", "number")}
-        ${input("monthly_expense", "每月生活開銷", "", "number")}
-        ${select("has_loan", "貸款", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${input("loan_amount", "貸款金額", "", "number")}
-        ${input("specialty", "專長", "", "text")}
-        ${select("tour_guide_license", "導遊證", "", [["", "未填寫"], ["是", "是"], ["否", "否"]])}
-        ${input("emergency_name", "緊急聯絡人姓名", "", "text")}
-        ${input("emergency_relation", "緊急聯絡人關係", "", "text")}
-        ${input("emergency_phone", "緊急聯絡人電話", "", "tel")}
-        <div class="form-section-title field full">訪談內容</div>
-        ${evaluationCheckGroup("card_sources", "是否有承接其他業者卡趟客戶", ["肯驛", "和運", "格上", "全鋒", "e-go", "無"])}
-        ${input("expected_trips", "期望趟數", "", "number")}
-        ${input("expected_revenue", "期望營業額", "", "number")}
-        ${input("class_name", "班別", "", "text")}
-        ${text("interview_other", "其他", "")}
-        <div class="form-section-title field full">檢附資料</div>
-        ${evaluationCheckGroup("attached_docs", "司機資料", ["司機職業駕照", "無肇事紀錄", "身分證正反面", "良民證", "存摺影本"])}
-        <div class="form-section-title field full">評核結果</div>
-        ${input("supervisor", "督導", "", "text")}
-        ${input("assistant_manager", "副理", "", "text")}
-        ${input("general_manager", "總經理", "", "text")}
-        ${select("contract_decision", "是否簽約", "", [["", "未填寫"], ["簽約", "簽約"], ["不簽約", "不簽約"]])}
-        ${input("evaluation_date", "評核日期", today(), "date")}
-        <div class="form-section-title field full">車輛管理</div>
-        ${select("vehicle_custody_contract", "車輛保管合約", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${input("vehicle_model", "車款", "", "text")}
-        ${input("vehicle_color", "顏色", "", "text")}
-        ${select("booster_seat", "增高墊", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${select("child_seat", "安全座椅（雙向）", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${select("tracker_installed", "安裝衛星犬", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${input("expected_delivery_date", "預計交車日", "", "date")}
-        ${input("vehicle_confirmed_by", "車輛確認", "", "text")}
-        ${input("vehicle_signoff_date", "簽核日期", "", "date")}
-        <div class="form-section-title field full">行政流程</div>
-        ${input("training_date", "教育訓練日期", "", "date")}
-        ${select("service_contract", "承攬合約", "", [["", "未填寫"], ["有", "有"], ["無", "無"]])}
-        ${input("online_date", "上線日期", "", "date")}
-        ${input("admin_confirmed_by", "行政確認", "", "text")}
-        ${input("admin_signoff_date", "簽核日期", "", "date")}
-        ${input("control_confirmed_by", "行控確認", "", "text")}
-        ${input("control_signoff_date", "簽核日期", "", "date")}
-        <div class="evaluation-actions field full">
-          <a class="ghost-btn" href="./assets/driver-evaluation-template.pdf" target="_blank" rel="noreferrer">查看原始範本</a>
-          <button class="ghost-btn" type="button" data-action="reset-evaluation-form">清空</button>
-          <button class="primary-btn" type="button" data-action="print-driver-evaluation">輸出 PDF</button>
-        </div>
-      </form>
-    `;
-  }
-
-  function evaluationFamilyFields(index) {
-    return input(`family_${index}_title`, `家庭成員${index}稱謂`, "", "text")
-      + input(`family_${index}_name`, `家庭成員${index}姓名`, "", "text")
-      + input(`family_${index}_age`, `家庭成員${index}年齡`, "", "number");
-  }
-
-  function evaluationWorkFields(index) {
-    return input(`work_${index}_company`, `經歷${index}公司名稱`, "", "text")
-      + input(`work_${index}_position`, `經歷${index}職務`, "", "text")
-      + input(`work_${index}_period`, `經歷${index}服務期間`, "", "text")
-      + input(`work_${index}_leave_reason`, `經歷${index}離職原因`, "", "text");
-  }
-
-  function evaluationCheckGroup(name, label, options) {
-    return `<div class="field full evaluation-check-group">
-      <label>${escapeHtml(label)}</label>
-      <div>${options.map((option) => checkbox(`${name}_${option}`, option, false)).join("")}</div>
-    </div>`;
-  }
-
-  function fillEvaluationDriver(selectBox) {
-    const form = selectBox?.closest("form");
-    const driver = (state.data.drivers || []).find((item) => String(item.id) === String(selectBox.value));
-    if (!form || !driver) return;
-    const activeVehicle = (state.data.vehicles || []).find((vehicle) => {
-      const records = vehicleActiveDriverRecords(vehicle);
-      return records.some((record) => String(record.driver_id || "") === String(driver.id) || record.driver_name === driver.name);
-    });
-    const values = {
-      driver_name: driver.name || "",
-      phone: driver.phone || "",
-      national_id: driver.national_id || driver.license_no || "",
-      vehicle_plate: activeVehicle?.plate_no || driver.assigned_vehicle_plate || "",
-      service_area: driver.service_area || driver.region || "",
-      address: driver.address || driver.contact_address || driver.household_address || "",
-      email: driver.email || "",
-      birth_date: formDate(driver.birthday || driver.birth_date),
-      emergency_name: driver.emergency_contact || "",
-      emergency_phone: driver.emergency_phone || "",
-      training_date: formDate(driver.training_completed_at || driver.training_date),
-      online_date: formDate(driver.joined_at || driver.onboard_date),
-      vehicle_model: activeVehicle?.model || "",
-      vehicle_color: activeVehicle?.color || ""
-    };
-    Object.entries(values).forEach(([name, value]) => {
-      const inputEl = form.querySelector(`[name="${name}"]`);
-      if (inputEl) inputEl.value = value;
-    });
-  }
-
-  function resetDriverEvaluationForm() {
-    const form = document.getElementById("driverEvaluationForm");
-    if (!form) return;
-    form.reset();
-    ["interview_date", "evaluation_date"].forEach((name) => {
-      const dateInput = form.querySelector(`[name="${name}"]`);
-      if (dateInput) dateInput.value = today();
-    });
-  }
-
-  function evaluationFormPayload(form) {
-    const values = Object.fromEntries(new FormData(form).entries());
-    return { values };
-  }
-
-  function evaluationPrintHtml(payload) {
-    const { values } = payload;
-    const yesNo = (value, yes, no) => `${value === yes ? "☑" : "□"}${yes}　${value === no ? "☑" : "□"}${no}`;
-    const choice = (name, options) => options.map((option) => `${values[name] === option || values[`${name}_${option}`] === "true" ? "☑" : "□"}${escapeHtml(option)}`).join("　");
-    return `<!doctype html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="utf-8">
-  <title>CS-08-V2 亞菲得車隊司機評核表</title>
-  <style>
-    @page { size: A4; margin: 7mm; }
-    * { box-sizing: border-box; }
-    body { margin: 0; color: #111827; font-family: "Noto Sans TC", "Microsoft JhengHei", Arial, sans-serif; font-size: 11px; }
-    .sheet { width: 196mm; min-height: 283mm; margin: 0 auto; padding: 4mm; background: white; }
-    .top-code { text-align: right; font-size: 10px; }
-    .doc-head { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: end; margin-bottom: 2mm; }
-    h1 { margin: 0; text-align: center; font-size: 24px; text-decoration: underline; letter-spacing: 2px; }
-    .meta-line { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
-    .line-value { display: inline-block; min-width: 32mm; border-bottom: 1px solid #111827; min-height: 14px; }
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th, td { border: 1px solid #111827; padding: 3px 5px; vertical-align: middle; height: 8.4mm; }
-    th { background: #f3f4f6; font-weight: 900; text-align: center; width: 22mm; }
-    .section-title { padding: 4px 8px; border: 1px solid #111827; border-bottom: 0; background: #d9d9d9; text-align: center; font-size: 14px; font-weight: 900; letter-spacing: 4px; }
-    .plain-title { background: #fff; font-size: 16px; }
-    .photo-cell { text-align: center; font-size: 15px; color: #374151; height: 40mm; }
-    .text-row td { height: 11mm; }
-    .tall td, .tall th { height: 15mm; }
-    .interview td { height: 10mm; line-height: 1.55; }
-    .small { font-size: 10px; }
-    .print-actions { position: fixed; right: 16px; top: 16px; display: flex; gap: 8px; }
-    .print-actions button { border: 0; border-radius: 8px; padding: 10px 16px; font-weight: 900; cursor: pointer; }
-    .print-actions .primary { background: #ef3f35; color: white; }
-    @media print { .print-actions { display: none; } }
-  </style>
-</head>
-<body>
-  <div class="print-actions"><button onclick="window.close()">關閉</button><button class="primary" onclick="window.print()">列印 / 另存 PDF</button></div>
-  <main class="sheet">
-    <div class="top-code">CS-08-V2</div>
-    <h1>亞菲得車隊司機評核表</h1>
-    <div class="meta-line"><span>推薦人：<span class="line-value">${escapeHtml(values.referrer || "")}</span></span><span>面訪日期：<span class="line-value">${escapeHtml(fmtDate(values.interview_date))}</span></span></div>
-    <div class="section-title plain-title">面　訪　表</div>
-    <table>
-      <tr><th>姓名</th><td>${escapeHtml(values.driver_name || "")}</td><th>身分證字號</th><td>${escapeHtml(values.national_id || "")}</td><th>性別</th><td>${choice("gender", ["男", "女"])}</td><td class="photo-cell" rowspan="7">（照片）</td></tr>
-      <tr><th>出生日期</th><td>${escapeHtml(fmtDate(values.birth_date))}</td><th>連絡電話</th><td>${escapeHtml(values.phone || "")}</td><th>婚姻狀況</th><td>${choice("marital_status", ["已婚", "未婚"])}</td></tr>
-      <tr><th>居住地址</th><td colspan="5">${escapeHtml(values.address || "")}</td></tr>
-      <tr><th>信箱</th><td colspan="3">${escapeHtml(values.email || "")}</td><th>服務區域</th><td>${escapeHtml(values.service_area || "")}</td></tr>
-      <tr><th>自有車輛</th><td>${yesNo(values.has_car, "有", "無")}</td><th>車號</th><td>${escapeHtml(values.vehicle_plate || "")}</td><th>駕照種類</th><td>${choice("license_type", ["職業駕照", "一般駕照"])}</td></tr>
-      <tr><th>家中停車位</th><td colspan="3">${choice("parking_type", ["無", "機械", "平面"])}</td><th>語言</th><td>${choice("language", ["英", "日", "其他"])} ${escapeHtml(values.language_other || "")}</td></tr>
-      <tr><th>是否抽菸</th><td>${yesNo(values.smoking, "是", "否")}</td><th>是否酗酒</th><td>${yesNo(values.drinking, "是", "否")}</td><th>是否吃檳榔</th><td>${yesNo(values.betel_nut, "是", "否")}</td></tr>
-      <tr><th>曾有重大違規</th><td colspan="6">${yesNo(values.major_violation, "是", "否")}</td></tr>
-    </table>
-    <table>
-      <tr><th rowspan="3">家庭狀況</th><th>稱謂</th><th>姓名</th><th>年齡</th><th>稱謂</th><th>姓名</th><th>年齡</th></tr>
-      <tr><td>${escapeHtml(values.family_1_title || "")}</td><td>${escapeHtml(values.family_1_name || "")}</td><td>${escapeHtml(values.family_1_age || "")}</td><td>${escapeHtml(values.family_2_title || "")}</td><td>${escapeHtml(values.family_2_name || "")}</td><td>${escapeHtml(values.family_2_age || "")}</td></tr>
-      <tr><td colspan="6"></td></tr>
-      <tr><th rowspan="2">學歷</th><th colspan="2">學校名稱</th><th>科系</th><th>就讀期間</th><th colspan="2">畢肄業</th></tr>
-      <tr><td colspan="2">${escapeHtml(values.school_name || "")}</td><td>${escapeHtml(values.department || "")}</td><td>${escapeHtml(values.study_period || "")}</td><td colspan="2">${choice("graduation_status", ["畢業", "肄業"])}</td></tr>
-      <tr><th rowspan="3">經歷</th><th colspan="2">公司名稱</th><th>職務</th><th>服務期間</th><th colspan="2">離職原因</th></tr>
-      <tr><td colspan="2">${escapeHtml(values.work_1_company || "")}</td><td>${escapeHtml(values.work_1_position || "")}</td><td>${escapeHtml(values.work_1_period || "")}</td><td colspan="2">${escapeHtml(values.work_1_leave_reason || "")}</td></tr>
-      <tr><td colspan="2">${escapeHtml(values.work_2_company || "")}</td><td>${escapeHtml(values.work_2_position || "")}</td><td>${escapeHtml(values.work_2_period || "")}</td><td colspan="2">${escapeHtml(values.work_2_leave_reason || "")}</td></tr>
-      <tr><th>經濟狀況</th><td colspan="2">${escapeHtml(values.income_source || "")}</td><td>收入/月：${escapeHtml(values.monthly_income || "")}</td><td>趟數/週：${escapeHtml(values.trips_per_week || "")}</td><td>生活開銷：${escapeHtml(values.monthly_expense || "")}</td><td>貸款：${yesNo(values.has_loan, "有", "無")} ${escapeHtml(values.loan_amount || "")}</td></tr>
-      <tr><th>專長</th><td colspan="5">${escapeHtml(values.specialty || "")}</td><td>導遊證 ${yesNo(values.tour_guide_license, "是", "否")}</td></tr>
-      <tr><th>緊急聯絡人</th><td colspan="2">姓名：${escapeHtml(values.emergency_name || "")}</td><td colspan="2">關係：${escapeHtml(values.emergency_relation || "")}</td><td colspan="2">電話：${escapeHtml(values.emergency_phone || "")}</td></tr>
-    </table>
-    <div class="section-title">以下由面訪主管填寫</div>
-    <table class="interview">
-      <tr><th rowspan="3">訪談內容</th><td colspan="6">1.是否有承接其他業者卡趟客戶：${choice("card_sources", ["肯驛", "和運", "格上", "全鋒", "e-go", "無"])}</td></tr>
-      <tr><td colspan="2">2.期望趟數：${escapeHtml(values.expected_trips || "")}</td><td colspan="2">期望營業額：${escapeHtml(values.expected_revenue || "")}</td><td colspan="2">班別：${escapeHtml(values.class_name || "")}</td></tr>
-      <tr><td colspan="6">3.其他：${escapeHtml(values.interview_other || "")}</td></tr>
-      <tr><th rowspan="2">檢附資料</th><td colspan="6" style="text-align:center;background:#d9d9d9;font-weight:900;">司機資料</td></tr>
-      <tr><td colspan="6">${choice("attached_docs", ["司機職業駕照", "無肇事紀錄", "身分證正反面", "良民證", "存摺影本"])}</td></tr>
-    </table>
-    <div class="section-title">評　核　結　果</div>
-    <table class="tall">
-      <tr><th>督導</th><th>副理</th><th>總經理</th><th>是否簽約</th><th>評核日期</th></tr>
-      <tr><td>${escapeHtml(values.supervisor || "")}</td><td>${escapeHtml(values.assistant_manager || "")}</td><td>${escapeHtml(values.general_manager || "")}</td><td>${choice("contract_decision", ["簽約", "不簽約"])}</td><td>${escapeHtml(fmtDate(values.evaluation_date))}</td></tr>
-    </table>
-    <div class="section-title">車輛管理</div>
-    <table>
-      <tr><th>車輛保管合約</th><th>車款</th><th>車號</th><th>顏色</th><th>增高墊</th><th>安全座椅(雙向)</th><th>安裝衛星犬</th><th>預計交車日</th><th>車輛確認</th><th>簽核日期</th></tr>
-      <tr><td>${yesNo(values.vehicle_custody_contract, "有", "無")}</td><td>${escapeHtml(values.vehicle_model || "")}</td><td>${escapeHtml(values.vehicle_plate || "")}</td><td>${escapeHtml(values.vehicle_color || "")}</td><td>${yesNo(values.booster_seat, "有", "無")}</td><td>${yesNo(values.child_seat, "有", "無")}</td><td>${yesNo(values.tracker_installed, "有", "無")}</td><td>${escapeHtml(fmtDate(values.expected_delivery_date))}</td><td>${escapeHtml(values.vehicle_confirmed_by || "")}</td><td>${escapeHtml(fmtDate(values.vehicle_signoff_date))}</td></tr>
-    </table>
-    <div class="section-title">行政流程</div>
-    <table>
-      <tr><th>教育訓練日期</th><th>承攬合約</th><th>上線日期</th><th>行政確認</th><th>簽核日期</th><th>行控確認</th><th>簽核日期</th></tr>
-      <tr><td>${escapeHtml(fmtDate(values.training_date))}</td><td>${yesNo(values.service_contract, "有", "無")}</td><td>${escapeHtml(fmtDate(values.online_date))}</td><td>${escapeHtml(values.admin_confirmed_by || "")}</td><td>${escapeHtml(fmtDate(values.admin_signoff_date))}</td><td>${escapeHtml(values.control_confirmed_by || "")}</td><td>${escapeHtml(fmtDate(values.control_signoff_date))}</td></tr>
-    </table>
-  </main>
-</body>
-</html>`;
-  }
-
-  async function printDriverEvaluation() {
-    const form = document.getElementById("driverEvaluationForm");
-    if (!form) return;
-    if (!form.reportValidity()) return;
-    const popup = window.open("", "_blank", "width=980,height=900");
-    if (!popup) {
-      await showAlert("瀏覽器阻擋了列印視窗，請允許彈出視窗後再試一次。", "無法開啟列印");
-      return;
-    }
-    popup.document.open();
-    popup.document.write(evaluationPrintHtml(evaluationFormPayload(form)));
-    popup.document.close();
-    popup.focus();
   }
 
   const onboardingStepDefs = [
@@ -5085,7 +4874,7 @@
   }
 
   async function importDispatchExcelFile(file) {
-    if (!window.XLSX) throw new Error("Excel 解析器尚未載入，請重新整理後再試。");
+    await ensureOptionalLibrary("excel");
     const buffer = await file.arrayBuffer();
     const workbook = window.XLSX.read(buffer, { type: "array", cellDates: true });
     const sheetName = workbook.SheetNames.find((name) => name.includes("混合派趟")) || workbook.SheetNames[0];
@@ -5432,15 +5221,6 @@
     `;
   }
 
-  function adminMaintenanceRecords() {
-    return `
-      <div class="section-head"><h2>保養管理</h2><button class="primary-btn" data-modal="maintenanceRecord">新增保養紀錄</button></div>
-      ${table(["車輛", "保養日期", "里程", "項目", "維修廠", "金額", "下次保養", "操作"], state.data.maintenance_records.map((r) => [
-        vehicleName(r.vehicle_id), fmtDate(r.service_date), r.mileage || "", r.items || "", r.vendor || "", Number(r.cost || 0).toLocaleString(), fmtDate(r.next_service_date), rowActions("maintenanceRecord", "maintenance_records", r.id)
-      ]))}
-    `;
-  }
-
   function adminAnnouncements() {
     return `
       <div class="section-head"><h2>公告管理</h2><button class="primary-btn" data-modal="announcement">新增公告</button></div>
@@ -5453,31 +5233,87 @@
   function adminTaskManager(tableName, title) {
     const modal = tableName === "maintenance_notifications" ? "maintenanceNotification" : tableName === "personal_messages" ? "personalMessage" : "paymentNotice";
     return `
-      <div class="section-head"><h2>${title}</h2><div class="actions">${tableName === "maintenance_notifications" ? `<button class="ghost-btn" data-action="bulk-maintenance-notification">柴油車群發通知</button>` : ""}<button class="primary-btn" data-modal="${modal}">新增${title}</button></div></div>
-      ${table(taskHeaders(tableName), state.data[tableName].map((x) => taskRow(tableName, x)))}
+      <div class="section-head"><h2>${title}</h2><div class="actions">${tableName === "maintenance_notifications" ? `<button class="ghost-btn" data-action="refresh-maintenance-batches">重新整理狀態</button><button class="ghost-btn" data-action="bulk-maintenance-notification">群發通知</button>` : ""}<button class="primary-btn" data-modal="${modal}">新增${title}</button></div></div>
+      ${tableName === "maintenance_notifications" ? maintenanceBatchOverview() : ""}
+      ${table(taskHeaders(tableName), state.data[tableName].filter(x=>tableName !== "maintenance_notifications" || !x.batch_id).map((x) => taskRow(tableName, x)))}
     `;
   }
 
   async function sendBulkMaintenanceNotification() {
-    const fleet = window.prompt("請輸入車隊／車商名稱（留空代表全部）", "");
-    if (fleet === null) return;
-    const content = window.prompt("請輸入要通知司機的內容", "");
-    if (!content?.trim()) return;
-    const fleetKey = fleet.trim();
-    const vehicles = (state.data.vehicles || []).filter((vehicle) => {
-      const diesel = /柴油|diesel/i.test(String(vehicle.fuel_type || ""));
-      const dealer = partnerName(vehicle.dealer_partner_id);
-      return diesel && (!fleetKey || dealer.includes(fleetKey) || String(vehicle.fleet_name || "").includes(fleetKey)) && vehicle.current_driver_id;
+    if (!state.admin || !adminCan("maintenanceNotifications")) return;
+    await ensureAdminWorkspaceData();
+    const dealers = (state.data.insurance_partners || []).filter(item=>item.partner_type === "dealer" && item.active !== false).sort((a,b)=>String(a.name).localeCompare(String(b.name),"zh-Hant"));
+    const fleets = [...new Set((state.data.vehicles || []).map(vehicle=>vehicle.fleet_name).filter(Boolean))].sort();
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<section class="modal staff-editor maintenance-broadcast-editor"><div class="modal-title"><div><small>依車隊指派給目前駕駛</small><h3>群發通知</h3></div><button type="button" class="staff-text-btn" data-close-modal aria-label="關閉群發通知">×</button></div><form id="maintenanceBroadcastForm"><div class="modal-form-body"><label class="broadcast-label" for="broadcastFleet">選擇車隊／車商</label><select id="broadcastFleet" name="fleet" required><option value="">請選擇車隊／車商</option><option value="all">全部車隊</option><optgroup label="所屬車商">${dealers.map(item=>`<option value="dealer:${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join("")}</optgroup><optgroup label="車隊編組">${fleets.map(name=>`<option value="fleet:${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")}</optgroup></select><fieldset class="broadcast-kinds" disabled><legend>通知項目（可複選）</legend>${Object.entries(maintenanceNoticeLabels()).map(([key,label])=>`<label><input type="checkbox" name="kinds" value="${key}"><span>${label}</span></label>`).join("")}<textarea name="other" maxlength="1000" placeholder="輸入其他通知內容" hidden></textarea></fieldset><p class="broadcast-hint">柴油精添加僅通知柴油車；其他項目通知所選車隊的目前駕駛。已出售、報廢車與無綁定司機帳號的車輛會略過。</p><div data-broadcast-preview></div><p class="error" data-broadcast-error hidden></p></div><div class="modal-actions"><button class="ghost-btn" type="button" data-close-modal>取消</button><button class="primary-btn" type="submit">預覽通知</button></div></form></section>`;
+    document.body.appendChild(modal);
+    const form = modal.querySelector("form");
+    const fleetSelect = form.elements.fleet;
+    const fieldset = form.querySelector("fieldset");
+    const button = form.querySelector('[type="submit"]');
+    let plan = null;
+    let batchId = uid();
+    let revision = 0;
+    let busy = false;
+    const collect = () => ({ fleet:fleetSelect.value, kinds:Array.from(form.querySelectorAll('[name="kinds"]:checked'),input=>input.value), other:form.elements.other.value.trim() });
+    form.addEventListener("input", () => {
+      revision++;
+      plan = null;
+      batchId = uid();
+      fieldset.disabled = !fleetSelect.value;
+      form.elements.other.hidden = !form.querySelector('[name="kinds"][value="other"]').checked;
+      form.elements.other.required = !form.elements.other.hidden;
+      form.querySelector('[data-broadcast-preview]').innerHTML = "";
+      button.textContent = "預覽通知";
     });
-    if (!vehicles.length) { await showAlert("找不到符合車隊與柴油條件、且有目前駕駛的車輛。", "群發通知"); return; }
-    let sent = 0;
-    await withAppLoading(`正在發送 ${vehicles.length} 筆通知`, async () => {
-      for (const vehicle of vehicles) {
-        await insert("maintenance_notifications", { driver_id: vehicle.current_driver_id, vehicle_id: vehicle.id, service_date: today(), content: content.trim(), status: "pending", vendor: "", service_time: null });
-        sent++;
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      if (busy) return;
+      const payload = collect();
+      const errorBox = form.querySelector('[data-broadcast-error]');
+      errorBox.hidden = true;
+      if (!payload.kinds.length) { errorBox.hidden=false; errorBox.textContent="請至少勾選一個通知項目"; return; }
+      busy = true;
+      button.disabled = true;
+      button.innerHTML = '<span class="save-spinner" aria-hidden="true"></span>處理中…';
+      const version = revision;
+      const sending = Boolean(plan);
+      try {
+        if (!sending) {
+          const result = await apiRequest("preview_maintenance_broadcast",payload);
+          if (version !== revision) return;
+          plan = result;
+          const preview = form.querySelector('[data-broadcast-preview]');
+          preview.innerHTML = `<div class="broadcast-preview-summary"><strong>${result.records.length} 則通知</strong><span>${new Set(result.records.map(item=>item.vehicle_id)).size} 台車 · ${new Set(result.records.map(item=>item.driver_id)).size} 位駕駛</span></div>${result.skipped?.length ? `<p class="broadcast-warning">未綁定目前駕駛，略過 ${result.skipped.length} 台：${result.skipped.slice(0,20).map(escapeHtml).join("、")}</p>` : ""}${result.records.length ? table(["車牌","駕駛","通知項目"],result.records.slice(0,100).map(item=>[escapeHtml(item.plate_no),escapeHtml(item.driver_name),escapeHtml(maintenanceNoticeLabels()[item.kind])])) : '<p class="broadcast-warning">沒有符合條件且可通知的駕駛，請調整車隊或通知項目。</p>'}${result.records.length>100?'<small>預覽顯示前 100 則，發送時會建立全部通知。</small>':""}`;
+          if (!result.records.length) plan = null;
+        } else {
+          fleetSelect.disabled = true; fieldset.disabled = true;
+          const result = await apiRequest("create_maintenance_broadcast",{...payload,batch_id:batchId});
+          const rows = result.notifications || [];
+          const ids = new Set(rows.map(item=>item.id));
+          state.data.maintenance_notifications = [...rows,...(state.data.maintenance_notifications || []).filter(item=>!ids.has(item.id))];
+          state.data.maintenance_notification_batches = [result.batch,...(state.data.maintenance_notification_batches || []).filter(item=>item.id!==result.batch.id)];
+          modal.remove(); render();
+          await showAlert(`已建立 ${rows.length} 則通知，司機可在「保養維修」回報完成。`,"群發完成");
+        }
+      } catch(error) { errorBox.hidden=false; errorBox.textContent=error.message || "通知發送失敗，可再次點擊重試"; }
+      finally {
+        busy=false; button.disabled=false; fleetSelect.disabled=false; fieldset.disabled=!fleetSelect.value;
+        button.textContent = plan ? `發送 ${plan.records.length} 則通知` : "預覽通知";
       }
     });
-    await showAlert(`已發送 ${sent} 筆柴油車保養通知，司機完成後後台會更新狀態。`, "群發完成");
+  }
+
+  function maintenanceNoticeLabels() { return { diesel:"柴油精添加", charter:"包車單繳回", receipt:"憑證繳回", other:"其他（自行輸入）" }; }
+
+  function maintenanceBatchOverview() {
+    const batches = [...(state.data.maintenance_notification_batches || [])].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+    return `<div class="maintenance-batches">${batches.map(batch=>{
+      const records = (state.data.maintenance_notifications || []).filter(item=>item.batch_id===batch.id);
+      const completed = records.filter(item=>item.status==="completed").length;
+      return `<details class="maintenance-batch"><summary><div><strong>${escapeHtml(batch.fleet_label)}</strong><small>${(batch.request_spec?.kinds || []).map(key=>escapeHtml(maintenanceNoticeLabels()[key] || key)).join(" · ")} · ${escapeHtml(fmtDate(batch.created_at))}</small></div><span>已完成 ${completed} / ${records.length}<small>未完成 ${records.length-completed}</small></span></summary><div class="maintenance-batch-rows">${table(["車輛","駕駛","通知項目","內容","狀態"],records.map(item=>[escapeHtml(vehicleName(item.vehicle_id)),escapeHtml(driverName(item.driver_id)),escapeHtml(maintenanceNoticeLabels()[item.notification_kind] || "其他"),escapeHtml(item.content),statusBadge(item.status)]))}</div></details>`;
+    }).join("")}</div>`;
   }
 
   function taskHeaders(tableName) {
@@ -5518,7 +5354,7 @@
       return;
     }
     const map = {
-      staffAnnouncement: ["公司內部公告", "staff_announcements", staffAnnouncementForm],
+      staffAnnouncement: ["內部公告", "staff_announcements", staffAnnouncementForm],
       staffCalendarEvent: ["員工行程", "staff_calendar_events", staffCalendarEventForm],
       adminUser: ["內部帳號", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
@@ -5533,7 +5369,6 @@
       serviceRecord: ["車輛履歷", "vehicle_service_records", serviceRecordForm],
       feedback: ["意見反饋", "feedbacks", feedbackForm],
       feedbackReply: ["反饋回覆", "feedbacks", feedbackReplyForm],
-      maintenanceRecord: ["保養紀錄", "maintenance_records", maintenanceRecordForm],
       announcement: ["公告", "announcements", announcementForm],
       maintenanceNotification: ["保養通知", "maintenance_notifications", maintenanceNotificationForm],
       personalMessage: ["個人訊息", "personal_messages", personalMessageForm],
@@ -6887,7 +6722,7 @@
       + `<div class="field full staff-avatar-upload"><label>夥伴頭像</label><div class="staff-avatar-upload-row"><span data-staff-avatar-preview>${staffAvatar(item)}</span><div><input type="file" accept="image/png,image/jpeg,image/webp" data-staff-avatar-upload><small data-staff-avatar-status>上傳照片，首頁會以圓形頭像顯示</small><button type="button" class="staff-text-btn" data-staff-avatar-clear>移除照片</button></div></div><input type="hidden" name="avatar_url" value="${escapeHtml(item.avatar_url || "")}"><input type="hidden" name="avatar_name" value="${escapeHtml(item.avatar_name || "")}"></div>`
       + checkbox("active", "允許登入", item.active !== false)
       + `<div class="form-section-title field full">功能權限</div>`
-      + `<div class="permission-section field full"><h4>員工首頁</h4><small>所有內部員工皆可閱讀，以下權限控制發布與編輯。</small><div class="permission-form-grid">${checkbox("permission_internalAnnouncements", "公司內部公告發布", Boolean(permissions.internalAnnouncements))}${checkbox("permission_internalCalendar", "員工行事曆編輯", Boolean(permissions.internalCalendar))}</div></div>`
+      + `<div class="permission-section field full"><h4>員工首頁</h4><small>所有內部員工皆可閱讀，以下權限控制發布與編輯。</small><div class="permission-form-grid">${checkbox("permission_internalAnnouncements", "內部公告發布", Boolean(permissions.internalAnnouncements))}${checkbox("permission_internalCalendar", "員工行事曆編輯", Boolean(permissions.internalCalendar))}</div></div>`
       + permissionSections;
   }
 
@@ -7152,13 +6987,6 @@
     return `<div class="field full feedback-source"><strong>${escapeHtml(item.driver_name)}：${escapeHtml(item.title)}</strong><p>${escapeHtml(item.content)}</p></div>`
       + text("admin_reply", "管理中心回覆", item.admin_reply)
       + select("status", "處理狀態", item.status || "已回覆", [["待回覆", "待回覆"], ["已回覆", "已回覆"], ["已結案", "已結案"]]);
-  }
-
-  function maintenanceRecordForm(r) {
-    return vehicleOptions(r.vehicle_id) + input("service_date", "保養日期", formDate(r.service_date) || today(), "date", true) +
-      input("mileage", "里程", r.mileage, "number") + repairShopOptions(r.vendor, "維修廠") +
-      input("cost", "金額", r.cost, "number") + input("next_service_date", "下次保養日期", formDate(r.next_service_date), "date") +
-      text("items", "保養項目與詳細資料", r.items);
   }
 
   function announcementForm(a) {
@@ -7513,6 +7341,7 @@
 
   async function importMaintenanceScheduleFile(file) {
     if (!file) return;
+    await ensureOptionalLibrary("excel");
     const result = {
       total: 0,
       created: 0,
@@ -7595,6 +7424,9 @@
   }
 
   async function handleLogin(value) {
+    adminFullDataReady = false;
+    adminFullDataPromise = null;
+    adminWarmupScheduled = false;
     state.error = "";
     state.loginLoading = true;
     const loginValue = String(value || "").trim();
@@ -7630,7 +7462,7 @@
         state.partner = result.partner || null;
         if (loginType === "driver") await bindLineProfileIfAvailable();
         saveSession(loginType, state.partner || state.user, result.token, state.adminProfile);
-        await loadAll();
+        await loadAll({ homeOnly: !initialAdminView });
         state.view = "home";
         if (state.admin) state.adminView = initialAdminView || "home";
         applyRequestedDriverView();
@@ -7664,6 +7496,38 @@
     }
   }
 
+
+  function officeWeatherMarkup() {
+    const days = officeWeatherData?.days;
+    if (!days?.length || days[0].date !== today()) return `<span class="staff-weather-unavailable">${officeWeatherFailedAt ? "天氣暫無資料，稍後重試" : "正在載入今明天氣…"}</span>`;
+    return `<div class="staff-weather-days">${days.map((day,index) => `<div class="staff-weather-day"><span>${index ? "明天" : "今天"}</span><strong>${Math.round(day.min)}–${Math.round(day.max)}°C</strong><small>${escapeHtml(weatherDescription(day.code))} · 降雨 ${Math.round(day.rain)}%</small></div>`).join("")}</div><a class="staff-weather-source" href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a>`;
+  }
+
+  async function loadOfficeWeather() {
+    if (!document.querySelector("[data-office-weather]")) return;
+    const updateDom = () => { document.querySelectorAll("[data-office-weather]").forEach(box => { box.innerHTML = officeWeatherMarkup(); }); };
+    if (officeWeatherData?.days?.[0]?.date === today() && Date.now() - officeWeatherData.fetchedAt < 1800000) { updateDom(); return; }
+    if (Date.now() - officeWeatherFailedAt < 60000) { updateDom(); return; }
+    if (officeWeatherPromise) return officeWeatherPromise;
+    officeWeatherPromise = (async () => {
+      try {
+        let cached = null;
+        try { cached = JSON.parse(localStorage.getItem("afide-office-weather-v1") || "null"); } catch {}
+        if (cached?.days?.[0]?.date === today() && Date.now() - cached.fetchedAt < 1800000) officeWeatherData = cached;
+        else {
+          const response = await fetch("/api/office-weather", { signal: AbortSignal.timeout(10000) });
+          if (!response.ok) throw new Error("Weather unavailable");
+          const data = await response.json();
+          if (data.days?.length !== 2 || data.days[0].date !== today() || data.days.some(day => ![day.min,day.max,day.rain,day.code].every(Number.isFinite))) throw new Error("Invalid forecast");
+          officeWeatherData = { ...data, fetchedAt: Date.now() };
+          try { localStorage.setItem("afide-office-weather-v1", JSON.stringify(officeWeatherData)); } catch {}
+        }
+        officeWeatherFailedAt = 0;
+      } catch { officeWeatherFailedAt = Date.now(); }
+      finally { officeWeatherPromise = null; updateDom(); }
+    })();
+    return officeWeatherPromise;
+  }
 
   async function loadAirportWeather() {
     if (!document.getElementById("airportWeather")) return;
@@ -8022,6 +7886,17 @@
       await sendBulkMaintenanceNotification();
       return;
     }
+    if (target?.dataset.action === "refresh-maintenance-batches") {
+      target.disabled = true;
+      target.textContent = "更新中…";
+      try {
+        const result = await apiRequest("load_maintenance_notifications");
+        state.data = {...state.data,...result.data};
+        render();
+      } catch(error) { await showAlert(error.message || error,"更新失敗"); }
+      finally { target.disabled=false; target.textContent="重新整理狀態"; }
+      return;
+    }
     const cellDate = e.target.closest("[data-calendar-cell-date]")?.dataset.calendarCellDate;
     const helperDetail = e.target.closest("[data-helper-detail]");
     if (!target && !cellDate && !helperDetail) return;
@@ -8081,14 +7956,6 @@
     if (target?.dataset.serviceRecordDetail) {
       e.preventDefault();
       openServiceRecordDetail(target.dataset.serviceRecordDetail);
-      return;
-    }
-    if (target?.dataset.action === "reset-evaluation-form") {
-      resetDriverEvaluationForm();
-      return;
-    }
-    if (target?.dataset.action === "print-driver-evaluation") {
-      await printDriverEvaluation();
       return;
     }
     if (target?.dataset.printMailLabel) {
@@ -8390,6 +8257,10 @@
       render();
     }
     if (target.dataset.adminView) {
+      if (target.dataset.adminView !== "home" && !adminFullDataReady) {
+        try { await withAppLoading("正在載入功能資料", ensureAdminWorkspaceData); }
+        catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
+      }
       state.adminView = target.dataset.adminView;
       if (state.adminView === "dispatchCenter") resetDispatchFilters();
       if (window.matchMedia("(max-width: 1199px)").matches) {
@@ -9109,11 +8980,6 @@
       if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
       return;
     }
-    const evaluationDriverSelect = e.target.closest("[data-evaluation-driver-select]");
-    if (evaluationDriverSelect) {
-      fillEvaluationDriver(evaluationDriverSelect);
-      return;
-    }
     const loginToggle = e.target.closest("[data-driver-login]");
     if (loginToggle) {
       await update("drivers", loginToggle.dataset.driverLogin, { login_enabled: loginToggle.checked });
@@ -9326,7 +9192,7 @@
         await loadPublicHiringPage();
       } else {
         if (desktopMode && !state.apiSession) await handleLogin("0000");
-        await loadAll();
+        await loadAll({ homeOnly: state.admin && !initialAdminView });
       }
       state.appLoading = false;
       state.loadingText = "";

@@ -16,7 +16,7 @@ const tables = [
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
   "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages",
-  "staff_announcements", "staff_calendar_events", "staff_notes"
+  "staff_announcements", "staff_calendar_events", "staff_notes", "maintenance_notification_batches"
 ];
 
 const adminCode = Deno.env.get("ADMIN_ACCESS_CODE") || "";
@@ -239,9 +239,12 @@ async function loadDriverData(driverId: string) {
   return { data: result, user: driver };
 }
 
-async function loadAdminData(session: Record<string, unknown>) {
+async function loadAdminData(session: Record<string, unknown>, scope = "all") {
   const result: Record<string, unknown[]> = {};
-  await Promise.all(tables.map(async (table) => {
+  const homeTables = ["admin_users", "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes"];
+  const activeTables = tables.filter(table => table !== "maintenance_records");
+  const selectedTables = scope === "home" ? activeTables.filter(table => homeTables.includes(table)) : scope === "workspace" ? activeTables.filter(table => !homeTables.includes(table)) : activeTables;
+  await Promise.all(selectedTables.map(async (table) => {
     const permission = tablePermission[table];
     if (["staff_announcements", "staff_calendar_events", "staff_notes"].includes(table)) {
       const { data, error } = await db.from(table).select("*");
@@ -295,6 +298,11 @@ async function loadAdminData(session: Record<string, unknown>) {
       return;
     }
     if (permission && !(await adminCan(session, permission))) {
+      if (["vehicles", "drivers", "insurance_partners"].includes(table) && await adminCan(session, "maintenanceNotifications")) {
+        const columns = table === "vehicles" ? "id,plate_no,dealer_partner_id,fleet_name,fuel_type" : table === "drivers" ? "id,name" : "id,name,partner_type,active";
+        result[table] = await dispatchRows(table, columns);
+        return;
+      }
       if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "serviceRecords")))) {
         const { data, error } = await db
           .from("insurance_partners")
@@ -306,8 +314,8 @@ async function loadAdminData(session: Record<string, unknown>) {
       result[table] = [];
       return;
     }
-    if (table === "dispatch_orders") {
-      result[table] = await dispatchRows("dispatch_orders", "*");
+    if (["dispatch_orders", "maintenance_notifications", "maintenance_notification_batches"].includes(table)) {
+      result[table] = await dispatchRows(table, "*");
       return;
     }
     const { data, error } = await db.from(table).select("*");
@@ -543,6 +551,7 @@ const tablePermission: Record<string, string> = {
   vehicle_service_records: "serviceRecords",
   maintenance_records: "serviceRecords",
   maintenance_notifications: "maintenanceNotifications",
+  maintenance_notification_batches: "maintenanceNotifications",
   announcements: "announcements",
   announcement_reads: "announcements",
   personal_messages: "personalMessages",
@@ -567,6 +576,47 @@ const tablePermission: Record<string, string> = {
   staff_announcements: "internalAnnouncements",
   staff_calendar_events: "internalCalendar"
 };
+
+function maintenanceBroadcastPlan(input: Record<string, any>, vehicles: Record<string, any>[], drivers: Record<string, any>[], dealers: Record<string, any>[], date: string) {
+  const labels: Record<string,string> = { diesel: "柴油精添加", charter: "包車單繳回", receipt: "憑證繳回", other: "其他" };
+  const kinds = [...new Set(Array.isArray(input.kinds) ? input.kinds.map(String) : [])].filter(key=>Object.hasOwn(labels,key)).sort();
+  if (!kinds.length) throw new Error("請至少勾選一個通知項目");
+  const other = compactText(input.other).slice(0,1000);
+  if (kinds.includes("other") && !other) throw new Error("請填寫其他通知內容");
+  const filter = compactText(input.fleet);
+  let fleetLabel = "全部車隊";
+  let selected = vehicles;
+  if (filter.startsWith("dealer:")) {
+    const id = filter.slice(7);
+    const dealer = dealers.find(item=>item.id===id && item.partner_type === "dealer");
+    if (!dealer) throw new Error("車隊選項不存在，請重新選擇");
+    fleetLabel = String(dealer.name);
+    selected = vehicles.filter(vehicle=>vehicle.dealer_partner_id===id);
+  } else if (filter.startsWith("fleet:")) {
+    const name = filter.slice(6);
+    if (!name || !vehicles.some(vehicle=>String(vehicle.fleet_name || "")===name)) throw new Error("車隊選項不存在，請重新選擇");
+    fleetLabel = name;
+    selected = vehicles.filter(vehicle=>String(vehicle.fleet_name || "")===name);
+  } else if (filter !== "all") throw new Error("請選擇車隊");
+  selected = selected.filter(vehicle=>vehicle.status !== "報廢" && !["出售","已出售"].includes(vehicle.lease_status));
+  const byDriver = new Map(drivers.map(driver=>[String(driver.id),driver]));
+  const records: Record<string,any>[] = [];
+  const skipped: string[] = [];
+  for (const vehicle of selected) {
+    let history = vehicle.driver_history;
+    if (typeof history === "string") { try { history = JSON.parse(history); } catch { history = []; } }
+    const driverIds = Array.isArray(history) && history.length
+      ? history.filter(item=>(!item.start_at || String(item.start_at).slice(0,10)<=date) && (!item.end_at || String(item.end_at).slice(0,10)>=date)).map(item=>String(item.driver_id || "")).filter(Boolean)
+      : vehicle.current_driver_id ? [String(vehicle.current_driver_id)] : [];
+    const active = [...new Set(driverIds)].map(id=>byDriver.get(id)).filter(driver=>driver && !["已離職","留停中"].includes(driver.driver_status));
+    const applicable = kinds.filter(kind=>kind !== "diesel" || /柴油|diesel/i.test(String(vehicle.fuel_type || "")));
+    if (!applicable.length) continue;
+    if (!active.length) { skipped.push(String(vehicle.plate_no)); continue; }
+    for (const driver of active) for (const kind of applicable) records.push({ vehicle_id: vehicle.id, plate_no: vehicle.plate_no, driver_id: driver!.id, driver_name: driver!.name, kind, content: kind === "other" ? other : `請完成${labels[kind]}` });
+  }
+  records.sort((a,b)=>`${a.vehicle_id}:${a.driver_id}:${a.kind}`.localeCompare(`${b.vehicle_id}:${b.driver_id}:${b.kind}`));
+  return { fleet_label: fleetLabel, spec: { fleet: filter, kinds, other: kinds.includes("other") ? other : "" }, records, skipped, labels };
+}
 
 function sanitizeStaffRecord(table: string, input: Record<string, unknown>, session: Record<string, unknown>, creating: boolean) {
   const title = compactText(input.title).slice(0, 160);
@@ -1047,6 +1097,28 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action === "load_maintenance_notifications") {
+      if (session.session_type !== "admin" || !(await adminCan(session,"maintenanceNotifications"))) return json({error:"ADMIN_PERMISSION_DENIED"},403);
+      const [notifications,batches] = await Promise.all([dispatchRows("maintenance_notifications","*"),dispatchRows("maintenance_notification_batches","*")]);
+      return json({data:{maintenance_notifications:notifications,maintenance_notification_batches:batches}});
+    }
+    if (["preview_maintenance_broadcast","create_maintenance_broadcast"].includes(body.action)) {
+      if (session.session_type !== "admin" || !(await adminCan(session,"maintenanceNotifications"))) return json({ error: "ADMIN_PERMISSION_DENIED" },403);
+      const [vehicles,drivers,dealers] = await Promise.all([
+        dispatchRows("vehicles","id,plate_no,dealer_partner_id,fleet_name,fuel_type,current_driver_id,driver_history,status,lease_status"),
+        dispatchRows("drivers","id,name,driver_status"),
+        dispatchRows("insurance_partners","id,name,partner_type")
+      ]);
+      let plan;
+      try { plan = maintenanceBroadcastPlan(body,vehicles,drivers,dealers,new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei"}).format(new Date())); }
+      catch(error) { return json({ error: error instanceof Error ? error.message : String(error) },400); }
+      if (body.action === "preview_maintenance_broadcast") return json(plan);
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(body.batch_id || ""))) return json({error:"無效的通知批次"},400);
+      const actor = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      const {data,error} = await db.rpc("create_maintenance_broadcast",{p_id:body.batch_id,p_actor:actor,p_label:plan.fleet_label,p_spec:plan.spec,p_records:plan.records});
+      if (error) throw error;
+      return json({ ...data, skipped:plan.skipped });
+    }
     if (body.action === "set_staff_note") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       const ownerId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
@@ -1100,7 +1172,7 @@ Deno.serve(async (req) => {
       return json(await signStorageUrls({ user: data }));
     }
     if (body.action === "load") {
-      if (session.session_type === "admin") return json(await signStorageUrls(await loadAdminData(session)));
+      if (session.session_type === "admin") return json(await signStorageUrls(await loadAdminData(session, body.scope === "home" ? "home" : body.scope === "workspace" ? "workspace" : "all")));
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
       return json(await signStorageUrls(await loadDriverData(session.driver_id)));
     }
@@ -1272,6 +1344,7 @@ Deno.serve(async (req) => {
       return json({ ok: true });
     }
     if (!tables.includes(body.table)) return json({ error: "TABLE_NOT_ALLOWED" }, 400);
+    if (body.table === "maintenance_notification_batches") return json({ error: "ACTION_NOT_ALLOWED" },403);
     if (body.table === "staff_notes") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
     if (["staff_announcements", "staff_calendar_events"].includes(body.table) && session.session_type !== "admin") {
       return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);

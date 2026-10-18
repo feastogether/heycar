@@ -20,12 +20,13 @@ async function backendTests() {
   let handler;
   let session = {session_type:'admin',admin_user_id:'me',admin_name:'王小明',is_super_admin:false};
   const db = {from(table){
-    let mode='select', payload, filters=[], columns='*';
+    let mode='select', payload, filters=[], columns='*', range=null;
     const query={
-      select(value='*'){columns=value;return this},eq(key,value){filters.push(row=>row[key]===value);return this},neq(key,value){filters.push(row=>row[key]!==value);return this},order(){return this},or(){return this},
+      select(value='*'){columns=value;return this},eq(key,value){filters.push(row=>row[key]===value);return this},neq(key,value){filters.push(row=>row[key]!==value);return this},order(){return this},or(){return this},range(start,end){range=[start,end];return this},
       insert(value){mode='insert';payload=value;return this},upsert(value){mode='upsert';payload=value;return this},update(value){mode='update';payload=value;return this},delete(){mode='delete';return this},
       async execute(single=false){
         let rows=(data[table]||[]).filter(row=>filters.every(fn=>fn(row)));
+        if(range)rows=rows.slice(range[0],range[1]+1);
         if(mode==='insert'){rows=[{id:'new',created_at:today,...payload}];(data[table]||=[]).push(...rows)}
         if(mode==='upsert'){const current=(data[table]||[]).find(row=>row.owner_id===payload.owner_id);if(current){Object.assign(current,payload);rows=[current]}else{rows=[payload];(data[table]||=[]).push(payload)}}
         if(mode==='update')rows.forEach(row=>Object.assign(row,payload));
@@ -40,6 +41,8 @@ async function backendTests() {
   context.testSession=()=>({...session});
   vm.runInContext('getSession = async () => testSession();',context);
   const request=(action,table,record,id)=>handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action,table,record,id})}));
+  const broadcastRequest=payload=>handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}));
+  for(const action of ['preview_maintenance_broadcast','create_maintenance_broadcast','load_maintenance_notifications']) assert.equal((await broadcastRequest({action,fleet:'all',kinds:['receipt']})).status,403);
   const noteRequest=(payload)=>handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'set_staff_note',...payload})}));
   let note=await noteRequest({content:'開會中，有事請留言',owner_id:'amy'});
   assert.equal(note.status,200);assert.equal((await note.json()).data.owner_id,'me');
@@ -86,7 +89,45 @@ async function backendTests() {
   codeUser.extension='old';
   const logged=await handler(new Request('https://test/',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:'login_admin',code:'9345'})}));
   assert.equal(logged.status,200);assert.equal((await logged.json()).admin_profile.extension,'9345');
-  console.log('PASS: staff-only API, note ownership/upsert/length, login-code extension sync, edit permissions and calendar validation');
+  const home=await context.loadAdminData({...session},'home');
+  assert.equal('vehicles' in home.data,false);assert.equal('dispatch_orders' in home.data,false);
+  assert('staff_announcements' in home.data);
+  const workspace=await context.loadAdminData({...session},'workspace');
+  assert(!('staff_announcements' in workspace.data));assert('vehicles' in workspace.data);
+  const fixtures={
+    vehicles:[{id:'v1',plate_no:'TEST-1',dealer_partner_id:'dealer',fleet_name:'甲車隊',fuel_type:'柴油',current_driver_id:'d1'}, {id:'v2',plate_no:'TEST-2',dealer_partner_id:'dealer',fuel_type:'汽油',current_driver_id:'d2'}, {id:'v3',plate_no:'TEST-3',dealer_partner_id:'dealer',fuel_type:'柴油'}, {id:'v4',plate_no:'TEST-4',dealer_partner_id:'other',fuel_type:'柴油',current_driver_id:'d1'}, {id:'v5',plate_no:'TEST-5',dealer_partner_id:'dealer',fuel_type:'柴油',current_driver_id:'d1',status:'報廢'}, {id:'v6',plate_no:'TEST-6',dealer_partner_id:'dealer',fuel_type:'柴油',current_driver_id:'d1',driver_history:[{driver_id:'d2',end_at:'2020-01-01'}]}],
+    drivers:[{id:'d1',name:'司機甲'},{id:'d2',name:'司機乙'}],dealers:[{id:'dealer',name:'甲車商',partner_type:'dealer'}]
+  };
+  let plan=context.maintenanceBroadcastPlan({fleet:'dealer:dealer',kinds:['diesel','receipt','diesel']},fixtures.vehicles,fixtures.drivers,fixtures.dealers,today);
+  assert.equal(plan.records.length,3);assert.deepEqual(Array.from(plan.skipped),['TEST-3','TEST-6']);
+  assert(!plan.records.some(row=>row.vehicle_id==='v2'&&row.kind==='diesel'));
+  assert(!plan.records.some(row=>['v4','v5','v6'].includes(row.vehicle_id)));
+  assert.throws(()=>context.maintenanceBroadcastPlan({fleet:'wrong',kinds:['diesel']},fixtures.vehicles,fixtures.drivers,fixtures.dealers,today));
+  assert.throws(()=>context.maintenanceBroadcastPlan({fleet:'all',kinds:['other']},fixtures.vehicles,fixtures.drivers,fixtures.dealers,today));
+  assert.throws(()=>context.maintenanceBroadcastPlan({fleet:'all',kinds:['toString']},fixtures.vehicles,fixtures.drivers,fixtures.dealers,today));
+  plan=context.maintenanceBroadcastPlan({fleet:'all',kinds:['other'],other:'請聯絡行控'},fixtures.vehicles,fixtures.drivers,fixtures.dealers,today);
+  assert(plan.records.every(row=>row.content==='請聯絡行控'));
+  data.vehicles=fixtures.vehicles;data.drivers=fixtures.drivers;data.insurance_partners=fixtures.dealers;
+  data.admin_users[0].permissions={maintenanceNotifications:true};
+  session={session_type:'admin',admin_user_id:'me'};
+  const scoped=await context.loadAdminData({...session},'workspace');
+  assert.equal(scoped.data.vehicles.length,6);assert.equal(scoped.data.drivers.length,2);assert.equal(scoped.data.insurance_partners.length,1);
+  assert(!('driver_history' in scoped.data.vehicles[0]));
+  const preview=await broadcastRequest({action:'preview_maintenance_broadcast',fleet:'dealer:dealer',kinds:['diesel','receipt']});
+  assert.equal(preview.status,200);assert.equal((await preview.json()).records.length,3);
+  assert.equal(data.maintenance_notifications.length,0);
+  assert.equal((await broadcastRequest({action:'create_maintenance_broadcast',fleet:'all',kinds:['diesel'],batch_id:'bad'})).status,400);
+  for(const session_type of ['driver','partner']){
+    session={session_type};
+    assert.equal((await broadcastRequest({action:'preview_maintenance_broadcast',fleet:'all',kinds:['receipt']})).status,403);
+  }
+  data.maintenance_notifications=[{id:'own-notice',driver_id:'d1',status:'pending',content:'憑證繳回'},{id:'other-notice',driver_id:'d2',status:'pending'}];
+  session={session_type:'driver',driver_id:'d1'};
+  assert.equal((await request('update','maintenance_notifications',{status:'completed',content:'forged'},'own-notice')).status,200);
+  assert.equal(data.maintenance_notifications[0].status,'completed');assert.equal(data.maintenance_notifications[0].content,'憑證繳回');
+  await request('update','maintenance_notifications',{status:'completed'},'other-notice');
+  assert.equal(data.maintenance_notifications[1].status,'pending');
+  console.log('PASS: staff-only API, note ownership, permissions, calendar validation, scoped loads, broadcast eligibility and driver completion isolation');
 }
 
 async function uiTests(){
@@ -94,10 +135,14 @@ async function uiTests(){
   try {
     const context=await browser.newContext();
     const data=seed();let profile={...users[0],is_super_admin:false,permissions:{}};
+    data.vehicles=[{id:'v1',plate_no:'TEST-1',dealer_partner_id:'dealer',fleet_name:'甲車隊',fuel_type:'柴油',current_driver_id:'d1'}];
+    data.drivers=[{id:'d1',name:'司機甲'}];data.insurance_partners=[{id:'dealer',name:'甲車商',partner_type:'dealer',active:true}];
+    let broadcastSent=0;
     const errors=[];const page=await context.newPage();page.on('pageerror',err=>errors.push(err.message));
     await context.route('**/*',async route=>{
       const url=new URL(route.request().url());
       if(url.hostname!=='staff.test')return route.abort();
+      if(url.pathname==='/api/office-weather') return route.fulfill({json:{location:'台中市北區',days:[{date:today,min:21,max:29,rain:20,code:3},{date:new Date(Date.parse(`${today}T00:00:00+08:00`)+86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'}),min:22,max:30,rain:30,code:0}]}});
       if(url.pathname==='/api'){
         const body=route.request().postDataJSON();let result={};
         if(body.action==='load')result={data,admin_profile:profile};
@@ -105,6 +150,9 @@ async function uiTests(){
         if(body.action==='insert'){const row={id:'added-'+Date.now(),...body.record,author_name:'王小明'};data[body.table].unshift(row);result={data:row}}
         if(body.action==='update'){const row=data[body.table].find(row=>row.id===body.id);Object.assign(row,body.record);result={data:row}}
         if(body.action==='set_staff_note'){const row={owner_id:'me',content:body.content,updated_at:today};data.staff_notes=[...data.staff_notes.filter(item=>item.owner_id!=='me'),row];result={data:row}}
+        if(body.action==='preview_maintenance_broadcast')result={records:body.kinds.map(kind=>({vehicle_id:'v1',plate_no:'TEST-1',driver_id:'d1',driver_name:'司機甲',kind,content:kind})),skipped:[]};
+        if(body.action==='create_maintenance_broadcast'){broadcastSent++;const batch={id:body.batch_id,fleet_label:'甲車商',created_at:today,request_spec:{kinds:body.kinds}};const rows=body.kinds.map(kind=>({id:`${body.batch_id}-${kind}`,driver_id:'d1',vehicle_id:'v1',notification_kind:kind,content:'請完成通知',status:'pending',batch_id:body.batch_id}));data.maintenance_notification_batches.unshift(batch);data.maintenance_notifications.unshift(...rows);result={batch,notifications:rows}}
+        if(body.action==='load_maintenance_notifications')result={data:{maintenance_notifications:data.maintenance_notifications,maintenance_notification_batches:data.maintenance_notification_batches}};
         return route.fulfill({json:result});
       }
       if(url.pathname==='/')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">${['styles.css','heycar-ui-enhance.css','staff-home.css'].map(file=>`<link rel="stylesheet" href="/${file}">`).join('')}</head><body><div id="app"></div><script>window.AFIDE_CONFIG={DATA_API_URL:'/api'};</script><script src="/app.js"></script></body></html>`});
@@ -130,11 +178,15 @@ async function uiTests(){
     assert.equal(await page.locator('.side-nav [data-admin-view]').first().getAttribute('data-admin-view'),'home');
     assert.equal(await page.locator('[data-modal="staffAnnouncement"]').count(),0);
     assert.equal(await page.locator('[data-staff-new-event]').count(),0);
-    assert(await page.getByText('公司會議通知',{exact:true}).isVisible());
+    assert(await page.locator('[data-staff-detail="staff_announcements:notice"]').first().isVisible());
+    assert.equal(await page.locator('.staff-notice>p').count(),0);
+    assert((await page.locator('.staff-notice-board h2').innerText()).includes('內部公告'));
+    await page.getByText('21–29°C',{exact:true}).waitFor();
     await page.locator('[data-staff-detail="staff_announcements:notice"]').first().click();
     assert(await page.locator('.staff-detail-content').isVisible());
     await page.locator('[data-close-modal]').click();
-    assert.equal(await page.locator('.staff-person img').count(),1);
+    assert.equal(await page.locator('.staff-person img:not(.staff-super-avatar)').count(),1);
+    assert.equal(await page.locator('.staff-person .staff-super-avatar').count(),1);
     assert(await page.locator('.staff-person').filter({hasText:'陳美麗'}).isVisible(), await page.locator('.staff-people-list').innerText());
     for(const width of [320,390,768,1440]){
       await page.setViewportSize({width,height:1000});
@@ -191,11 +243,29 @@ async function uiTests(){
     await page.locator('#staffNoteForm [type="submit"]').click();
     await page.locator('#staffNoteForm').waitFor({state:'detached'});
     assert(await page.locator('[data-open-staff-chat="me"] .is-placeholder').isVisible());
+    await page.locator('.side-nav [data-admin-view="maintenanceNotifications"]').click();
+    await page.locator('[data-action="bulk-maintenance-notification"]').click();
+    assert.equal(await page.locator('[name="kinds"][value="diesel"]').isDisabled(),true);
+    await page.locator('#broadcastFleet').selectOption('dealer:dealer');
+    await page.locator('[name="kinds"][value="diesel"]').check();
+    await page.locator('[name="kinds"][value="receipt"]').check();
+    await page.locator('#maintenanceBroadcastForm [type="submit"]').click();
+    await page.getByRole('button',{name:'發送 2 則通知',exact:true}).waitFor();
+    assert.equal(broadcastSent,0);
+    await page.locator('#maintenanceBroadcastForm').evaluate(form=>{form.requestSubmit();form.requestSubmit()});
+    await page.getByText('已建立 2 則通知，司機可在「保養維修」回報完成。',{exact:true}).waitFor();
+    assert.equal(broadcastSent,1);
+    await page.getByRole('button',{name:'知道了',exact:true}).click();
+    assert((await page.locator('.maintenance-batch').innerText()).includes('已完成 0 / 2'));
+    data.maintenance_notifications[0].status='completed';
+    await page.locator('[data-action="refresh-maintenance-batches"]').click();
+    await page.getByText('已完成 1 / 2',{exact:false}).waitFor();
+    await page.locator('.side-nav [data-admin-view="home"]').click();
     await page.setViewportSize({width:390,height:844});
     await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
     await page.screenshot({path:path.join(root,'tmp/staff-home-mobile.png'),fullPage:true,animations:'disabled'});
     assert.deepEqual(errors,[]);
-    console.log('PASS: full app navigation, notice/calendar save and reload, avatar upload, permissions, teammate chat, 320/390/768/1440 layouts');
+    console.log('PASS: office navigation, notices/calendar, avatars/chat, forecast, broadcast preview/double-submit/status refresh and 320/390/768/1440 layouts');
   }finally{await browser.close()}
 }
 backendTests().then(uiTests).catch(err=>{console.error(err);process.exitCode=1});

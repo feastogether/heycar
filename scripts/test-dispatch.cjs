@@ -153,6 +153,7 @@ async function main() {
   front.apiRequest = async (action, payload) => { submitted = payload; return { count: 1 }; };
   front.loadAll = async () => {};
   front.render = () => {};
+  front.ensureOptionalLibrary = async () => {};
   vm.runInContext('async ' + functionSource(app, 'importDispatchExcelFile'), front);
   front.state.dispatchSearch = 'old search';
   front.state.dispatchDriverFilter = 'old driver';

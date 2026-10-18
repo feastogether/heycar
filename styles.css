@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;600;700;800;900&display=swap");
 
 :root {
   --bg: #f4f6f9;
@@ -4890,75 +4889,6 @@ tr:last-child td { border-bottom: 0; }
   padding-top: 10px;
   border-top: 1px solid #eef2f6;
 }
-.evaluation-builder {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-.evaluation-score-row {
-  display: grid;
-  grid-template-columns: minmax(220px, 1.4fr) 96px 110px minmax(180px, 1fr);
-  align-items: end;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-}
-.evaluation-score-row > div {
-  display: grid;
-  gap: 4px;
-}
-.evaluation-score-row strong {
-  font-size: 15px;
-  font-weight: 950;
-}
-.evaluation-score-row small {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1.45;
-}
-.evaluation-score-row label {
-  display: grid;
-  gap: 5px;
-}
-.evaluation-score-row input[readonly] {
-  background: #f8fafc;
-  color: var(--muted);
-}
-.evaluation-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-}
-.evaluation-check-group {
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-}
-.evaluation-check-group > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  margin-top: 8px;
-}
-.evaluation-check-group .field {
-  margin: 0;
-}
-.evaluation-check-group .check-field {
-  min-height: 36px;
-  padding: 7px 10px;
-  border: 1px solid #eef2f6;
-  border-radius: 999px;
-  background: #f8fafc;
-  font-size: 13px;
-  white-space: nowrap;
-}
 .vehicle-service-history {
   display: grid;
   gap: 12px;
@@ -5200,9 +5130,6 @@ tr:last-child td { border-bottom: 0; }
   .single-driver-picker .driver-picker-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-driver-history-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .vehicle-driver-history-remove { justify-self: start; }
-  .evaluation-builder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .evaluation-score-row { grid-template-columns: 1fr 92px 100px; }
-  .evaluation-score-row label:last-child { grid-column: 1 / -1; }
   .vehicle-service-history-row { grid-template-columns: 92px 70px minmax(0, 1fr) auto; }
   .vehicle-service-history-row span:nth-of-type(3),
   .vehicle-service-history-row strong { display: none; }
@@ -5305,10 +5232,6 @@ tr:last-child td { border-bottom: 0; }
   .vehicle-driver-history-panel summary { align-items: flex-start; flex-direction: column; }
   .vehicle-driver-history-row { grid-template-columns: 1fr; }
   .vehicle-driver-history-actions { align-items: flex-start; flex-direction: column; }
-  .evaluation-builder { grid-template-columns: 1fr; }
-  .evaluation-score-row { grid-template-columns: 1fr; align-items: stretch; }
-  .evaluation-actions { justify-content: stretch; }
-  .evaluation-actions > * { flex: 1 1 100%; }
   .vehicle-service-history-head { align-items: flex-start; flex-direction: column; }
   .vehicle-service-history-row { grid-template-columns: 1fr auto; }
   .vehicle-service-history-row span:first-child,
