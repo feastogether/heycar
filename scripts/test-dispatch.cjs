@@ -216,7 +216,7 @@ async function main() {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
       const page = await browser.newPage();
-      const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8') + fs.readFileSync(path.join(root, 'heycar-ui-enhance.css'), 'utf8');
+      const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8') + fs.readFileSync(path.join(root, 'heycar-ui-enhance.css'), 'utf8') + fs.readFileSync(path.join(root, 'staff-home.css'), 'utf8');
       for (const width of [320, 390, 768, 1440]) {
         front.window.innerWidth = width;
         html = front.adminDispatchCenter();

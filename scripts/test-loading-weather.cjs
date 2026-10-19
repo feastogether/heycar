@@ -78,4 +78,15 @@ async function workerTests() {
   response=await context.worker.fetch(new Request('https://test/api/office-weather'),env);assert.equal(response.status,503);
 }
 
-libraryTests().then(scopeTests).then(workerTests).then(()=>console.log('PASS: optional library coalescing/retry, scoped home load, stale session guard, forecast cache/errors and private storage cache isolation')).catch(error=>{console.error(error);process.exitCode=1});
+function dateTests() {
+  let clock=Date.parse('2026-10-18T15:59:59.999Z'),formatters=0,formats=0;
+  class ClockDate extends Date { constructor(...args){super(...(args.length?args:[clock]))}static now(){return clock} }
+  const context=vm.createContext({Date:ClockDate,Intl:{DateTimeFormat:function(...args){formatters++;const formatter=new Intl.DateTimeFormat(...args);return {formatToParts:date=>{formats++;return formatter.formatToParts(date)}}}}});
+  vm.runInContext(`${functionSource('taipeiParts')}\n${functionSource('today')}`,context);
+  for(let i=0;i<1000;i++)assert.equal(context.today(),'2026-10-18');
+  assert.equal(formats,1);assert.equal(formatters,1);
+  clock+=2;assert.equal(context.today(),'2026-10-19');assert.equal(formats,2);assert.equal(formatters,1);
+  clock=Date.parse('2026-12-31T16:00:00Z');assert.equal(context.today(),'2027-01-01');
+}
+
+libraryTests().then(scopeTests).then(workerTests).then(dateTests).then(()=>console.log('PASS: optional libraries, scoped loads, stale sessions, forecast/cache, shared date formatter and midnight/year rollover')).catch(error=>{console.error(error);process.exitCode=1});

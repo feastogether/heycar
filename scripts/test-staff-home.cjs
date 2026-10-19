@@ -136,7 +136,7 @@ async function uiTests(){
     const context=await browser.newContext();
     const data=seed();let profile={...users[0],is_super_admin:false,permissions:{}};
     data.vehicles=[{id:'v1',plate_no:'TEST-1',dealer_partner_id:'dealer',fleet_name:'甲車隊',fuel_type:'柴油',current_driver_id:'d1'}];
-    data.drivers=[{id:'d1',name:'司機甲'}];data.insurance_partners=[{id:'dealer',name:'甲車商',partner_type:'dealer',active:true}];
+    data.drivers=[{id:'d1',name:'司機甲',dealer_partner_id:'dealer',driver_status:'跑趟中'},{id:'d2',name:'司機乙',dealer_partner_id:'other'}];data.insurance_partners=[{id:'dealer',name:'甲車商',partner_type:'dealer',active:true},{id:'other',name:'乙車商',partner_type:'dealer',active:true}];
     let broadcastSent=0;
     const errors=[];const page=await context.newPage();page.on('pageerror',err=>errors.push(err.message));
     await context.route('**/*',async route=>{
@@ -146,7 +146,7 @@ async function uiTests(){
       if(url.pathname==='/api'){
         const body=route.request().postDataJSON();let result={};
         if(body.action==='load')result={data,admin_profile:profile};
-        if(body.action==='load_admin_chat')result={admin_users:users,admin_chat_messages:[]};
+        if(body.action==='load_admin_chat')result={admin_users:data.admin_users,admin_chat_messages:data.admin_chat_messages};
         if(body.action==='insert'){const row={id:'added-'+Date.now(),...body.record,author_name:'王小明'};data[body.table].unshift(row);result={data:row}}
         if(body.action==='update'){const row=data[body.table].find(row=>row.id===body.id);Object.assign(row,body.record);result={data:row}}
         if(body.action==='set_staff_note'){const row={owner_id:'me',content:body.content,updated_at:today};data.staff_notes=[...data.staff_notes.filter(item=>item.owner_id!=='me'),row];result={data:row}}
@@ -187,6 +187,7 @@ async function uiTests(){
     await page.locator('[data-close-modal]').click();
     assert.equal(await page.locator('.staff-person img:not(.staff-super-avatar)').count(),1);
     assert.equal(await page.locator('.staff-person .staff-super-avatar').count(),1);
+    data.admin_chat_messages=[{id:'c1',sender_id:'amy',receiver_id:'me',message:'請協助確認訂單',created_at:`${today}T09:00:00+08:00`},{id:'c2',sender_id:'super-admin',receiver_id:'me',message:'最新內部訊息',created_at:`${today}T10:00:00+08:00`}];
     assert(await page.locator('.staff-person').filter({hasText:'陳美麗'}).isVisible(), await page.locator('.staff-people-list').innerText());
     for(const width of [320,390,768,1440]){
       await page.setViewportSize({width,height:1000});
@@ -195,8 +196,29 @@ async function uiTests(){
       await page.locator('[data-open-staff-chat="amy"]').click();
       assert(await page.locator('.admin-chat-panel').isVisible());
       assert(await page.locator('#adminChatForm input').isEnabled());
+      assert.equal(await page.locator('[data-admin-chat-contact-button]').first().getAttribute('data-admin-chat-contact-button'),'super-admin');
+      assert(await page.locator('.admin-chat-current img').isVisible());
+      assert.equal(await page.locator('.admin-chat-bubble .staff-avatar').count(),1);
+      if(width<=700){
+        assert.equal(await page.locator('.admin-chat-contacts').isVisible(),false);
+        const before=(await page.locator('.admin-chat-conversation').boundingBox());assert(before.width>=width-2);
+        await page.locator('[data-action="admin-chat-contacts"]').click();
+        assert(await page.locator('.admin-chat-contacts').isVisible());
+        await page.locator('[data-admin-chat-contact-button="super-admin"]').click();
+        assert((await page.locator('[data-admin-chat-messages]').innerText()).includes('最新內部訊息'));
+        await page.screenshot({path:path.join(root,`tmp/chat-mobile-${width}.png`),animations:'disabled'});
+      }
       await page.locator('.admin-chat-head [data-action="toggle-admin-chat"]').click();
     }
+    await page.setViewportSize({width:390,height:500});
+    await page.locator('[data-action="toggle-admin-chat"]').first().click();
+    assert(await page.locator('.admin-chat-contacts').isVisible());
+    data.admin_chat_messages.push({id:'c3',sender_id:'amy',receiver_id:'me',message:'剛收到的新訊息',created_at:`${today}T11:00:00+08:00`});
+    await page.waitForFunction(()=>document.querySelector('[data-admin-chat-contact-button]')?.dataset.adminChatContactButton==='amy',{},{timeout:10000});
+    await page.locator('[data-admin-chat-contact-button="amy"]').click();
+    await page.locator('[data-admin-chat-messages]').getByText('剛收到的新訊息',{exact:true}).waitFor();
+    assert((await page.locator('.admin-chat-compose').boundingBox()).y+44<=500);
+    await page.locator('.admin-chat-head [data-action="toggle-admin-chat"]').click();
     profile={...profile,is_super_admin:true,permissions:{all:true}};
     await page.reload();await page.locator('.staff-home').waitFor();
     await page.setViewportSize({width:1440,height:1000});
@@ -243,6 +265,53 @@ async function uiTests(){
     await page.locator('#staffNoteForm [type="submit"]').click();
     await page.locator('#staffNoteForm').waitFor({state:'detached'});
     assert(await page.locator('[data-open-staff-chat="me"] .is-placeholder').isVisible());
+    await page.locator('.side-nav [data-admin-view="drivers"]').click();
+    assert.equal(await page.locator('.driver-management-row').count(),2);
+    for(const width of [320,390,768,1440]){
+      await page.setViewportSize({width,height:900});
+      if(width<1200&&(await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').getAttribute('aria-expanded'))==='true')await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
+      if(width===1440&&(await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').getAttribute('aria-expanded'))!=='true')await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
+      const outside=await page.evaluate(()=>[...document.querySelectorAll('main *')].filter(node=>node.getBoundingClientRect().right>innerWidth+1).map(node=>`${node.tagName}.${node.className}:${Math.round(node.getBoundingClientRect().right)}`).slice(0,35));
+      if(width===320)await page.screenshot({path:path.join(root,'tmp/driver-filters-mobile.png'),fullPage:true,animations:'disabled'});
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`driver filter overflow at ${width}: ${outside.join(',')}`);
+    }
+    await page.locator('[data-driver-dealer-filter]').selectOption('dealer');
+    assert.equal(await page.locator('.driver-management-row').count(),1);
+    assert((await page.locator('.driver-management-row').innerText()).includes('司機甲'));
+    await page.locator('[data-driver-filter="待上線"]').click();
+    assert.equal(await page.locator('.driver-management-row').count(),0);
+    await page.locator('[data-driver-filter="全部"]').click();
+    await page.locator('[data-driver-dealer-filter]').selectOption('');
+    assert.equal(await page.locator('.driver-management-row').count(),2);
+    await page.locator('[data-driver-filter="待上線"]').click();
+    assert.equal(await page.locator('.driver-management-row').count(),1);
+    assert((await page.locator('.driver-management-row').innerText()).includes('司機乙'));
+    await page.locator('[data-driver-filter="全部"]').click();
+    await page.locator('.side-nav [data-admin-view="dispatchCenter"]').click();
+    await page.locator('#dispatchSearchForm [name="search"]').fill('保留搜尋');
+    await page.locator('[data-admin-dispatch-date-shift="1"]').click();
+    const tomorrow=new Date(Date.parse(`${today}T12:00:00+08:00`)+86400000).toISOString().slice(0,10);
+    assert.equal(await page.locator('[data-admin-dispatch-date-input]').inputValue(),tomorrow);
+    assert.equal(await page.locator('#dispatchSearchForm [name="search"]').inputValue(),'保留搜尋');
+    await page.locator('[data-admin-dispatch-date-shift="-1"]').click();
+    assert.equal(await page.locator('[data-admin-dispatch-date-input]').inputValue(),today);
+    await page.locator('[data-admin-dispatch-date-input]').fill('2026-12-31');
+    await page.locator('[data-admin-dispatch-date-shift="1"]').click();
+    assert.equal(await page.locator('[data-admin-dispatch-date-input]').inputValue(),'2027-01-01');
+    for(const width of [320,390,768,1440]){
+      await page.setViewportSize({width,height:900});
+      if(width<1200&&(await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').getAttribute('aria-expanded'))==='true')await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
+      if(width===1440&&(await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').getAttribute('aria-expanded'))!=='true')await page.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
+      if(width<=900 && !await page.locator('#dispatchSearchForm').isVisible())await page.locator('.dispatch-toolbar>summary').click();
+      if(width===390){
+        await page.locator('[data-admin-dispatch-date-shift="1"]').click();
+        assert.equal(await page.locator('[data-admin-dispatch-date-input]').inputValue(),'2027-01-02');
+        assert(await page.locator('#dispatchSearchForm').isVisible());
+        await page.locator('[data-admin-dispatch-date-shift="-1"]').click();
+        await page.screenshot({path:path.join(root,'tmp/dispatch-date-mobile.png'),fullPage:true,animations:'disabled'});
+      }
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),`dispatch date filter overflow at ${width}`);
+    }
     await page.locator('.side-nav [data-admin-view="maintenanceNotifications"]').click();
     await page.locator('[data-action="bulk-maintenance-notification"]').click();
     assert.equal(await page.locator('[name="kinds"][value="diesel"]').isDisabled(),true);

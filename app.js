@@ -27,6 +27,7 @@
     view: "home",
     adminView: "home",
     driverStatusFilter: "全部",
+    driverDealerFilter: "",
     driverSearch: "",
     vehicleSearch: "",
     vehicleStatusFilter: "",
@@ -73,6 +74,7 @@
     dispatchTimeFilter: "",
     dispatchImportSummary: "",
     adminChatOpen: false,
+    adminChatMobileConversation: false,
     adminChatContactId: "",
     adminChatDraft: "",
     adminChatEmojiOpen: false,
@@ -108,6 +110,7 @@
   let dispatchFlightRefreshTimer = null;
   let dispatchRefreshTimer = null;
   let adminChatRefreshTimer = null;
+  let adminChatLoadPromise = null;
   let weatherTicker = null;
   let satelliteMap = null;
   let satelliteMarkerLayer = null;
@@ -149,6 +152,8 @@
     state.dispatchFiltersOpen = false;
     document.querySelectorAll(".dispatch-toolbar").forEach(element => { element.open = !event.matches; });
   });
+  window.visualViewport?.addEventListener("resize", syncAdminChatViewport);
+  window.visualViewport?.addEventListener("scroll", syncAdminChatViewport);
 
   function requestedDriverView() {
     try {
@@ -345,7 +350,7 @@
   }
 
   function taipeiParts(date = new Date()) {
-    const parts = new Intl.DateTimeFormat("en-CA", {
+    const formatter = taipeiParts.formatter ||= new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Taipei",
       year: "numeric",
       month: "2-digit",
@@ -353,13 +358,18 @@
       hour: "2-digit",
       minute: "2-digit",
       hourCycle: "h23"
-    }).formatToParts(date);
+    });
+    const parts = formatter.formatToParts(date);
     return Object.fromEntries(parts.map((part) => [part.type, part.value]));
   }
 
   function today() {
+    const second = Math.floor(Date.now() / 1000);
+    if (today.cache?.second === second) return today.cache.value;
     const parts = taipeiParts();
-    return `${parts.year}-${parts.month}-${parts.day}`;
+    const value = `${parts.year}-${parts.month}-${parts.day}`;
+    today.cache = { second, value };
+    return value;
   }
 
   function formatDateTime(value) {
@@ -416,6 +426,7 @@
       loanStatusFilter: state.loanStatusFilter,
       onboardingFilter: state.onboardingFilter,
       onboardingDealerFilter: state.onboardingDealerFilter,
+      driverDealerFilter: state.driverDealerFilter,
       dispatchDateFilter: state.dispatchDateFilter,
       dispatchAdminDateFilter: state.dispatchAdminDateFilter
     };
@@ -438,6 +449,7 @@
       if (saved.loanStatusFilter !== undefined) state.loanStatusFilter = saved.loanStatusFilter;
       if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
       if (saved.onboardingDealerFilter !== undefined) state.onboardingDealerFilter = saved.onboardingDealerFilter;
+      if (saved.driverDealerFilter !== undefined) state.driverDealerFilter = saved.driverDealerFilter;
       if (saved.dispatchDateFilter) state.dispatchDateFilter = saved.dispatchDateFilter;
       state.dispatchAdminDateFilter = today();
     } catch {}
@@ -966,10 +978,11 @@
     const statusOrder = { "跑趟中": 0, "待上線": 1, "停派中": 2, "留停中": 3, "已離職": 4, "其他": 5, "未上線": 6, "已上線": 7, "已退出": 8 };
     const keyword = String(state.driverSearch || "").trim().toLowerCase();
     const drivers = [...state.data.drivers]
-      .filter((driver) => state.driverStatusFilter === "全部" || driver.driver_status === state.driverStatusFilter)
+      .filter((driver) => onboardingMatchesDealer(driver, state.driverDealerFilter))
+      .filter((driver) => state.driverStatusFilter === "全部" || (driver.driver_status || "待上線") === state.driverStatusFilter)
       .filter((driver) => !keyword || driverSearchText(driver).includes(keyword))
       .sort((a, b) => (statusOrder[a.driver_status] ?? 9) - (statusOrder[b.driver_status] ?? 9) || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
-    if (!drivers.length) return `<div class="empty">此狀態目前沒有駕駛</div>`;
+    if (!drivers.length) return `<div class="empty">沒有符合篩選條件的駕駛</div>`;
     return `<div class="driver-management-list">${drivers.map((driver) => `
       <article class="driver-management-row">
         <div class="driver-row-identity">
@@ -1524,12 +1537,14 @@
     }
     if (!shouldRefresh || adminChatRefreshTimer) return;
     adminChatRefreshTimer = setInterval(async () => {
+      if (document.hidden) return;
       if (!state.admin || !state.adminChatOpen || !state.apiSession) {
         ensureAdminChatAutoRefresh();
         return;
       }
       try {
         await loadAdminChat();
+        if (!window.matchMedia("(max-width: 700px)").matches || state.adminChatMobileConversation) await markAdminChatRead();
         updateAdminChatDom();
       } catch (error) {
         state.adminChatError = `即時通訊更新失敗：${error.message || error}`;
@@ -1928,9 +1943,9 @@
     return `<section class="driver-dispatch-page">
       <div class="dispatch-date-switcher">
         <button class="ghost-btn" data-view="home">返回</button>
-        <button class="ghost-btn" data-dispatch-date-shift="-1">‹</button>
+        <button class="ghost-btn" data-dispatch-date-shift="-1" aria-label="前一天">‹</button>
         <input type="date" value="${escapeHtml(selectedDate)}" data-dispatch-date-input>
-        <button class="ghost-btn" data-dispatch-date-shift="1">›</button>
+        <button class="ghost-btn" data-dispatch-date-shift="1" aria-label="後一天">›</button>
       </div>
       <div class="dispatch-card-list">
         ${orders.length ? orders.map(dispatchOrderCard).join("") : `<div class="empty">這一天沒有派趟資料</div>`}
@@ -2036,6 +2051,16 @@
     if (Number.isNaN(base.getTime())) return today();
     base.setDate(base.getDate() + Number(days || 0));
     return base.toISOString().slice(0, 10);
+  }
+
+  function applyAdminDispatchDate(date, form) {
+    state.dispatchAdminDateFilter = date;
+    const data = new FormData(form);
+    state.dispatchSearch = String(data.get("search") || "").trim();
+    state.dispatchDriverFilter = String(data.get("driver") || "").trim();
+    state.dispatchTimeFilter = String(data.get("time") || "").trim();
+    state.dispatchFiltersOpen = Boolean(form.closest("details")?.open);
+    render();
   }
 
   function openDispatchDetail(id) {
@@ -3670,13 +3695,38 @@
     return state.adminProfile?.name || "最高管理員";
   }
 
-  function adminChatContacts() {
+  function adminChatSummary() {
     const me = currentAdminChatId();
-    const users = (state.data.admin_users || [])
-      .filter((user) => user.active !== false && user.id && user.id !== me)
-      .sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant"));
-    if (me !== "super-admin") return [{ id: "super-admin", name: "最高管理員", active: true }, ...users];
-    return users;
+    const summary = new Map();
+    for (const item of state.data.admin_chat_messages || []) {
+      const sender = String(item.sender_id || ""), receiver = String(item.receiver_id || "");
+      const id = sender === me ? receiver : receiver === me ? sender : "";
+      if (!id || id === me) continue;
+      const row = summary.get(id) || { last: null, timestamp: 0, unread: 0 };
+      const timestamp = Date.parse(item.created_at) || 0;
+      if (!row.last || timestamp >= row.timestamp) { row.last = item; row.timestamp = timestamp; }
+      if (receiver === me && !item.read_at) row.unread++;
+      summary.set(id, row);
+    }
+    return summary;
+  }
+
+  function adminChatContacts(summary = adminChatSummary()) {
+    const me = currentAdminChatId();
+    const users = (state.data.admin_users || []).filter(user => user.active !== false && user.id && user.id !== me);
+    if (me !== "super-admin") users.push({ id: "super-admin", name: "最高管理員", active: true });
+    return users.sort((a,b) => (summary.get(b.id)?.timestamp || 0) - (summary.get(a.id)?.timestamp || 0)
+      || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant") || String(a.id).localeCompare(String(b.id)));
+  }
+
+  function adminChatAvatar(id) {
+    const user = id === "super-admin" ? { id, name: "最高管理員" } : (state.data.admin_users || []).find(user => user.id === id) || { name: adminChatContactName(id) };
+    return `<span class="admin-chat-avatar">${staffAvatar(user)}</span>`;
+  }
+
+  function adminChatCurrentMarkup() {
+    const id = state.adminChatContactId;
+    return `${id ? adminChatAvatar(id) : ""}<strong data-admin-chat-current-name>${escapeHtml(id ? adminChatContactName(id) : "請選擇聯絡人")}</strong>`;
   }
 
   function adminChatMessages(contactId = state.adminChatContactId) {
@@ -3698,8 +3748,8 @@
     return messages.map((item) => {
       const mine = String(item.sender_id || "") === currentAdminChatId();
       return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
-        <small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
-        <p>${escapeHtml(item.message || "")}</p>
+        ${adminChatAvatar(String(item.sender_id || ""))}<div class="admin-chat-bubble-copy"><small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
+        <p>${escapeHtml(item.message || "")}</p></div>
       </article>`;
     }).join("");
   }
@@ -3708,40 +3758,38 @@
     return adminChatMessages(contactId);
   }
 
-  function adminChatContactUnread(contactId) {
-    const me = currentAdminChatId();
-    return adminChatContactMessages(contactId).filter((item) =>
-      String(item.sender_id || "") === String(contactId) &&
-      String(item.receiver_id || "") === me &&
-      !item.read_at
-    ).length;
+  function adminChatContactUnread(contactId, summary = adminChatSummary()) {
+    return summary.get(contactId)?.unread || 0;
   }
 
-  function adminChatContactPreview(contactId) {
-    const messages = adminChatContactMessages(contactId);
-    const last = messages[messages.length - 1];
+  function adminChatContactPreview(contactId, summary = adminChatSummary()) {
+    const last = summary.get(contactId)?.last;
     if (!last) return { text: "尚無訊息", time: "" };
-    return {
-      text: `${String(last.sender_id || "") === currentAdminChatId() ? "你：" : ""}${last.message || ""}`,
-      time: formatDateTime(last.created_at).split(" ").pop() || ""
-    };
+    return { text: `${String(last.sender_id || "") === currentAdminChatId() ? "你：" : ""}${last.message || ""}`, time: formatDateTime(last.created_at).split(" ").pop() || "" };
   }
 
   function adminChatContactsMarkup(contacts = adminChatContacts(), selectedId = state.adminChatContactId) {
     if (!contacts.length) return `<div class="admin-chat-contacts-empty">尚無聯絡人</div>`;
-    return contacts.map((user) => {
-      const preview = adminChatContactPreview(user.id);
-      const unread = adminChatContactUnread(user.id);
-      const initial = String(user.name || "未").trim().slice(0, 1);
-      return `<button type="button" class="admin-chat-contact ${user.id === selectedId ? "is-active" : ""}" data-admin-chat-contact-button="${escapeHtml(user.id)}">
-        <span class="admin-chat-avatar" aria-hidden="true">${escapeHtml(initial)}</span>
+    const summary = adminChatSummary();
+    return contacts.map(user => {
+      const preview = adminChatContactPreview(user.id, summary);
+      const unread = adminChatContactUnread(user.id, summary);
+      return `<button type="button" class="admin-chat-contact ${user.id === selectedId ? "is-active" : ""}" data-admin-chat-contact-button="${escapeHtml(user.id)}" aria-pressed="${user.id === selectedId}">
+        ${adminChatAvatar(user.id)}
         <span class="admin-chat-contact-copy"><strong>${escapeHtml(user.name || "未命名")}</strong><small>${escapeHtml(preview.text)}</small></span>
-        <span class="admin-chat-contact-meta"><time>${escapeHtml(preview.time)}</time>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}</span>
+        <span class="admin-chat-contact-meta"><time>${escapeHtml(preview.time)}</time>${unread ? `<b aria-label="${unread} 則未讀">${unread > 99 ? "99+" : unread}</b>` : ""}</span>
       </button>`;
     }).join("");
   }
 
+  function syncAdminChatViewport() {
+    if (!state.adminChatOpen || !window.matchMedia("(max-width: 700px)").matches) return;
+    document.documentElement.style.setProperty("--chat-viewport-height", `${window.visualViewport?.height || window.innerHeight}px`);
+    document.documentElement.style.setProperty("--chat-viewport-top", `${window.visualViewport?.offsetTop || 0}px`);
+  }
+
   function updateAdminChatDom() {
+    syncAdminChatViewport();
     const unread = adminUnreadChatCount();
     const badge = document.querySelector(".admin-chat-fab b");
     const fab = document.querySelector(".admin-chat-fab");
@@ -3753,18 +3801,33 @@
     const box = document.querySelector("[data-admin-chat-messages]");
     if (box) {
       const nearBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-      box.innerHTML = adminChatMessagesMarkup();
+      const markup = adminChatMessagesMarkup();
+      if (box.chatMarkup !== markup) { box.innerHTML = markup; box.chatMarkup = markup; }
       if (nearBottom) box.scrollTop = box.scrollHeight;
     }
     const contactsBox = document.querySelector("[data-admin-chat-contacts]");
-    if (contactsBox) contactsBox.innerHTML = adminChatContactsMarkup();
-    const contactTitle = document.querySelector("[data-admin-chat-current-name]");
-    if (contactTitle) contactTitle.textContent = state.adminChatContactId ? adminChatContactName(state.adminChatContactId) : "請選擇聯絡人";
+    if (contactsBox) {
+      const markup = adminChatContactsMarkup();
+      if (contactsBox.chatMarkup !== markup) { contactsBox.innerHTML = markup; contactsBox.chatMarkup = markup; }
+    }
+    const contactTitle = document.querySelector("[data-admin-chat-current]");
+    if (contactTitle) {
+      const markup = adminChatCurrentMarkup();
+      if (contactTitle.chatMarkup !== markup) { contactTitle.innerHTML = markup; contactTitle.chatMarkup = markup; }
+    }
+    document.querySelector(".admin-chat-widget")?.classList.toggle("is-conversation", Boolean(state.adminChatMobileConversation));
   }
 
-  async function loadAdminChat() {
+  function loadAdminChat() {
+    if (!adminChatLoadPromise) adminChatLoadPromise = fetchAdminChat().finally(() => { adminChatLoadPromise = null; });
+    return adminChatLoadPromise;
+  }
+
+  async function fetchAdminChat() {
     if (!state.admin || !state.apiSession) return;
+    const session = state.apiSession;
     const result = await apiRequest("load_admin_chat");
+    if (state.apiSession !== session) return;
     if (result.admin_users) {
       const existing = new Map((state.data.admin_users || []).map(user => [user.id, user]));
       const directory = result.admin_users.map(user => ({ ...existing.get(user.id), ...user }));
@@ -3801,19 +3864,20 @@
 
   function adminChatWidget() {
     if (!state.admin) return "";
+    const unread = adminUnreadChatCount();
+    const fab = `<button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" aria-label="開啟即時對話"><span>💬</span>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}</button>`;
+    if (!state.adminChatOpen) return `<section class="admin-chat-widget" aria-label="即時對話">${fab}</section>`;
+    syncAdminChatViewport();
     const contacts = adminChatContacts();
     const selectedId = state.adminChatContactId || contacts[0]?.id || "";
     if (!state.adminChatContactId && selectedId) state.adminChatContactId = selectedId;
-    const unread = adminUnreadChatCount();
     const emojis = ["😀", "😄", "👍", "🙏", "✅", "❤️", "🚗", "✈️", "🔥"];
-    return `<section class="admin-chat-widget ${state.adminChatFromHome ? "is-staff-chat" : ""} ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
-      <button class="admin-chat-fab" type="button" data-action="toggle-admin-chat" onclick="this.closest('.admin-chat-widget').classList.toggle('is-open')" aria-label="開啟即時對話">
-        <span>💬</span>${unread ? `<b>${unread > 99 ? "99+" : unread}</b>` : ""}
-      </button>
+    return `<section class="admin-chat-widget ${state.adminChatMobileConversation ? "is-conversation" : ""} ${state.adminChatOpen ? "is-open" : ""}" aria-label="即時對話">
+      ${fab}
       <div class="admin-chat-panel">
         <header class="admin-chat-head">
-          <div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div>
-          <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" onclick="this.closest('.admin-chat-widget').classList.toggle('is-open')" aria-label="關閉對話">×</button>
+          <div class="admin-chat-identity">${adminChatAvatar(currentAdminChatId())}<div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div></div>
+          <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" aria-label="關閉對話">×</button>
         </header>
         <div class="admin-chat-layout">
           <aside class="admin-chat-contacts" aria-label="聯絡人">
@@ -3821,7 +3885,7 @@
             <div class="admin-chat-contact-list" data-admin-chat-contacts>${adminChatContactsMarkup(contacts, selectedId)}</div>
           </aside>
           <section class="admin-chat-conversation">
-            <div class="admin-chat-conversation-head"><strong data-admin-chat-current-name>${escapeHtml(selectedId ? adminChatContactName(selectedId) : "請選擇聯絡人")}</strong><span class="admin-chat-live">即時</span></div>
+            <div class="admin-chat-conversation-head"><button class="admin-chat-back" type="button" data-action="admin-chat-contacts" aria-label="返回聯絡人">‹</button><div class="admin-chat-current" data-admin-chat-current>${adminChatCurrentMarkup()}</div><span class="admin-chat-live">即時</span></div>
             <div class="admin-chat-messages" data-admin-chat-messages>
               ${adminChatMessagesMarkup(selectedId)}
             </div>
@@ -4068,7 +4132,7 @@
 
   function adminDrivers() {
     const filters = ["全部", "跑趟中", "停派中", "待上線", "已離職", "留停中", "其他"];
-    const drivers = state.data.drivers || [];
+    const drivers = (state.data.drivers || []).filter(driver => onboardingMatchesDealer(driver, state.driverDealerFilter));
     const counts = drivers.reduce((result, driver) => {
       result[driver.driver_status || "待上線"] = (result[driver.driver_status || "待上線"] || 0) + 1;
       return result;
@@ -4080,6 +4144,7 @@
         ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? drivers.length : (counts[status] || 0)}</b></button>`).join("")}
       </div>
       <form id="driverSearchForm" class="driver-search-bar">
+        <label class="driver-dealer-filter">所屬車商<select aria-label="所屬車商篩選" data-driver-dealer-filter>${dealerPartnerOptions(state.driverDealerFilter, "全部車商").map(([value,label])=>`<option value="${escapeHtml(value)}" ${value === state.driverDealerFilter ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
         <input name="search" type="search" value="${escapeHtml(state.driverSearch || "")}" placeholder="\u641c\u5c0b\u59d3\u540d\u3001\u96fb\u8a71\u3001\u8eca\u724c\u3001\u5340\u57df\u6216\u7de8\u7d44">
         <button class="primary-btn" type="submit">\u641c\u5c0b</button>
         ${state.driverSearch ? `<button class="ghost-btn" type="button" data-action="clear-driver-search">\u6e05\u9664</button>` : ""}
@@ -4183,7 +4248,7 @@
 
   function onboardingMatchesDealer(driver = {}, dealerId = "") {
     if (!dealerId) return true;
-    if (String(driver.dealer_partner_id || "") === String(dealerId)) return true;
+    if (driver.dealer_partner_id) return String(driver.dealer_partner_id) === String(dealerId);
     const dealer = partnerById(dealerId);
     return Boolean(dealer?.name && String(driver.fleet_name || "") === String(dealer.name));
   }
@@ -4773,7 +4838,7 @@
     </div>
     <form id="dispatchSearchForm" class="loan-filter-panel dispatch-filter-panel">
       <div class="dispatch-search-row">
-        <input name="date" type="date" value="${escapeHtml(selectedDate)}">
+        <div class="dispatch-admin-date"><button class="ghost-btn" type="button" data-admin-dispatch-date-shift="-1" aria-label="前一天">‹</button><input name="date" type="date" aria-label="派趟日期" data-admin-dispatch-date-input value="${escapeHtml(selectedDate)}"><button class="ghost-btn" type="button" data-admin-dispatch-date-shift="1" aria-label="後一天">›</button></div>
         <input name="search" value="${escapeHtml(state.dispatchSearch || "")}" placeholder="搜尋訂單、平台、車商、地區、航班">
         <input name="driver" value="${escapeHtml(state.dispatchDriverFilter || "")}" placeholder="搜尋司機">
         <input name="time" value="${escapeHtml(state.dispatchTimeFilter || "")}" placeholder="時間">
@@ -7874,12 +7939,12 @@
       if (target.dataset.openStaffChat === currentAdminChatId()) { openStaffNoteEditor(); return; }
       state.adminChatContactId = target.dataset.openStaffChat;
       state.adminChatOpen = true;
-      state.adminChatFromHome = true;
+      state.adminChatMobileConversation = true;
       state.adminChatError = "";
       render();
       try { await loadAdminChat(); await markAdminChatRead(); } catch(error) { state.adminChatError = `即時通訊載入失敗：${error.message || error}`; }
       updateAdminChatDom();
-      document.querySelector('#adminChatForm input')?.focus();
+      if (!window.matchMedia("(max-width: 700px)").matches) document.querySelector('#adminChatForm input')?.focus();
       return;
     }
     if (target?.dataset.action === "bulk-maintenance-notification") {
@@ -8005,6 +8070,11 @@
     if (target?.dataset.dispatchDateShift !== undefined) {
       state.dispatchDateFilter = shiftDate(state.dispatchDateFilter || today(), Number(target.dataset.dispatchDateShift));
       render();
+      return;
+    }
+    if (target?.dataset.adminDispatchDateShift !== undefined) {
+      const form = target.closest("form");
+      applyAdminDispatchDate(shiftDate(form.elements.date.value || state.dispatchAdminDateFilter || today(), Number(target.dataset.adminDispatchDateShift)), form);
       return;
     }
     if (target?.dataset.dispatchDetail) {
@@ -8169,6 +8239,7 @@
     if (target.dataset.action === "toggle-admin-chat") {
       state.adminChatOpen = !state.adminChatOpen;
       state.adminChatEmojiOpen = false;
+      state.adminChatMobileConversation = false;
       if (state.adminChatOpen) {
         if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
       }
@@ -8176,12 +8247,12 @@
       requestAnimationFrame(() => {
         const box = document.querySelector("[data-admin-chat-messages]");
         if (box) box.scrollTop = box.scrollHeight;
-        document.querySelector("#adminChatForm input")?.focus();
+        if (!window.matchMedia("(max-width: 700px)").matches) document.querySelector("#adminChatForm input")?.focus();
       });
       if (state.adminChatOpen) {
         try {
           await loadAdminChat();
-          await markAdminChatRead();
+          if (!window.matchMedia("(max-width: 700px)").matches) await markAdminChatRead();
         } catch (error) {
           state.adminChatError = `即時通訊載入失敗：${error.message || error}`;
         }
@@ -8191,7 +8262,9 @@
     }
     if (target.dataset.adminChatContactButton !== undefined) {
       state.adminChatContactId = target.dataset.adminChatContactButton || "";
+      state.adminChatMobileConversation = true;
       state.adminChatEmojiOpen = false;
+      updateAdminChatDom();
       try {
         await markAdminChatRead(state.adminChatContactId);
       } catch (error) {
@@ -8201,8 +8274,13 @@
       requestAnimationFrame(() => {
         const box = document.querySelector("[data-admin-chat-messages]");
         if (box) box.scrollTop = box.scrollHeight;
-        document.querySelector("#adminChatForm input")?.focus();
+        if (!window.matchMedia("(max-width: 700px)").matches) document.querySelector("#adminChatForm input")?.focus();
       });
+      return;
+    }
+    if (target.dataset.action === "admin-chat-contacts") {
+      state.adminChatMobileConversation = false;
+      updateAdminChatDom();
       return;
     }
     if (target.dataset.action === "refresh-admin-chat") {
@@ -8916,6 +8994,19 @@
     const dispatchDateInput = e.target.closest("[data-dispatch-date-input]");
     if (dispatchDateInput) {
       state.dispatchDateFilter = dispatchDateInput.value || today();
+      render();
+      return;
+    }
+    const adminDispatchDateInput = e.target.closest("[data-admin-dispatch-date-input]");
+    if (adminDispatchDateInput) {
+      applyAdminDispatchDate(adminDispatchDateInput.value || today(), adminDispatchDateInput.closest("form"));
+      return;
+    }
+    const driverDealerFilter = e.target.closest("[data-driver-dealer-filter]");
+    if (driverDealerFilter) {
+      state.driverDealerFilter = driverDealerFilter.value || "";
+      const search = document.querySelector('#driverSearchForm [name="search"]');
+      if (search) state.driverSearch = search.value.trim();
       render();
       return;
     }

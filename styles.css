@@ -4284,8 +4284,9 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .subsection-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
 .subsection-head h3 { margin: 0; font-size: 18px; font-weight: 950; }
 .subsection-head small { color: var(--muted); font-weight: 800; }
-.permission-switch { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
-.permission-switch input { position: absolute; opacity: 0; pointer-events: none; }
+.permission-switch { position: relative; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+.permission-switch input { position: absolute; left: 0; top: 0; width: 1px; height: 1px; min-width: 0; min-height: 0; margin: 0; padding: 0; overflow: hidden; clip-path: inset(50%); opacity: 0; pointer-events: none; }
+.permission-switch input:focus-visible + span { outline: 2px solid #426b8c; outline-offset: 3px; }
 .permission-switch span { width: 34px; height: 20px; padding: 2px; border-radius: 10px; background: #cbd5e1; transition: background .2s ease; }
 .permission-switch span::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .2s ease; }
 .permission-switch input:checked + span { background: var(--green); }
@@ -7278,7 +7279,7 @@ body {
 }
 
 @media (max-width: 700px) {
-  .admin-chat-widget { display: none !important; }
+
   .loan-in-use-section { padding: 12px; border-radius: 15px; }
   .loan-in-use-head { align-items: center; }
   .loan-in-use-head h3 { font-size: 15px; }

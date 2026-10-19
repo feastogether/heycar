@@ -58,6 +58,7 @@ async function main() {
     adminChatContactId: 'amy', adminChatDraft: '', adminChatOpen: true, adminChatEmojiOpen: false, adminChatError: ''
   };
   const ctx = vm.createContext({
+    syncAdminChatViewport:()=>{},
     state, Date, now: () => '2026-09-17T10:00:00+08:00',
     escapeHtml: value => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('"', '&quot;'),
     formatDateTime: value => value ? '2026/09/17 ' + String(value).slice(11, 16) : '-',
@@ -65,7 +66,7 @@ async function main() {
     loanStatuses: [['pending_approval','待核准'],['approved','已核准'],['return_pending','待結案'],['completed','已完成']],
     activeKeyAccessCode: () => null
   });
-  for (const name of ['currentAdminChatId','currentAdminChatName','adminChatContacts','adminChatMessages','adminChatMessagesMarkup','adminChatContactMessages','adminChatContactUnread','adminChatContactPreview','adminChatContactsMarkup','adminUnreadChatCount','adminChatContactName','adminChatWidget','adminVehicleLoans','loanStatusText','loanUsagePhase','loanStatusClass','loanTouchesDate']) {
+  for (const name of ['staffAvatar','adminChatAvatar','adminChatCurrentMarkup','adminChatSummary','currentAdminChatId','currentAdminChatName','adminChatContacts','adminChatMessages','adminChatMessagesMarkup','adminChatContactMessages','adminChatContactUnread','adminChatContactPreview','adminChatContactsMarkup','adminUnreadChatCount','adminChatContactName','adminChatWidget','adminVehicleLoans','loanStatusText','loanUsagePhase','loanStatusClass','loanTouchesDate']) {
     vm.runInContext(functionSource(app, name), ctx);
   }
   const loanHtml = ctx.adminVehicleLoans();
@@ -77,18 +78,31 @@ async function main() {
   assert(chatHtml.includes('data-admin-chat-contact-button="ben"'));
   assert(!chatHtml.includes('<select data-admin-chat-contact'));
   assert(chatHtml.includes('請問車輛回來了嗎？'));
+  state.adminChatOpen=false;assert(!ctx.adminChatWidget().includes('admin-chat-contact-list'));state.adminChatOpen=true;
+  assert.equal(ctx.adminChatContacts()[0].id,'ben','most recent outgoing conversation first');
+  state.data.admin_chat_messages.push({id:'m3',sender_id:'amy',receiver_id:'me',message:'新訊息',created_at:'2026-09-17T01:20:00Z'});
+  assert.equal(ctx.adminChatContacts()[0].id,'amy','incoming timestamp must reorder conversations across timezone formats');
+  assert.equal(ctx.adminChatContactUnread('amy'),2);
+  assert(ctx.adminChatAvatar('super-admin').includes('heycar-afide-logo.png'));
+  state.data.admin_users[1].avatar_url='https://example.com/avatar.png';assert(ctx.adminChatAvatar('amy').includes('https://example.com/avatar.png'));
 
   const { chromium } = require('playwright');
   const browser = await chromium.launch({ channel: 'msedge', headless: true });
   try {
     const page = await browser.newPage();
-    const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
+    const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8') + fs.readFileSync(path.join(root, 'staff-home.css'), 'utf8');
     for (const width of [320, 390, 768, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       await page.setContent(`<style>${css}</style><main>${loanHtml}${chatHtml}</main>`);
       assert.equal(await page.locator('.admin-chat-contact').count(), 3);
       if (width <= 700) {
-        assert.equal(await page.locator('.admin-chat-widget').isVisible(), false);
+        assert(await page.locator('.admin-chat-contacts').isVisible());
+        assert.equal(await page.locator('.admin-chat-conversation').isVisible(),false);
+        await page.locator('.admin-chat-widget').evaluate(node=>node.classList.add('is-conversation'));
+        assert.equal(await page.locator('.admin-chat-contacts').isVisible(),false);
+        assert(await page.locator('.admin-chat-conversation').isVisible());
+        assert((await page.locator('.admin-chat-conversation').boundingBox()).width>=width-2);
+        assert(await page.locator('.admin-chat-back').isVisible());
       } else {
         assert(await page.locator('.admin-chat-contacts').isVisible());
         assert(await page.locator('.admin-chat-conversation').isVisible());
@@ -98,10 +112,17 @@ async function main() {
       assert(await page.locator('.loan-in-use-section').isVisible());
       assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `horizontal overflow at ${width}`);
     }
+    for(const width of [768,1440]){
+      await page.setViewportSize({width,height:420});
+      await page.setContent(`<style>${css}</style>${chatHtml}`);
+      const panel=await page.locator('.admin-chat-panel').boundingBox();
+      assert(panel.y>=0&&panel.y+panel.height<=420,`chat exceeds short viewport at ${width}`);
+      assert(await page.locator('#adminChatForm input').isVisible());
+    }
   } finally {
     await browser.close();
   }
-  console.log('PASS: active vehicle cards fit 320/390px; desktop chat stays wide at 768/1440px and is hidden on mobile');
+  console.log('PASS: latest conversation order, avatar rendering, unread counts, vehicle cards and full-width mobile/desktop chat');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
