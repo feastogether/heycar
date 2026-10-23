@@ -667,57 +667,99 @@
     return (state.data.hiring_pages || []).find((item) => item.active !== false) || defaultHiringPage();
   }
 
-  function renderHiringPage() {
-    const page = activeHiringPage();
-    const sections = [
-      ["about", page.about_title || "關於我們", page.about_html || page.content_html || defaultHiringPage().about_html],
-      ["salary", page.salary_title || "薪資方案", page.salary_html || defaultHiringPage().salary_html],
-      ["rental", page.rental_title || "車輛承租", page.rental_html || defaultHiringPage().rental_html],
-      ["lease", page.lease_title || "車輛租購", page.lease_html || defaultHiringPage().lease_html],
-      ["stories", page.stories_title || "司機分享", page.stories_html || defaultHiringPage().stories_html]
+  function hiringPlans(page = activeHiringPage()) {
+    const defaults = defaultHiringPage();
+    return [
+      { key:"salary", title:page.salary_title || defaults.salary_title, html:page.salary_html || defaults.salary_html, label:"了解合作與收入安排", icon:"M4 7h16v13H4z M8 7V4h8v3 M4 12h16 M10 12v3h4v-3" },
+      { key:"rental", title:page.rental_title || defaults.rental_title, html:page.rental_html || defaults.rental_html, label:"依需求評估合適車源", icon:"M3 14l2-7h14l2 7v5H3z M3 14h18 M7 17h1 M16 17h1 M6 19v2 M18 19v2" },
+      { key:"lease", title:page.lease_title || defaults.lease_title, html:page.lease_html || defaults.lease_html, label:"為長期投入規劃下一步", icon:"M5 20V9l7-6 7 6v11z M9 20v-7h6v7" }
     ];
-    app.innerHTML = `<main class="hiring-page">
-      <header class="hiring-topbar">
-        <div class="hiring-logo"><img src="${escapeHtml(logoUrl)}" alt="Heycar 亞菲得"><span>${escapeHtml(page.subtitle || "Hey!car 亞菲得租車")}</span></div>
-        <nav class="hiring-flow-nav">
-          ${sections.map(([key, title]) => `<a href="#${key}">${escapeHtml(title)}</a>`).join("")}
-          <a href="#apply">${escapeHtml(page.apply_title || "立即應徵")}</a>
-        </nav>
-      </header>
-      <section class="hiring-hero">
-        <div class="hiring-hero-copy">
-          <p>${escapeHtml(page.title || "禮賓司機招募")}</p>
-          <h1>${escapeHtml(page.hero_title || "成為專業禮賓司機")}</h1>
-          <span>${escapeHtml(page.hero_summary || "")}</span>
-          <a class="primary-btn hiring-cta" href="#apply">${escapeHtml(page.apply_button_text || "立即應徵")}</a>
-        </div>
+  }
+
+  function hiringWorkTypes() { return { full_time:"專職", part_time:"兼職", undecided:"想先了解" }; }
+
+  function selectHiringPlan(key, focus = false) {
+    if (!["salary","rental","lease"].includes(key)) return;
+    state.hiringPlan = key;
+    document.querySelectorAll("[data-hiring-plan]").forEach(button => {
+      const active = button.dataset.hiringPlan === key;
+      button.setAttribute("aria-selected", String(active)); button.tabIndex = active ? 0 : -1;
+      if (active && focus) button.focus();
+    });
+    document.querySelectorAll("[data-hiring-panel]").forEach(panel => { panel.hidden = panel.dataset.hiringPanel !== key; });
+  }
+
+  async function submitHiringApplication(form) {
+    if (form.dataset.sending === "true" || !form.reportValidity()) return;
+    form.dataset.sending = "true";
+    const status = form.querySelector("[data-hiring-submit-status]");
+    const button = form.querySelector("button[type='submit']");
+    const label = button.innerHTML;
+    try {
+      status.textContent = "正在送出，請稍候…"; button.disabled = true;
+      button.innerHTML = '<span class="save-spinner" aria-hidden="true"></span>正在送出';
+      await apiRequest("submit_hiring_application", { record:Object.fromEntries(new FormData(form).entries()) });
+      form.reset(); status.textContent = "已收到你的資料，招募窗口將與你聯繫。";
+      await showAlert("應徵資料已送出，我們會盡快與你聯繫。", "送出成功");
+    } catch(error) {
+      status.textContent = "送出失敗，資料已保留，請稍後重試。";
+      await showAlert(error.message || error, "送出失敗");
+    } finally { delete form.dataset.sending; button.disabled = false; button.innerHTML = label; }
+  }
+
+  function renderHiringPage() {
+    const page = activeHiringPage(), defaults = defaultHiringPage(), plans = hiringPlans(page);
+    const selected = ["salary","rental","lease"].includes(state.hiringPlan) ? state.hiringPlan : plans.some(plan=>`#${plan.key}`===location.hash) ? location.hash.slice(1) : "salary";
+    const cta = escapeHtml(page.apply_button_text || "立即應徵");
+    const nav = [["about",page.about_title || "關於我們"],["plans","合作方案"],["benefits","工作特色"],["flow","加入流程"],["faq","常見問題"]];
+    const faqs = [
+      ["沒有自己的車，也可以先了解嗎？","可以先查看車輛承租與租購內容，招募窗口會依車源及服務需求，說明適合你的合作方式。"],
+      ["還沒有職業駕照，可以填寫資料嗎？","請在表單如實填寫持照狀態，由招募窗口確認應徵條件與後續需要準備的事項。"],
+      ["薪資與合作條件怎麼確認？","可先參考上方的薪資方案；實際趟次、計酬、排班與合約內容，請於聯繫時向招募窗口確認。"],
+      ["還不確定想選哪一種方案？","表單可以選擇「還不確定，想先了解」。留下聯絡方式後，再與招募窗口討論你的需求。"],
+      ["送出資料後，接下來會怎麼進行？","招募窗口會依你填寫的可接聽時段聯繫，請確認電話正確，並保持電話暢通。"]
+    ];
+    document.title = `${page.title || "司機招募"}｜Hey!car 亞菲得`;
+    app.innerHTML = `<main class="hiring-page" id="hiring-top">
+      <a class="hiring-skip" href="#apply">跳至報名表單</a>
+      <div class="hiring-announcement"><span>招募中</span> 機場接送・商務接待・禮賓服務 <a href="#plans">找到適合你的合作方式 ${iconSvg("M9 5l7 7-7 7")}</a></div>
+      <header class="hiring-topbar"><div class="hiring-topbar-inner">
+        <a class="hiring-logo" href="#hiring-top" aria-label="Hey!car 亞菲得招募首頁"><span class="hiring-brand-mark"><img src="${escapeHtml(logoUrl)}" alt=""></span><span class="hiring-brand-name"><strong>Hey!car</strong><small>亞菲得租車</small></span><span class="hiring-brand-caption">司機招募<small>DRIVER RECRUITMENT</small></span></a>
+        <button class="hiring-menu-button" type="button" data-hiring-menu aria-controls="hiringNav" aria-expanded="false" aria-label="展開招募導覽">${iconSvg("M4 6h16 M4 12h16 M4 18h16")}</button>
+        <nav id="hiringNav" class="hiring-flow-nav" aria-label="招募導覽">${nav.map(([id,title])=>`<a href="#${id}" data-hiring-nav>${escapeHtml(title)}</a>`).join("")}<a class="hiring-nav-cta" href="#apply" data-hiring-nav>${cta} ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</a></nav>
+      </div></header>
+      <section class="hiring-hero" aria-labelledby="hiringHeroTitle">
+        <picture class="hiring-hero-picture"><source media="(max-width:700px)" srcset="./assets/hiring-airport-mobile.webp"><img src="./assets/hiring-airport-hero.webp" width="1600" height="700" fetchpriority="high" decoding="async" alt="機場航廈旁的黑色接送車輛，招募主視覺情境示意"></picture>
+        <div class="hiring-hero-inner"><div class="hiring-hero-copy"><p class="hiring-eyebrow"><span></span>${escapeHtml(page.title || "禮賓司機招募")}</p><h1 id="hiringHeroTitle">${escapeHtml(page.hero_title || defaults.hero_title)}</h1><p class="hiring-hero-summary">${escapeHtml(page.hero_summary || defaults.hero_summary)}</p><div class="hiring-hero-actions"><a class="hiring-button" href="#apply">${cta} ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</a><a class="hiring-button hiring-button-outline" href="#plans">看合作方案</a></div><div class="hiring-hero-tags"><span>機場接送</span><span>商務接待</span><span>禮賓服務</span></div></div></div>
+        <span class="hiring-hero-caption">每一趟接送，都是新的出發。</span>
       </section>
-      <section class="hiring-flow">
-        ${sections.map(([key, title, html], index) => `<article class="hiring-flow-section ${index % 2 ? "is-alt" : ""}" id="${key}">
-          <div class="hiring-section-index">${String(index + 1).padStart(2, "0")}</div>
-          <div class="hiring-section-copy">
-            <h2>${escapeHtml(title)}</h2>
-            <div class="hiring-article">${sanitizeRichHtml(html)}</div>
-          </div>
-        </article>`).join("")}
-      </section>
-      <section class="hiring-content-wrap" id="apply">
-        <aside class="hiring-apply-card">
-          <h2>${escapeHtml(page.apply_title || "立即應徵")}</h2>
-          <p>${escapeHtml(page.apply_summary || defaultHiringPage().apply_summary)}</p>
-          <form id="hiringApplicationForm" class="hiring-form">
-            <label>姓名<input name="name" required autocomplete="name" placeholder="請輸入姓名"></label>
-            <label>電話<input name="phone" required inputmode="tel" autocomplete="tel" placeholder="請輸入聯絡電話"></label>
-            <label>居住縣市<input name="city" placeholder="例如 台北市"></label>
-            <label>是否有職業駕照<select name="has_professional_license"><option value="有">有</option><option value="無">無</option></select></label>
-            <label>可接聽電話時間<select name="available_call_time"><option value="早上">早上</option><option value="中午">中午</option><option value="晚上">晚上</option><option value="皆可">皆可</option></select></label>
-            <label>是否曾經跑過機場接送<select name="airport_transfer_experience"><option value="有">有</option><option value="無">無</option></select></label>
-            <button class="primary-btn" type="submit">送出問卷</button>
-            <small data-hiring-submit-status></small>
-          </form>
-        </aside>
-      </section>
+      <nav class="hiring-shortcuts hiring-container" aria-label="快速連結">${plans.map(plan=>`<a href="#plans" data-hiring-plan-link="${plan.key}"><span class="hiring-shortcut-icon">${iconSvg(plan.icon)}</span><span>${escapeHtml(plan.title)}<small>${plan.label}</small></span>${iconSvg("M9 5l7 7-7 7")}</a>`).join("")}<a href="#flow"><span class="hiring-shortcut-icon">${iconSvg("M4 7h16 M4 12h16 M4 17h10")}</span><span>加入流程<small>從了解開始，一步步準備</small></span>${iconSvg("M9 5l7 7-7 7")}</a></nav>
+      <section class="hiring-section hiring-about hiring-container" id="about"><div class="hiring-section-heading"><p class="hiring-eyebrow">MEET HEYCAR</p><h2>${escapeHtml(page.about_title || defaults.about_title)}</h2><p>把每一次出發，都當成值得用心的旅程。</p></div><div class="hiring-prose">${sanitizeRichHtml(page.about_html || page.content_html || defaults.about_html)}</div></section>
+      <section class="hiring-plans-section" id="plans"><div class="hiring-container hiring-section"><div class="hiring-section-heading hiring-center"><p class="hiring-eyebrow">FIND YOUR WAY</p><h2>選一種適合你的合作方式</h2><p>先了解各方案內容，再和招募窗口討論你的規劃。</p></div>
+        <div class="hiring-plan-tabs" role="tablist" aria-label="選擇合作方案">${plans.map((plan,i)=>`<button type="button" id="hiring-tab-${plan.key}" role="tab" data-hiring-plan="${plan.key}" aria-controls="${plan.key}" aria-selected="${plan.key===selected}" tabindex="${plan.key===selected?0:-1}"><span class="hiring-tab-number">0${i+1}</span><span><strong>${escapeHtml(plan.title)}</strong><small>${plan.label}</small></span>${iconSvg(plan.icon)}</button>`).join("")}</div>
+        <div class="hiring-plan-content">${plans.map((plan,i)=>`<article class="hiring-plan-panel" id="${plan.key}" role="tabpanel" tabindex="0" aria-labelledby="hiring-tab-${plan.key}" data-hiring-panel="${plan.key}" ${plan.key===selected?"":"hidden"}><div class="hiring-plan-intro"><span class="hiring-plan-kicker">PLAN 0${i+1}</span><h3>${escapeHtml(plan.title)}</h3><p>${plan.label}</p><a class="hiring-button" href="#apply" data-hiring-apply-plan="${plan.key}">我想了解這個方案 ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</a></div><div class="hiring-prose">${sanitizeRichHtml(plan.html)}</div></article>`).join("")}</div><p class="hiring-plan-note">薪資、車源、租金及合作條件，請以招募窗口說明及實際合約為準。</p>
+      </div></section>
+      <section class="hiring-section hiring-container" id="benefits"><div class="hiring-section-heading hiring-center"><p class="hiring-eyebrow">BETTER TOGETHER</p><h2>把心力，放在每一趟好服務</h2></div><div class="hiring-benefits">${[["01","清楚的派趟資訊","透過派趟中心查看訂單與接送資訊，掌握每一次出發。"],["02","專業的服務流程","從安全駕駛到旅客服務，一起重視每個接送細節。"],["03","團隊聯繫與支援","透過系統與車隊保持聯繫，讓服務資訊有清楚的傳遞方式。"]].map(([n,title,copy])=>`<article><span>${n}</span><h3>${title}</h3><p>${copy}</p></article>`).join("")}</div></section>
+      <section class="hiring-flow-section" id="flow"><div class="hiring-container hiring-section"><div class="hiring-section-heading"><p class="hiring-eyebrow">YOUR NEXT CHAPTER</p><h2>從這裡，開啟下一段旅程</h2><p>先留下資料，讓我們認識你的經驗與想法。</p></div><ol class="hiring-steps">${[["留下資料","填寫基本資料與感興趣的方案。"],["招募聯繫","依方便接聽的時段進一步了解。"],["確認合作方式","與招募窗口確認條件及準備事項。"],["完成上線準備","依確認的合作安排，完成後續準備。"]].map(([title,copy],i)=>`<li><span>0${i+1}</span><h3>${title}</h3><p>${copy}</p></li>`).join("")}</ol></div></section>
+      <section class="hiring-section hiring-stories hiring-container" id="stories"><div><p class="hiring-eyebrow">ON THE ROAD</p><h2>${escapeHtml(page.stories_title || defaults.stories_title)}</h2></div><div class="hiring-prose">${sanitizeRichHtml(page.stories_html || defaults.stories_html)}</div></section>
+      <section class="hiring-section hiring-faq hiring-container" id="faq"><div class="hiring-section-heading"><p class="hiring-eyebrow">BEFORE YOU START</p><h2>你可能還想知道</h2><p>常見問題，先在這裡找到方向。</p></div><div>${faqs.map(([question,answer])=>`<details><summary>${escapeHtml(question)}<span aria-hidden="true">＋</span></summary><p>${escapeHtml(answer)}</p></details>`).join("")}</div></section>
+      <section class="hiring-apply-section" id="apply"><div class="hiring-container hiring-apply-layout"><div class="hiring-apply-copy"><p class="hiring-eyebrow">READY FOR YOUR NEXT JOURNEY?</p><h2>${escapeHtml(page.apply_title || defaults.apply_title)}</h2><p>${escapeHtml(page.apply_summary || defaults.apply_summary)}</p><span class="hiring-apply-rule"></span><p class="hiring-apply-reminder">不確定適合哪個方案也沒關係。<br>先留下資料，再一起聊聊下一步。</p></div>
+        <div class="hiring-apply-card"><div class="hiring-form-heading"><h3>讓我們認識你</h3><p>姓名、電話、持照狀態與接送經驗為必填。</p></div><form id="hiringApplicationForm" class="hiring-form">
+          <label>姓名 <span>必填</span><input name="name" required maxlength="80" autocomplete="name" placeholder="請輸入姓名"></label>
+          <label>聯絡電話 <span>必填</span><input name="phone" required type="tel" maxlength="30" inputmode="tel" autocomplete="tel" placeholder="例如 0912 345 678"></label>
+          <label>有興趣的方案<select name="interested_plan"><option value="undecided">還不確定，想先了解</option>${plans.map(plan=>`<option value="${plan.key}">${escapeHtml(plan.title)}</option>`).join("")}</select></label>
+          <label>工作型態<select name="work_type"><option value="undecided">想先了解</option>${Object.entries(hiringWorkTypes()).filter(([key])=>key!=="undecided").map(([key,label])=>`<option value="${key}">${label}</option>`).join("")}</select></label>
+          <label>居住縣市<input name="city" maxlength="80" autocomplete="address-level1" placeholder="例如 台中市"></label>
+          <label>可接聽電話時間<select name="available_call_time"><option value="皆可">皆可</option><option value="早上">早上</option><option value="中午">中午</option><option value="晚上">晚上</option></select></label>
+          <label>是否有職業駕照 <span>必填</span><select name="has_professional_license" required><option value="">請選擇</option><option value="有">有</option><option value="無">無</option></select></label>
+          <label>是否曾跑過機場接送 <span>必填</span><select name="airport_transfer_experience" required><option value="">請選擇</option><option value="有">有</option><option value="無">無</option></select></label>
+          <p class="hiring-form-privacy">送出後，招募窗口將使用你提供的資料聯繫你。請勿填寫身分證字號或證件資料。</p><button class="hiring-button" type="submit">送出報名資料 ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</button><p data-hiring-submit-status role="status" aria-live="polite"></p>
+        </form></div></div></section>
+      <footer class="hiring-footer hiring-container"><div><strong>Hey!car <span>亞菲得租車</span></strong><p>${escapeHtml(page.subtitle || defaults.subtitle)}</p></div><nav aria-label="頁尾導覽"><a href="#plans">合作方案</a><a href="#flow">加入流程</a><a href="#faq">常見問題</a><a href="#hiring-top">回到頂端 ↑</a></nav><small>© ${new Date().getFullYear()} Hey!car 亞菲得租車</small></footer>
+      <div class="hiring-mobile-cta"><span>下一段旅程，從這裡開始</span><a class="hiring-button" href="#apply">${cta} ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</a></div>
     </main>`;
+    document.querySelectorAll(".hiring-prose img").forEach(image=>{image.loading="lazy";image.decoding="async";});
+    state.hiringPlan = selected;
   }
 
 
@@ -6173,6 +6215,7 @@
     const rows = applications.map((item) => [
       `<strong>${escapeHtml(item.name || "-")}</strong><small class="muted-line">${escapeHtml(item.phone || "-")}</small>`,
       escapeHtml(item.city || "-"),
+      `<strong>${escapeHtml(hiringPlans(page).find(plan=>plan.key===item.interested_plan)?.title || (item.interested_plan==="undecided"?"想先了解":"未填寫"))}</strong><small class="muted-line">${escapeHtml(hiringWorkTypes()[item.work_type] || "未填寫")}</small>`,
       escapeHtml(item.has_professional_license || "-"),
       escapeHtml(item.available_call_time || "-"),
       escapeHtml(item.airport_transfer_experience || "-"),
@@ -6192,7 +6235,7 @@
         <button class="filter-btn ${status === "unnotified" ? "active" : ""}" data-hiring-filter="unnotified">未通知 <span>${counts.unnotified}</span></button>
         <button class="filter-btn ${status === "notified" ? "active" : ""}" data-hiring-filter="notified">已通知 <span>${counts.notified}</span></button>
       </div>
-      ${table(["姓名/電話", "居住縣市", "職業駕照", "可接聽時間", "機場接送經驗", "送出時間", "操作"], rows, "hiring-application-table")}`;
+      ${table(["姓名/電話", "居住縣市", "方案／工作型態", "職業駕照", "可接聽時間", "機場接送經驗", "送出時間", "操作"], rows, "hiring-application-table")}`;
   }
 
   function adminDriverLinks() {
@@ -7898,6 +7941,26 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    if (target?.hasAttribute("data-hiring-menu")) {
+      const nav = document.getElementById("hiringNav");
+      const open = nav.classList.toggle("is-open");
+      target.setAttribute("aria-expanded", String(open));
+      target.setAttribute("aria-label", open ? "收合招募導覽" : "展開招募導覽");
+      return;
+    }
+    if (target?.dataset.hiringPlan) { selectHiringPlan(target.dataset.hiringPlan); return; }
+    if (target?.dataset.hiringPlanLink) { selectHiringPlan(target.dataset.hiringPlanLink); return; }
+    if (target?.dataset.hiringApplyPlan) {
+      const field = document.querySelector('#hiringApplicationForm [name="interested_plan"]');
+      if (field) field.value = target.dataset.hiringApplyPlan;
+      return;
+    }
+    if (target?.hasAttribute("data-hiring-nav")) {
+      document.getElementById("hiringNav")?.classList.remove("is-open");
+      const button = document.querySelector("[data-hiring-menu]");
+      button?.setAttribute("aria-expanded", "false"); button?.setAttribute("aria-label", "展開招募導覽");
+      return;
+    }
     if (target?.dataset.staffDate) {
       state.staffDate = target.dataset.staffDate;
       render();
@@ -8588,25 +8651,7 @@
 
   document.addEventListener("submit", async (e) => {
     if (e.target.id === "hiringApplicationForm") {
-      e.preventDefault();
-      const form = e.target;
-      const status = form.querySelector("[data-hiring-submit-status]");
-      const button = form.querySelector("button[type='submit']");
-      try {
-        if (status) status.textContent = "送出中...";
-        if (button) button.disabled = true;
-        const data = Object.fromEntries(new FormData(form).entries());
-        await apiRequest("submit_hiring_application", { record: data });
-        form.reset();
-        if (status) status.textContent = "已收到你的資料，我們會盡快聯繫。";
-        await showAlert("應徵資料已送出，我們會盡快與你聯繫。", "送出成功");
-      } catch (error) {
-        if (status) status.textContent = "送出失敗，請稍後再試。";
-        await showAlert(error.message || error, "送出失敗");
-      } finally {
-        if (button) button.disabled = false;
-      }
-      return;
+      e.preventDefault(); await submitHiringApplication(e.target); return;
     }
     if (e.target.id === "loginForm") {
       e.preventDefault();
@@ -8731,6 +8776,16 @@
   });
 
   document.addEventListener("keydown", async (e) => {
+    const hiringTab = e.target.closest("[data-hiring-plan]");
+    if (hiringTab && ["ArrowLeft","ArrowRight","Home","End"].includes(e.key)) {
+      e.preventDefault();
+      const keys = ["salary","rental","lease"], index = keys.indexOf(hiringTab.dataset.hiringPlan);
+      const next = e.key === "Home" ? 0 : e.key === "End" ? 2 : (index + (e.key === "ArrowRight" ? 1 : -1) + keys.length) % keys.length;
+      selectHiringPlan(keys[next], true); return;
+    }
+    if (e.key === "Escape" && document.getElementById("hiringNav")?.classList.contains("is-open")) {
+      document.querySelector("[data-hiring-menu]")?.click(); return;
+    }
     const driverHistorySearch = e.target.closest("[data-driver-history-search]");
     if (driverHistorySearch && e.key === "Enter") {
       const firstOption = driverHistorySearch.closest(".driver-history-picker")?.querySelector("[data-driver-history-option]");

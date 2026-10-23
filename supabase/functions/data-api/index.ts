@@ -1086,6 +1086,8 @@ Deno.serve(async (req) => {
           has_professional_license: normalizeChoice(record.has_professional_license),
           available_call_time: ["早上", "中午", "晚上", "皆可"].includes(compactText(record.available_call_time)) ? compactText(record.available_call_time) : "皆可",
           airport_transfer_experience: normalizeChoice(record.airport_transfer_experience),
+          interested_plan: ["salary","rental","lease","undecided"].includes(compactText(record.interested_plan)) ? compactText(record.interested_plan) : "undecided",
+          work_type: ["full_time","part_time","undecided"].includes(compactText(record.work_type)) ? compactText(record.work_type) : "undecided",
           notification_status: "unnotified",
           notes: compactText(record.notes).slice(0, 500)
         })
