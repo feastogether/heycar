@@ -1,0 +1,221 @@
+/* Shared airport visual and black/gold identity; authentication is unchanged. */
+.modern-air-login {
+  --login-ink: #211c13;
+  --login-gold: #e0ad48;
+  min-height: 100svh;
+  padding: 122px max(28px, 7vw) 64px;
+  align-items: center;
+  justify-items: start;
+  background: #eee0c4;
+}
+.modern-air-login::before {
+  display: none;
+}
+.modern-air-login::after {
+  inset: 86px 0 0;
+  background: linear-gradient(
+    90deg,
+    rgba(250, 244, 227, 0.28),
+    transparent 62%
+  );
+}
+.login-airport-picture {
+  position: absolute;
+  inset: 86px 0 0;
+  z-index: 0;
+}
+.login-airport-picture img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.modern-air-login .login-brand-bar {
+  background: #fffdf8;
+  border-color: #e6ddc9;
+  backdrop-filter: none;
+}
+.modern-air-login .login-brand-lockup img {
+  width: 172px;
+  height: auto;
+}
+.modern-air-login .single-login-panel {
+  width: min(420px, 100%);
+  background: rgba(255, 253, 247, 0.97);
+  border: 1px solid #e6d9bb;
+  border-top: 4px solid var(--login-gold);
+  border-radius: 24px;
+  box-shadow: 0 22px 70px #46381d29;
+  backdrop-filter: blur(8px);
+}
+.modern-air-login .login-card {
+  padding: 36px;
+}
+.modern-air-login .login-eyebrow {
+  color: #87611d;
+  letter-spacing: 0.12em;
+}
+.modern-air-login .login-card-copy h1 {
+  color: var(--login-ink);
+  font-size: 32px;
+}
+.modern-air-login .login-slogans {
+  color: #756b57;
+  font-weight: 500;
+}
+.modern-air-login .login-input-wrap {
+  border-color: #e4d9c2;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: none;
+}
+.modern-air-login .login-input-wrap:focus-within {
+  border-color: #ac7c23;
+  box-shadow: 0 0 0 3px #e0ad4829;
+}
+.modern-air-login .login-input-wrap svg {
+  stroke: #95783f;
+}
+.modern-air-login .login-input-wrap input {
+  color: var(--login-ink);
+}
+.modern-air-login .login-input-wrap input::placeholder {
+  color: #948a77;
+  font-size: 14px;
+}
+.modern-air-login .login-submit {
+  color: var(--login-ink);
+  background: var(--login-gold);
+  border: 1px solid var(--login-gold);
+  border-radius: 999px;
+  box-shadow: none;
+  min-height: 52px;
+}
+.modern-air-login .login-submit:hover {
+  background: #d2a03e;
+  color: #211c13;
+}
+.modern-air-login .login-submit:focus-visible {
+  outline: 3px solid #805b18;
+  outline-offset: 4px;
+}
+.modern-air-login .login-submit:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+.modern-air-login .login-loading-panel {
+  color: #69532a;
+  border-color: #e5d6b5;
+  background: #fcf6e9;
+}
+.modern-air-login .login-line-note {
+  color: #69532a;
+  background: #f9f0da;
+  border-color: #e5d6b5;
+}
+.modern-air-login .login-security-note {
+  left: max(28px, 7vw);
+  right: auto;
+  color: #51432d;
+  text-shadow: 0 1px 8px #fffc;
+}
+@media (max-width: 700px) {
+  .modern-air-login {
+    padding: 104px 16px 58px;
+    align-items: end;
+    justify-items: center;
+  }
+  .login-airport-picture {
+    inset: 82px 0 0;
+  }
+  .login-airport-picture img {
+    object-position: 64% top;
+  }
+  .modern-air-login::after {
+    inset: 82px 0 0;
+    background: linear-gradient(
+      180deg,
+      transparent 10%,
+      #f8edda33 45%,
+      #f8edda88
+    );
+  }
+  .modern-air-login .login-brand-lockup img {
+    width: 152px;
+  }
+  .modern-air-login .single-login-panel {
+    width: min(390px, 100%);
+  }
+  .modern-air-login .login-card {
+    padding: 28px 22px;
+  }
+  .modern-air-login .login-card-copy h1 {
+    font-size: 28px;
+  }
+  .modern-air-login .login-security-note {
+    left: 50%;
+    width: calc(100% - 24px);
+    bottom: 20px;
+  }
+}
+@media (max-height: 600px) and (min-width: 701px) {
+  .modern-air-login {
+    padding-block: 110px 52px;
+  }
+}
+.modern-air-login .cute-car-body {
+  background: linear-gradient(135deg, #b88629, #edc775);
+}
+.modern-air-login .login-car-loader {
+  color: #805c20;
+  background: transparent;
+  border-color: #e5d6b5;
+}
+/* One shared logo lockup for login and recruitment; use the original round mark. */
+.public-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #211c13;
+  flex-shrink: 0;
+  text-align: left;
+}
+.public-brand-lockup > img,
+.modern-air-login .public-brand-lockup > img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  object-position: left center;
+}
+.public-brand-lockup > span {
+  display: grid;
+  line-height: 1.1;
+  gap: 4px;
+}
+.public-brand-lockup strong {
+  font:
+    900 30px/1.05 system-ui,
+    sans-serif;
+  letter-spacing: -1px;
+}
+.public-brand-lockup small {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 3px;
+  text-align: center;
+}
+@media (max-width: 700px) {
+  .public-brand-lockup > img,
+  .modern-air-login .public-brand-lockup > img {
+    width: 40px;
+    height: 40px;
+  }
+  .public-brand-lockup strong {
+    font-size: 26px;
+  }
+  .public-brand-lockup small {
+    font-size: 10px;
+    letter-spacing: 2px;
+  }
+}

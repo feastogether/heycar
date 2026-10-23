@@ -329,7 +329,7 @@
       slug: "main",
       title: "禮賓司機招募",
       subtitle: "Hey!car 亞菲得租車",
-      hero_title: "成為專業禮賓司機",
+      hero_title: "載旅客出發，也載你的未來起飛。",
       hero_summary: "我們正在尋找重視服務細節、駕駛安全與準時承諾的夥伴，一起完成每一趟高品質接送。",
       content_html: "<h3>工作內容</h3><p>提供機場接送、商務接送與旅客禮賓服務，維持車輛整潔，並依照派車流程完成每趟任務。</p><h3>我們重視</h3><ul><li>安全駕駛與守時</li><li>良好的溝通與服務態度</li><li>願意配合教育訓練與車隊規範</li></ul><h3>適合的人</h3><p>有職業駕照、熟悉機場接送或願意學習高規格服務流程者，歡迎留下資料，我們會盡快與你聯繫。</p>",
       apply_button_text: "立即應徵",
@@ -678,6 +678,30 @@
 
   function hiringWorkTypes() { return { full_time:"專職", part_time:"兼職", undecided:"想先了解" }; }
 
+  function publicBrandMarkup() {
+    return `<span class="public-brand-lockup"><img src="${escapeHtml(logoUrl)}" alt="Hey!car 亞菲得租車"><span><strong>Hey!car</strong><small>亞菲得租車</small></span></span>`;
+  }
+
+  function hiringPlanDetails(page, key) {
+    const item = page.plan_details?.[key] || {};
+    return Object.fromEntries(["price","deposit","term","coverage","ownership"].map(field=>[field, String(item[field] || "").trim()]));
+  }
+
+  function hiringPlanDetailsForm(page) {
+    return `<div class="form-section-title field full">方案價格與比較表</div><p class="field full muted-line">金額可輸入「NT$ 28,000／月」等文字；留空會顯示「請洽招募窗口」。卡片與比較表會同步更新，不會自動更動既有方案內文。</p>` + hiringPlans(page).map(plan=>{
+      const details = hiringPlanDetails(page, plan.key);
+      return `<div class="form-section-title field full">${escapeHtml(plan.title)}</div>` + [["price","每月金額／計酬方式"],["deposit","起步費用／押金／頭期款"],["term","合約期間／租期"],["coverage","保險與保養"],["ownership","車輛歸屬／期滿安排"]].map(([field,label])=>input(`plan_${plan.key}_${field}`,label,details[field])).join("");
+    }).join("");
+  }
+
+  function normalizeHiringPlanDetails(record) {
+    if (!Object.keys(record).some(key=>/^plan_(salary|lease|rental)_(price|deposit|term|coverage|ownership)$/.test(key))) return;
+    record.plan_details = Object.fromEntries(["salary","lease","rental"].map(key=>[key,Object.fromEntries(["price","deposit","term","coverage","ownership"].map(field=>{
+      const name = `plan_${key}_${field}`, value = String(record[name] || "").trim().slice(0,200);
+      delete record[name]; return [field,value];
+    }))]));
+  }
+
   function selectHiringPlan(key, focus = false) {
     if (!["salary","rental","lease"].includes(key)) return;
     state.hiringPlan = key;
@@ -724,7 +748,7 @@
       <a class="hiring-skip" href="#apply">跳至報名表單</a>
       <div class="hiring-announcement"><span>招募中</span> 機場接送・商務接待・禮賓服務 <a href="#plans">找到適合你的合作方式 ${iconSvg("M9 5l7 7-7 7")}</a></div>
       <header class="hiring-topbar"><div class="hiring-topbar-inner">
-        <a class="hiring-logo" href="#hiring-top" aria-label="Hey!car 亞菲得招募首頁"><span class="hiring-brand-mark"><img src="${escapeHtml(logoUrl)}" alt=""></span><span class="hiring-brand-name"><strong>Hey!car</strong><small>亞菲得租車</small></span><span class="hiring-brand-caption">司機招募<small>DRIVER RECRUITMENT</small></span></a>
+        <a class="hiring-logo" href="#hiring-top" aria-label="Hey!car 亞菲得招募首頁">${publicBrandMarkup()}<span class="hiring-brand-caption">司機招募<small>DRIVER RECRUITMENT</small></span></a>
         <button class="hiring-menu-button" type="button" data-hiring-menu aria-controls="hiringNav" aria-expanded="false" aria-label="展開招募導覽">${iconSvg("M4 6h16 M4 12h16 M4 18h16")}</button>
         <nav id="hiringNav" class="hiring-flow-nav" aria-label="招募導覽">${nav.map(([id,title])=>`<a href="#${id}" data-hiring-nav>${escapeHtml(title)}</a>`).join("")}<a class="hiring-nav-cta" href="#apply" data-hiring-nav>${cta} ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</a></nav>
       </div></header>
@@ -735,13 +759,17 @@
       </section>
       <nav class="hiring-shortcuts hiring-container" aria-label="快速連結">${plans.map(plan=>`<a href="#plans" data-hiring-plan-link="${plan.key}"><span class="hiring-shortcut-icon">${iconSvg(plan.icon)}</span><span>${escapeHtml(plan.title)}<small>${plan.label}</small></span>${iconSvg("M9 5l7 7-7 7")}</a>`).join("")}<a href="#flow"><span class="hiring-shortcut-icon">${iconSvg("M4 7h16 M4 12h16 M4 17h10")}</span><span>加入流程<small>從了解開始，一步步準備</small></span>${iconSvg("M9 5l7 7-7 7")}</a></nav>
       <section class="hiring-section hiring-about hiring-container" id="about"><div class="hiring-section-heading"><p class="hiring-eyebrow">MEET HEYCAR</p><h2>${escapeHtml(page.about_title || defaults.about_title)}</h2><p>把每一次出發，都當成值得用心的旅程。</p></div><div class="hiring-prose">${sanitizeRichHtml(page.about_html || page.content_html || defaults.about_html)}</div></section>
-      <section class="hiring-plans-section" id="plans"><div class="hiring-container hiring-section"><div class="hiring-section-heading hiring-center"><p class="hiring-eyebrow">FIND YOUR WAY</p><h2>選一種適合你的合作方式</h2><p>先了解各方案內容，再和招募窗口討論你的規劃。</p></div>
+      <section class="hiring-plans-section" id="plans"><div class="hiring-container hiring-section"><div class="hiring-section-heading hiring-center"><p class="hiring-eyebrow">PLANS</p><h2>三種合作方案，選最適合你的</h2><p>不論有沒有自己的車，都能先了解適合的起步方式。</p></div>
+        <div class="hiring-plan-cards">${[plans[0],plans[2],plans[1]].map((plan,i)=>{const details=hiringPlanDetails(page,plan.key);return `<article class="hiring-offer ${plan.key==='lease'?'hiring-offer-featured':''}"><span class="hiring-eyebrow">${['COMPANY CAR','LEASE TO OWN','MONTHLY RENTAL'][i]}</span><h3>${escapeHtml(plan.title)}</h3><p>${escapeHtml(plan.label)}</p><div class="hiring-offer-price"><small>金額／計酬方式</small><strong>${escapeHtml(details.price || '請洽招募窗口')}</strong></div><div class="hiring-offer-copy hiring-prose">${sanitizeRichHtml(plan.html)}</div><dl>${[['deposit','起步費用'],['term','合約期間'],['coverage','保險與保養'],['ownership','車輛安排']].map(([key,label])=>`<div><dt>${label}</dt><dd>${escapeHtml(details[key] || '依面談及合約說明')}</dd></div>`).join('')}</dl><a class="hiring-button hiring-button-outline" href="#plan-details" data-hiring-plan-link="${plan.key}">了解${escapeHtml(plan.title)} ${iconSvg('M5 12h14 M13 6l6 6-6 6')}</a></article>`;}).join('')}</div>
+        <div class="hiring-comparison"><h3>方案比較</h3><p>左右滑動可查看完整比較，實際條件以面談及合約內容為準。</p><div class="hiring-comparison-scroll" role="region" aria-label="合作方案比較表，可左右捲動" tabindex="0"><table><thead><tr><th scope="col">項目</th>${[plans[0],plans[2],plans[1]].map(plan=>`<th scope="col">${escapeHtml(plan.title)}</th>`).join('')}</tr></thead><tbody>${[['deposit','起步費用'],['price','每月金額／計酬方式'],['coverage','保險與保養'],['ownership','車輛安排'],['term','合約期間']].map(([field,label])=>`<tr><th scope="row">${label}</th>${[plans[0],plans[2],plans[1]].map(plan=>`<td>${escapeHtml(hiringPlanDetails(page,plan.key)[field] || '請洽招募窗口')}</td>`).join('')}</tr>`).join('')}</tbody></table></div></div>
+        <div class="hiring-section-heading" id="plan-details"><h3>方案詳細介紹</h3><p>選擇方案，查看完整合作內容。</p></div>
         <div class="hiring-plan-tabs" role="tablist" aria-label="選擇合作方案">${plans.map((plan,i)=>`<button type="button" id="hiring-tab-${plan.key}" role="tab" data-hiring-plan="${plan.key}" aria-controls="${plan.key}" aria-selected="${plan.key===selected}" tabindex="${plan.key===selected?0:-1}"><span class="hiring-tab-number">0${i+1}</span><span><strong>${escapeHtml(plan.title)}</strong><small>${plan.label}</small></span>${iconSvg(plan.icon)}</button>`).join("")}</div>
         <div class="hiring-plan-content">${plans.map((plan,i)=>`<article class="hiring-plan-panel" id="${plan.key}" role="tabpanel" tabindex="0" aria-labelledby="hiring-tab-${plan.key}" data-hiring-panel="${plan.key}" ${plan.key===selected?"":"hidden"}><div class="hiring-plan-intro"><span class="hiring-plan-kicker">PLAN 0${i+1}</span><h3>${escapeHtml(plan.title)}</h3><p>${plan.label}</p><a class="hiring-button" href="#apply" data-hiring-apply-plan="${plan.key}">我想了解這個方案 ${iconSvg("M5 12h14 M13 6l6 6-6 6")}</a></div><div class="hiring-prose">${sanitizeRichHtml(plan.html)}</div></article>`).join("")}</div><p class="hiring-plan-note">薪資、車源、租金及合作條件，請以招募窗口說明及實際合約為準。</p>
       </div></section>
-      <section class="hiring-section hiring-container" id="benefits"><div class="hiring-section-heading hiring-center"><p class="hiring-eyebrow">BETTER TOGETHER</p><h2>把心力，放在每一趟好服務</h2></div><div class="hiring-benefits">${[["01","清楚的派趟資訊","透過派趟中心查看訂單與接送資訊，掌握每一次出發。"],["02","專業的服務流程","從安全駕駛到旅客服務，一起重視每個接送細節。"],["03","團隊聯繫與支援","透過系統與車隊保持聯繫，讓服務資訊有清楚的傳遞方式。"]].map(([n,title,copy])=>`<article><span>${n}</span><h3>${title}</h3><p>${copy}</p></article>`).join("")}</div></section>
+      <section class="hiring-section hiring-container" id="benefits"><div class="hiring-section-heading hiring-center"><p class="hiring-eyebrow">WHY JOIN US</p><h2>專心開車，一起做好每一趟服務</h2></div><div class="hiring-benefits">${[["01","統一派趟","透過派趟中心查看訂單與旅客需求，掌握每一次出發。"],["02","合作方式多元","專職、兼職都能先了解，再依可服務時段討論合作安排。"],["03","計酬清楚","合作前先確認趟次、計酬方式與結算安排，讓每一次服務有依據。"],["04","團隊聯繫","與車隊保持聯繫，接送途中有問題時能即時回報、協調。"]].map(([n,title,copy])=>`<article><span>${n}</span><h3>${title}</h3><p>${copy}</p></article>`).join("")}</div></section>
       <section class="hiring-flow-section" id="flow"><div class="hiring-container hiring-section"><div class="hiring-section-heading"><p class="hiring-eyebrow">YOUR NEXT CHAPTER</p><h2>從這裡，開啟下一段旅程</h2><p>先留下資料，讓我們認識你的經驗與想法。</p></div><ol class="hiring-steps">${[["留下資料","填寫基本資料與感興趣的方案。"],["招募聯繫","依方便接聽的時段進一步了解。"],["確認合作方式","與招募窗口確認條件及準備事項。"],["完成上線準備","依確認的合作安排，完成後續準備。"]].map(([title,copy],i)=>`<li><span>0${i+1}</span><h3>${title}</h3><p>${copy}</p></li>`).join("")}</ol></div></section>
       <section class="hiring-section hiring-stories hiring-container" id="stories"><div><p class="hiring-eyebrow">ON THE ROAD</p><h2>${escapeHtml(page.stories_title || defaults.stories_title)}</h2></div><div class="hiring-prose">${sanitizeRichHtml(page.stories_html || defaults.stories_html)}</div></section>
+      <section class="hiring-qualifications hiring-container" aria-labelledby="hiringQualificationTitle"><div><p class="hiring-eyebrow">REQUIREMENTS</p><h2 id="hiringQualificationTitle">應徵資格</h2><p>先了解服務需要的準備，實際資格由招募窗口確認。</p></div><ul><li>持有職業小客車駕照，或規劃考取</li><li>執業登記與車輛資格依合作方式確認</li><li>重視安全駕駛，服務態度親切</li><li>願意熟悉機場接送流程與服務路線</li><li>會使用智慧型手機接收派趟與聯繫</li><li>填寫真實經驗，與招募窗口討論安排</li></ul></section>
       <section class="hiring-section hiring-faq hiring-container" id="faq"><div class="hiring-section-heading"><p class="hiring-eyebrow">BEFORE YOU START</p><h2>你可能還想知道</h2><p>常見問題，先在這裡找到方向。</p></div><div>${faqs.map(([question,answer])=>`<details><summary>${escapeHtml(question)}<span aria-hidden="true">＋</span></summary><p>${escapeHtml(answer)}</p></details>`).join("")}</div></section>
       <section class="hiring-apply-section" id="apply"><div class="hiring-container hiring-apply-layout"><div class="hiring-apply-copy"><p class="hiring-eyebrow">READY FOR YOUR NEXT JOURNEY?</p><h2>${escapeHtml(page.apply_title || defaults.apply_title)}</h2><p>${escapeHtml(page.apply_summary || defaults.apply_summary)}</p><span class="hiring-apply-rule"></span><p class="hiring-apply-reminder">不確定適合哪個方案也沒關係。<br>先留下資料，再一起聊聊下一步。</p></div>
         <div class="hiring-apply-card"><div class="hiring-form-heading"><h3>讓我們認識你</h3><p>姓名、電話、持照狀態與接送經驗為必填。</p></div><form id="hiringApplicationForm" class="hiring-form">
@@ -1754,15 +1782,10 @@
     const loadingText = "正在驗證登入身分";
     app.innerHTML = `
       <div class="login-wrap modern-air-login">
-        <div class="login-bg-slides" aria-hidden="true">
-          <span class="login-bg-slide login-bg-a350"></span>
-          <span class="login-bg-slide login-bg-cabin"></span>
-          <span class="login-bg-slide login-bg-wing"></span>
-          <span class="login-bg-slide login-bg-engine"></span>
-        </div>
+        <picture class="login-airport-picture" aria-hidden="true"><source media="(max-width:700px)" srcset="./assets/hiring-airport-mobile.webp"><img src="./assets/hiring-airport-hero.webp" alt="" width="1600" height="700" fetchpriority="high" decoding="async"></picture>
         <header class="login-brand-bar">
           <div class="login-brand-lockup">
-            <img src="${logoUrl}" alt="heycar logo">
+            ${publicBrandMarkup()}
           </div>
           <span></span>
         </header>
@@ -1776,7 +1799,7 @@
             <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
               <div class="field full login-code-field">
                 
-                <div class="login-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 7c.8-3.2 3.2-5 7-5s6.2 1.8 7 5"/></svg><input id="loginCode" name="login" autocomplete="one-time-code" inputmode="numeric" placeholder="請輸入手機號碼或登入代碼" required ${state.loginLoading ? "disabled" : ""}></div>
+                <div class="login-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 7c.8-3.2 3.2-5 7-5s6.2 1.8 7 5"/></svg><input id="loginCode" name="login" aria-label="手機號碼或登入代碼" autocomplete="one-time-code" inputmode="numeric" placeholder="請輸入手機號碼或登入代碼" required ${state.loginLoading ? "disabled" : ""}></div>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
                 ${state.loginLoading ? `<span>${loadingText}</span>` : `<span>登入系統</span>`}
@@ -1794,7 +1817,6 @@
         <small class="login-security-note">安全連線 · 亞菲得車隊營運系統</small>
       </div>
     `;
-    setTimeout(() => app.querySelector(".login-bg-slides")?.classList.add("is-ready"), 800);
   }
 
   function renderDriver() {
@@ -5730,6 +5752,7 @@
       record.sort_order = Number(record.sort_order || 0);
     }
     if (tableName === "hiring_pages") {
+      normalizeHiringPlanDetails(record);
       record.slug = String(record.slug || "main").trim() || "main";
       record.active = record.active === "true";
       record.sort_order = Number(record.sort_order || 0);
@@ -6560,6 +6583,7 @@
       + input("apply_button_text", "應徵按鈕文字", page.apply_button_text || "立即應徵")
       + input("sort_order", "排序", page.sort_order || 0, "number")
       + checkbox("active", "啟用招募頁", page.active !== false)
+      + hiringPlanDetailsForm(page)
       + `<div class="form-section-title field full">流水頁段落</div>`
       + input("about_title", "關於我們標題", page.about_title)
       + helperRichEditor(page, "關於我們內容", "招募頁", "about_html")
@@ -9359,10 +9383,3 @@
     }
   })();
 })();
-
-
-
-
-
-
-

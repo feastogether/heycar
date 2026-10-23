@@ -1,9 +1,9 @@
 /* Public recruitment page. Loaded only at /hiring. */
 .hiring-page {
-  --hire-ink: #28251f;
-  --hire-gold: #d3a348;
+  --hire-ink: #211c13;
+  --hire-gold: #e0ad48;
   --hire-gold-dark: #78571e;
-  --hire-cream: #fbf8f2;
+  --hire-cream: #faf4e3;
   --hire-line: #e7dfd1;
   --hire-muted: #746f64;
   color: var(--hire-ink);
@@ -136,6 +136,11 @@
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+.hiring-brand-logo {
+  display: block;
+  width: 174px;
+  height: auto;
 }
 .hiring-brand-mark {
   display: block;
@@ -1331,4 +1336,325 @@
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Recruitment reference: warm cream surfaces, gold pills and comparable plans. */
+.hiring-page .hiring-topbar {
+  background: #fffdf8f5;
+}
+.hiring-page .hiring-button,
+.hiring-page .hiring-nav-cta {
+  border-radius: 999px;
+}
+.hiring-page .hiring-button {
+  box-shadow: none;
+}
+.hiring-page .hiring-announcement {
+  background: #211c13;
+}
+.hiring-page .hiring-shortcuts {
+  border-radius: 18px;
+  box-shadow: 0 12px 32px #57401e0c;
+}
+.hiring-page .hiring-plans-section {
+  background: #fffdf8;
+}
+.hiring-plan-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 22px;
+  margin-block: 32px 56px;
+}
+.hiring-offer {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #e8dec8;
+  border-top: 4px solid #e5d8b9;
+  background: #fff;
+  border-radius: 20px;
+  padding: 30px 24px;
+}
+.hiring-offer-featured {
+  border-color: #e0ad48;
+  box-shadow: 0 12px 32px #9d792412;
+}
+.hiring-offer .hiring-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  margin-bottom: 14px;
+}
+.hiring-offer h3 {
+  font-size: 24px;
+}
+.hiring-offer > p {
+  color: #7a6d53;
+  font-size: 13px;
+  margin-top: 6px;
+}
+.hiring-offer-price {
+  display: grid;
+  gap: 5px;
+  background: #faf4e3;
+  padding: 18px;
+  margin-block: 24px 10px;
+  border-radius: 14px;
+}
+.hiring-offer-price small {
+  font-size: 11px;
+  color: #81745b;
+}
+.hiring-offer-price strong {
+  font-size: clamp(20px, 2vw, 28px);
+  line-height: 1.5;
+  color: #805a16;
+  overflow-wrap: anywhere;
+}
+.hiring-offer dl {
+  margin: 0 0 24px;
+  font-size: 13px;
+}
+.hiring-offer dl > div {
+  padding-block: 12px;
+  border-bottom: 1px solid #f0eadf;
+}
+.hiring-offer dt {
+  font-size: 11px;
+  color: #8b7b5b;
+}
+.hiring-offer dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.hiring-offer .hiring-button {
+  margin-top: auto;
+  width: 100%;
+  padding-inline: 12px;
+  font-size: 13px;
+}
+.hiring-comparison {
+  margin-bottom: 56px;
+  border: 1px solid #e8dec8;
+  border-radius: 20px;
+  background: white;
+  padding: 28px;
+}
+.hiring-comparison > p {
+  color: #887b62;
+  font-size: 12px;
+  margin: 8px 0 20px;
+}
+.hiring-comparison-scroll {
+  overflow-x: auto;
+  border-radius: 12px;
+  -webkit-overflow-scrolling: touch;
+}
+.hiring-page .hiring-comparison table {
+  table-layout: fixed;
+  width: 100%;
+  min-width: 630px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.hiring-page .hiring-comparison th,
+.hiring-page .hiring-comparison td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  padding: 17px 20px;
+  border: 0;
+  border-bottom: 1px solid #eee6d7;
+  text-align: left;
+  background: #fff;
+  color: #4f4431;
+}
+.hiring-page .hiring-comparison thead th {
+  background: #f7efd9;
+  color: #785619;
+  font-weight: 800;
+}
+.hiring-page .hiring-comparison tbody th {
+  font-weight: 600;
+  color: #887550;
+}
+.hiring-page #plan-details {
+  scroll-margin-top: 110px;
+}
+.hiring-page .hiring-plan-panel {
+  border-radius: 0 0 20px 20px;
+}
+.hiring-page .hiring-benefits {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 20px;
+}
+.hiring-page .hiring-benefits article {
+  background: #fffdf8;
+  border: 1px solid #e8dec8;
+  border-radius: 18px;
+  padding: 26px;
+}
+.hiring-page .hiring-benefits article > span {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: #f5e6bf;
+  display: grid;
+  place-items: center;
+  font: 700 13px system-ui;
+  color: #896117;
+}
+.hiring-page .hiring-flow-section {
+  background: #f3e9ce;
+  color: var(--hire-ink);
+}
+.hiring-page .hiring-flow-section .hiring-eyebrow {
+  color: #916a22;
+}
+.hiring-page
+  .hiring-flow-section
+  .hiring-section-heading
+  > p:not(.hiring-eyebrow),
+.hiring-page .hiring-steps p {
+  color: #80735b;
+}
+.hiring-page .hiring-steps li {
+  border-top-color: #d7c294;
+}
+.hiring-page .hiring-steps li > span {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #e0ad48;
+  color: #211c13;
+  font: 800 17px system-ui;
+}
+.hiring-qualifications {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 50px;
+  background: #fffdf8;
+  border: 1px solid #e5dac2;
+  border-radius: 22px;
+  padding: 40px;
+  margin-block: 12px 30px;
+}
+.hiring-qualifications > div > p:last-child {
+  font-size: 13px;
+  color: #827358;
+  margin-top: 12px;
+}
+.hiring-qualifications ul {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  font-size: 13px;
+  align-content: center;
+}
+.hiring-qualifications li {
+  position: relative;
+  padding-left: 24px;
+}
+.hiring-qualifications li::before {
+  content: "✓";
+  position: absolute;
+  left: 0;
+  color: #957025;
+  font-weight: bold;
+}
+.hiring-page .hiring-faq details {
+  border: 1px solid #e5dac2;
+  border-radius: 14px;
+  background: #fffdf8;
+  padding: 18px 22px;
+  margin-bottom: 12px;
+}
+.hiring-page .hiring-faq summary {
+  font-size: 14px;
+}
+.hiring-page .hiring-apply-section {
+  background: #f3e7c8;
+}
+.hiring-page .hiring-apply-card {
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 16px 40px #785c2510;
+}
+@media (max-width: 1000px) {
+  .hiring-page .hiring-benefits {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .hiring-plan-cards {
+    gap: 14px;
+  }
+  .hiring-offer {
+    padding: 24px 18px;
+  }
+  .hiring-offer h3 {
+    font-size: 21px;
+  }
+  .hiring-qualifications {
+    gap: 30px;
+  }
+}
+@media (max-width: 800px) {
+  .hiring-brand-logo {
+    width: 152px;
+  }
+  .hiring-plan-cards {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .hiring-offer {
+    padding: 26px;
+  }
+  .hiring-offer dl {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 20px;
+  }
+  .hiring-offer-price strong {
+    font-size: 26px;
+  }
+  .hiring-comparison {
+    padding: 22px 16px;
+  }
+  .hiring-qualifications {
+    grid-template-columns: 1fr;
+    padding: 28px;
+  }
+}
+@media (max-width: 480px) {
+  .hiring-brand-logo {
+    width: 145px;
+  }
+  .hiring-page .hiring-benefits {
+    gap: 12px;
+  }
+  .hiring-page .hiring-benefits article {
+    padding: 18px 14px;
+  }
+  .hiring-page .hiring-benefits h3 {
+    font-size: 16px;
+  }
+  .hiring-qualifications {
+    padding: 24px 20px;
+  }
+  .hiring-qualifications ul {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .hiring-offer {
+    padding: 24px 20px;
+  }
+}
+.hiring-offer-copy {
+  margin-block: 12px 16px;
+}
+.hiring-offer-copy.hiring-prose {
+  font-size: 13px;
+  line-height: 1.85;
 }

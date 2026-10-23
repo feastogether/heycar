@@ -17,6 +17,7 @@ Copy-Item -LiteralPath (Join-Path $root "styles.css") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "heycar-ui-enhance.css") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "staff-home.css") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "hiring.css") -Destination $output
+Copy-Item -LiteralPath (Join-Path $root "login.css") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "config.js") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "config.example.js") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "assets") -Destination $output -Recurse

@@ -31,6 +31,15 @@ async function front() {
     lease_html: "<p>既有租購條件</p>",
     about_html: "<p>既有關於我們</p>",
     stories_html: "<p>既有司機分享</p>",
+    plan_details: {
+      rental: {
+        price: "NT$ 28,000／月",
+        deposit: "押金 20,000",
+        term: "12 個月",
+        coverage: "依合約",
+        ownership: "期滿歸還",
+      },
+    },
   };
   const output = { innerHTML: "" };
   const state = {
@@ -68,7 +77,12 @@ async function front() {
   for (const name of [
     "defaultHiringPage",
     "hiringPlans",
+    "hiringPlanDetails",
+    "hiringPlanDetailsForm",
+    "normalizeHiringPlanDetails",
+    "normalizeRecord",
     "hiringWorkTypes",
+    "publicBrandMarkup",
     "iconSvg",
     "renderHiringPage",
     "adminHiringManagement",
@@ -87,10 +101,66 @@ async function front() {
     'name="phone"',
     'role="tablist"',
     'fetchpriority="high"',
+    "NT$ 28,000／月",
+    "方案比較",
+    "應徵資格",
   ])
     assert(output.innerHTML.includes(text), text);
   assert(output.innerHTML.includes('data-hiring-panel="rental" >'));
   assert(!output.innerHTML.includes("[月付金額]"));
+  assert.equal(
+    output.innerHTML.split("NT$ 28,000／月").length - 1,
+    2,
+    "price appears in offer and comparison",
+  );
+  const escaped = context.hiringPlanDetails(
+    { plan_details: { rental: { price: "<b>1</b>" } } },
+    "rental",
+  );
+  assert.equal(escaped.price, "<b>1</b>");
+  const settings = {
+    title: "保留文字",
+    plan_rental_price: " NT$ 30,000／月 ",
+    plan_lease_term: "36 期",
+  };
+  context.normalizeHiringPlanDetails(settings);
+  assert.equal(settings.plan_details.rental.price, "NT$ 30,000／月");
+  assert.equal(settings.plan_details.lease.term, "36 期");
+  assert.equal(settings.title, "保留文字");
+  assert(
+    !Object.keys(settings).some(
+      (key) => key.startsWith("plan_") && key !== "plan_details",
+    ),
+  );
+  const existing = { plan_details: { rental: { price: "5000" } } };
+  context.normalizeHiringPlanDetails(existing);
+  assert.equal(
+    existing.plan_details.rental.price,
+    "5000",
+    "partial updates preserve pricing",
+  );
+  context.input = (name, label, value) =>
+    `<input name="${name}" value="${escapeHtml(value)}">`;
+  const editor = context.hiringPlanDetailsForm(page);
+  assert(editor.includes('name="plan_rental_price" value="NT$ 28,000／月"'));
+  assert(editor.includes('name="plan_lease_term"'));
+  const modalRecord = context.normalizeRecord("hiring_pages", {
+    active: "true",
+    plan_rental_price: "NT$ 31,000／月",
+    rental_html: "原本條件",
+    title: "招募",
+  });
+  assert.equal(
+    modalRecord.plan_details.rental.price,
+    "NT$ 31,000／月",
+    "actual modal normalization stores prices",
+  );
+  assert.equal(modalRecord.rental_html, "原本條件");
+  page.plan_details.rental.price = "<script>alert(1)</script>";
+  context.renderHiringPage();
+  assert(!output.innerHTML.includes("<script>alert(1)</script>"));
+  assert(output.innerHTML.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  page.plan_details.rental.price = "NT$ 28,000／月";
   context.adminHiringManagement();
   assert(captured.headers.includes("方案／工作型態"));
   assert(
