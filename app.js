@@ -1,6 +1,6 @@
 (function () {
   const cfg = window.AFIDE_CONFIG || {};
-  const logoUrl = "./assets/heycar-afide-logo.png";
+  const logoUrl = "./assets/heycar-wordmark.svg";
   const airportFlightsUrl = "https://www.taoyuan-airport.com/";
   const airportWeatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=25.0797&longitude=121.2342&current=temperature_2m,weather_code,wind_speed_10m&timezone=Asia%2FTaipei";
   const weatherAirports = [
@@ -679,7 +679,7 @@
   function hiringWorkTypes() { return { full_time:"專職", part_time:"兼職", undecided:"想先了解" }; }
 
   function publicBrandMarkup() {
-    return `<span class="public-brand-lockup"><img src="${escapeHtml(logoUrl)}" alt="Hey!car 亞菲得租車"><span><strong>Hey!car</strong><small>亞菲得租車</small></span></span>`;
+    return `<span class="public-brand-lockup"><img src="${escapeHtml(logoUrl)}" alt="Hey!car 亞菲得租車"></span>`;
   }
 
   function hiringPlanDetails(page, key) {
@@ -1613,8 +1613,9 @@
         return;
       }
       try {
+        const contactId = state.adminChatContactId;
         await loadAdminChat();
-        if (!window.matchMedia("(max-width: 700px)").matches || state.adminChatMobileConversation) await markAdminChatRead();
+        if (state.adminChatContactId===contactId && (!window.matchMedia("(max-width: 700px)").matches || state.adminChatMobileConversation)) await markAdminChatRead(contactId);
         updateAdminChatDom();
       } catch (error) {
         state.adminChatError = `即時通訊更新失敗：${error.message || error}`;
@@ -3772,6 +3773,9 @@
       if (receiver === me && !item.read_at) row.unread++;
       summary.set(id, row);
     }
+    for (const group of state.data.admin_chat_groups || []) {
+      summary.set(`group:${group.id}`, {last:group.last_message || null, timestamp:Date.parse(group.last_message?.created_at || group.created_at) || 0, unread:Number(group.unread_count || 0)});
+    }
     return summary;
   }
 
@@ -3779,22 +3783,26 @@
     const me = currentAdminChatId();
     const users = (state.data.admin_users || []).filter(user => user.active !== false && user.id && user.id !== me);
     if (me !== "super-admin") users.push({ id: "super-admin", name: "最高管理員", active: true });
+    users.push(...(state.data.admin_chat_groups || []).map(group=>({id:`group:${group.id}`,name:group.name,is_group:true})));
     return users.sort((a,b) => (summary.get(b.id)?.timestamp || 0) - (summary.get(a.id)?.timestamp || 0)
       || String(a.name || "").localeCompare(String(b.name || ""), "zh-Hant") || String(a.id).localeCompare(String(b.id)));
   }
 
   function adminChatAvatar(id) {
+    if (String(id).startsWith("group:")) return `<span class="admin-chat-avatar admin-chat-group-avatar" aria-hidden="true">${iconSvg("M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2 M16 3a4 4 0 0 1 0 8 M22 21v-2a4 4 0 0 0-3-3.87 M13 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0")}</span>`;
     const user = id === "super-admin" ? { id, name: "最高管理員" } : (state.data.admin_users || []).find(user => user.id === id) || { name: adminChatContactName(id) };
     return `<span class="admin-chat-avatar">${staffAvatar(user)}</span>`;
   }
 
   function adminChatCurrentMarkup() {
     const id = state.adminChatContactId;
-    return `${id ? adminChatAvatar(id) : ""}<strong data-admin-chat-current-name>${escapeHtml(id ? adminChatContactName(id) : "請選擇聯絡人")}</strong>`;
+    const group = (state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===id);
+    return `${id ? adminChatAvatar(id) : ""}<strong data-admin-chat-current-name>${escapeHtml(id ? adminChatContactName(id) : "請選擇聯絡人")}</strong>${group ? `<button type="button" class="admin-chat-members-btn" data-action="admin-chat-group-members">成員 ${group.member_ids.length}</button>` : ""}`;
   }
 
   function adminChatMessages(contactId = state.adminChatContactId) {
     const me = currentAdminChatId();
+    if (String(contactId).startsWith("group:")) return (state.data.admin_chat_group_messages || []).filter(item=>`group:${item.group_id}`===contactId).sort((a,b)=>Number(a.seq)-Number(b.seq));
     return (state.data.admin_chat_messages || [])
       .filter((item) => {
         const sender = String(item.sender_id || "");
@@ -3809,7 +3817,8 @@
     if (state.adminChatError) return `<div class="admin-chat-empty">${escapeHtml(state.adminChatError)}</div>`;
     if (!contactId) return `<div class="admin-chat-empty">請先選擇聯絡人</div>`;
     if (!messages.length) return `<div class="admin-chat-empty">尚無訊息</div>`;
-    return messages.map((item) => {
+    const groupId = String(contactId).startsWith("group:") ? contactId.slice(6) : "";
+    return `${groupId && state.adminChatGroupMore?.[groupId] ? '<button type="button" class="admin-chat-history" data-action="admin-chat-group-history">載入更早的訊息</button>' : ''}` + messages.map((item) => {
       const mine = String(item.sender_id || "") === currentAdminChatId();
       return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
         ${adminChatAvatar(String(item.sender_id || ""))}<div class="admin-chat-bubble-copy"><small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
@@ -3890,7 +3899,8 @@
   async function fetchAdminChat() {
     if (!state.admin || !state.apiSession) return;
     const session = state.apiSession;
-    const result = await apiRequest("load_admin_chat");
+    const contactId = state.adminChatContactId || "";
+    const result = await apiRequest("load_admin_chat",{group_id:contactId.startsWith("group:") ? contactId.slice(6) : ""});
     if (state.apiSession !== session) return;
     if (result.admin_users) {
       const existing = new Map((state.data.admin_users || []).map(user => [user.id, user]));
@@ -3902,6 +3912,13 @@
       state.data.admin_users = directory;
     }
     state.data.admin_chat_messages = result.admin_chat_messages || [];
+    state.data.admin_chat_groups = result.admin_chat_groups || [];
+    if (result.group_id) {
+      const existing = state.data.admin_chat_group_messages || [];
+      const hadOlder = existing.some(item=>item.group_id===result.group_id && Number(item.seq)<Number(result.group_messages?.[0]?.seq || 0));
+      state.data.admin_chat_group_messages = [...new Map([...existing,...(result.group_messages || [])].map(item=>[item.id,item])).values()];
+      if (!hadOlder) state.adminChatGroupMore = {...state.adminChatGroupMore,[result.group_id]:result.group_has_more};
+    }
     if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
     state.adminChatError = "";
   }
@@ -3910,11 +3927,21 @@
     const me = currentAdminChatId();
     return (state.data.admin_chat_messages || []).filter((item) =>
       String(item.receiver_id || "") === me && !item.read_at
-    ).length;
+    ).length + (state.data.admin_chat_groups || []).reduce((count,group)=>count + Number(group.unread_count || 0),0);
   }
 
   async function markAdminChatRead(contactId = state.adminChatContactId) {
     if (!contactId || !hasApi || !state.apiSession) return;
+    if (String(contactId).startsWith("group:")) {
+      const group = (state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===contactId);
+      const through = Math.max(0,...adminChatMessages(contactId).map(item=>Number(item.seq)));
+      if (!through || !group?.unread_count) return;
+      await apiRequest("mark_admin_group_read",{group_id:contactId.slice(6),through_seq:through});
+      // A newer refresh may have arrived while the read request was in flight.
+      const current = (state.data.admin_chat_groups || []).find(item=>item.id===group.id);
+      if (current && Number(current.last_message?.seq || 0)<=through) current.unread_count=0;
+      return;
+    }
     await apiRequest("mark_admin_chat_read", { contact_id: contactId });
     (state.data.admin_chat_messages || []).forEach((item) => {
       if (String(item.sender_id || "") === contactId && String(item.receiver_id || "") === currentAdminChatId()) item.read_at = item.read_at || now();
@@ -3922,8 +3949,49 @@
   }
 
   function adminChatContactName(id) {
+    if (String(id).startsWith("group:")) return (state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===id)?.name || "群組";
     if (id === "super-admin") return "最高管理員";
     return (state.data.admin_users || []).find((user) => user.id === id)?.name || "未命名";
+  }
+
+  async function loadAdminGroupConversation(contactId, older = false) {
+    const session = state.apiSession, groupId = contactId.slice(6);
+    const existing = adminChatMessages(contactId);
+    const before = older && existing.length ? Number(existing[0].seq) : 0;
+    const result = await apiRequest("load_admin_group_messages",{group_id:groupId,before_seq:before});
+    if (state.apiSession !== session) return;
+    const rows = [...(state.data.admin_chat_group_messages || []).filter(item=>older || item.group_id!==groupId),...(result.messages || [])];
+    state.data.admin_chat_group_messages = [...new Map(rows.map(item=>[item.id,item])).values()];
+    state.adminChatGroupMore = {...state.adminChatGroupMore,[groupId]:result.has_more};
+  }
+
+  function openAdminChatGroupEditor() {
+    const users = adminChatContacts().filter(user=>!user.is_group);
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<section class="modal admin-chat-group-editor" role="dialog" aria-modal="true" aria-labelledby="chatGroupTitle"><div class="modal-title"><div><small>邀請同事一起討論</small><h3 id="chatGroupTitle">建立群組</h3></div><button type="button" class="ghost-btn" data-close-modal aria-label="關閉建立群組">×</button></div><form id="adminChatGroupForm"><div class="modal-form-body"><label class="chat-group-name">群組名稱<input name="name" required maxlength="60" placeholder="例如：機場接送調度"></label><p>你會自動加入，請再選擇 1 至 29 位同事。</p><label class="chat-group-search">搜尋同事<input type="search" data-chat-group-search placeholder="輸入姓名或分機"></label><fieldset class="chat-group-choices"><legend>選擇成員</legend>${users.map(user=>`<label data-group-person="${escapeHtml(`${user.name || ''} ${user.extension || ''}`)}"><input type="checkbox" name="member_ids" value="${escapeHtml(user.id)}">${adminChatAvatar(user.id)}<span>${escapeHtml(user.name)}<small>分機 ${escapeHtml(user.extension || '—')}</small></span></label>`).join('')}</fieldset><p class="error" data-group-error role="alert" hidden></p></div><div class="modal-actions"><button class="ghost-btn" type="button" data-close-modal>取消</button><button class="primary-btn" type="submit">建立群組</button></div></form></section>`;
+    document.body.appendChild(modal);
+    modal.querySelector('[name="name"]')?.focus();
+  }
+
+  async function submitAdminChatGroup(form) {
+    if (form.dataset.saving || !form.reportValidity()) return;
+    const fields = new FormData(form), ids = fields.getAll("member_ids"), errorBox = form.querySelector("[data-group-error]");
+    errorBox.hidden=true;
+    if (!ids.length || ids.length>29) { errorBox.textContent="請選擇 1 至 29 位同事"; errorBox.hidden=false; return; }
+    const button = form.querySelector('[type="submit"]');
+    form.dataset.saving="true"; button.disabled=true; button.textContent="正在建立…";
+    try {
+      const result = form.dataset.groupId ? {group_id:form.dataset.groupId} : await apiRequest("create_admin_chat_group",{name:String(fields.get("name") || '').trim(),member_ids:ids});
+      form.dataset.groupId=result.group_id;
+      state.adminChatContactId=`group:${result.group_id}`;
+      state.adminChatOpen=true; state.adminChatMobileConversation=true; state.adminChatDraft="";
+      await loadAdminChat(); await loadAdminGroupConversation(state.adminChatContactId);
+      if (!(state.data.admin_chat_groups || []).some(group=>group.id===result.group_id)) await fetchAdminChat();
+      form.closest(".modal-backdrop").remove();
+      render();
+    } catch(error) { errorBox.textContent=String(error.message || error); errorBox.hidden=false; }
+    finally { delete form.dataset.saving; button.disabled=false; button.textContent="建立群組"; }
   }
 
   function adminChatWidget() {
@@ -3945,7 +4013,7 @@
         </header>
         <div class="admin-chat-layout">
           <aside class="admin-chat-contacts" aria-label="聯絡人">
-            <div class="admin-chat-contacts-title"><strong>聯絡人</strong><span>${contacts.length}</span></div>
+            <div class="admin-chat-contacts-title"><strong>聯絡人與群組</strong><button type="button" class="admin-chat-new-group" data-action="create-admin-chat-group">＋ 建立群組</button></div>
             <div class="admin-chat-contact-list" data-admin-chat-contacts>${adminChatContactsMarkup(contacts, selectedId)}</div>
           </aside>
           <section class="admin-chat-conversation">
@@ -3954,7 +4022,7 @@
               ${adminChatMessagesMarkup(selectedId)}
             </div>
             <form id="adminChatForm" class="admin-chat-compose">
-              <input name="message" value="${escapeHtml(state.adminChatDraft || "")}" placeholder="輸入訊息..." autocomplete="off" ${selectedId ? "" : "disabled"}>
+              <input name="message" maxlength="2000" aria-label="聊天訊息" value="${escapeHtml(state.adminChatDraft || "")}" placeholder="輸入訊息..." autocomplete="off" ${selectedId ? "" : "disabled"}>
               <button class="ghost-btn admin-chat-emoji-btn" type="button" data-action="toggle-admin-chat-emoji">😊</button>
               <button class="primary-btn" type="submit" ${selectedId ? "" : "disabled"}>送出</button>
               ${state.adminChatEmojiOpen ? `<div class="admin-chat-emoji-pop">${emojis.map((emoji) => `<button type="button" data-admin-chat-emoji="${emoji}">${emoji}</button>`).join("")}</div>` : ""}
@@ -8353,6 +8421,7 @@
       state.adminChatEmojiOpen = false;
       updateAdminChatDom();
       try {
+        if (state.adminChatContactId.startsWith("group:")) await loadAdminGroupConversation(state.adminChatContactId);
         await markAdminChatRead(state.adminChatContactId);
       } catch (error) {
         state.adminChatError = `即時通訊載入失敗：${error.message || error}`;
@@ -8368,6 +8437,21 @@
     if (target.dataset.action === "admin-chat-contacts") {
       state.adminChatMobileConversation = false;
       updateAdminChatDom();
+      return;
+    }
+    if (target.dataset.action === "create-admin-chat-group") { openAdminChatGroupEditor(); return; }
+    if (target.dataset.action === "admin-chat-group-members") {
+      const group=(state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===state.adminChatContactId);
+      if (group) await showAlert(group.member_ids.map(id=>id===currentAdminChatId()?`${currentAdminChatName()}（我）`:adminChatContactName(id)).join("\n"),`${group.name} · ${group.member_ids.length} 位成員`);
+      return;
+    }
+    if (target.dataset.action === "admin-chat-group-history") {
+      if (target.disabled) return;
+      target.disabled=true;
+      const box=document.querySelector('[data-admin-chat-messages]'), oldHeight=box?.scrollHeight || 0, oldTop=box?.scrollTop || 0;
+      try { await loadAdminGroupConversation(state.adminChatContactId,true); updateAdminChatDom(); if(box)box.scrollTop=oldTop+box.scrollHeight-oldHeight; }
+      catch(error) { await showAlert(String(error.message || error),"載入失敗"); }
+      finally { target.disabled=false; }
       return;
     }
     if (target.dataset.action === "refresh-admin-chat") {
@@ -8674,6 +8758,7 @@
   });
 
   document.addEventListener("submit", async (e) => {
+    if (e.target.id === "adminChatGroupForm") { e.preventDefault(); await submitAdminChatGroup(e.target); return; }
     if (e.target.id === "hiringApplicationForm") {
       e.preventDefault(); await submitHiringApplication(e.target); return;
     }
@@ -8685,30 +8770,38 @@
     if (e.target.id === "adminChatForm") {
       e.preventDefault();
       const form = e.target;
+      if (form.dataset.sending) return;
       const message = String(new FormData(form).get("message") || "").trim();
       const receiverId = state.adminChatContactId || "";
       if (!message || !receiverId) return;
+      form.dataset.sending="true";
+      const sendButton=form.querySelector('[type="submit"]');
+      sendButton.disabled=true;
       try {
-        const result = await apiRequest("send_admin_chat_message", {
+        const isGroup=receiverId.startsWith("group:");
+        const result = await apiRequest(isGroup ? "send_admin_group_message" : "send_admin_chat_message", {
+          group_id:isGroup?receiverId.slice(6):undefined,
           receiver_id: receiverId,
           receiver_name: adminChatContactName(receiverId),
           message
         });
-        state.data.admin_chat_messages = [...(state.data.admin_chat_messages || []), result.data].filter(Boolean);
-        state.adminChatDraft = "";
+        const key=isGroup?"admin_chat_group_messages":"admin_chat_messages";
+        state.data[key] = [...new Map([...(state.data[key] || []),result.data].filter(Boolean).map(item=>[item.id,item])).values()];
+        if (isGroup) { const group=(state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===receiverId); if(group)group.last_message=result.data; }
+        if (state.adminChatContactId===receiverId) state.adminChatDraft = "";
         state.adminChatEmojiOpen = false;
         state.adminChatError = "";
-        form.reset();
+        if (state.adminChatContactId===receiverId) form.reset();
         updateAdminChatDom();
         requestAnimationFrame(() => {
           const box = document.querySelector("[data-admin-chat-messages]");
           if (box) box.scrollTop = box.scrollHeight;
-          document.querySelector("#adminChatForm input")?.focus();
+          if (state.adminChatContactId===receiverId) document.querySelector("#adminChatForm input")?.focus();
         });
       } catch (error) {
         state.adminChatError = `訊息送出失敗：${error.message || error}`;
         updateAdminChatDom();
-      }
+      } finally { delete form.dataset.sending; sendButton.disabled=false; }
       return;
     }
     if (e.target.id === "flightSearchForm") {
@@ -8797,6 +8890,12 @@
       state.loanDateFilter = String(data.get("date") || "");
       render();
     }
+  });
+
+  document.addEventListener("input", (event) => {
+    if (!event.target.matches("[data-chat-group-search]")) return;
+    const query=event.target.value.trim().toLocaleLowerCase();
+    event.target.closest("form").querySelectorAll("[data-group-person]").forEach(label=>{label.hidden=!label.dataset.groupPerson.toLocaleLowerCase().includes(query);});
   });
 
   document.addEventListener("keydown", async (e) => {

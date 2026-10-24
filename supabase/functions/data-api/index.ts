@@ -239,6 +239,64 @@ async function loadDriverData(driverId: string) {
   return { data: result, user: driver };
 }
 
+async function loadAdminChatGroups(userId: string) {
+  const { data, error } = await db.rpc("load_admin_chat_groups", { p_user_id: userId });
+  if (error) throw error;
+  return data || [];
+}
+
+async function requireAdminGroupMember(groupId: string, userId: string) {
+  if (!/^[0-9a-f-]{36}$/i.test(groupId)) return false;
+  const { data, error } = await db.from("admin_chat_group_members").select("group_id").eq("group_id", groupId).eq("user_id", userId).maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
+
+async function loadAdminGroupMessages(groupId: string, before = 0) {
+  let query = db.from("admin_chat_group_messages").select("*").eq("group_id", groupId).order("seq", { ascending: false }).limit(101);
+  if (before) query = query.lt("seq", before);
+  const { data, error } = await query;
+  if (error) throw error;
+  return { messages: (data || []).slice(0,100).reverse(), has_more: (data || []).length > 100 };
+}
+
+async function handleAdminGroupChat(body: Record<string, any>, session: Record<string, any>) {
+  if (!["create_admin_chat_group","send_admin_group_message","mark_admin_group_read","load_admin_group_messages"].includes(body.action)) return null;
+  if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" },403);
+  const userId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+  if (body.action === "create_admin_chat_group") {
+    const name = compactText(body.name);
+    const ids = Array.isArray(body.member_ids) ? [...new Set<string>(body.member_ids.map((id: unknown)=>compactText(id)).filter((id: string)=>id && id!==userId))] : [];
+    if (!name || name.length > 60 || ids.length < 1 || ids.length > 29) return json({ error: "請填寫群組名稱，並選擇 1 至 29 位同事" },400);
+    const { data: users, error: userError } = await db.from("admin_users").select("id").eq("active",true).in("id", ids.filter(id=>id!=="super-admin"));
+    if (userError) throw userError;
+    const allowed = new Set(["super-admin",...(users || []).map((user: any)=>String(user.id))]);
+    if (ids.some(id=>!allowed.has(id))) return json({ error: "群組包含無法加入的同事，請重新選擇" },400);
+    const { data, error } = await db.rpc("create_admin_chat_group",{p_name:name,p_creator_id:userId,p_member_ids:ids});
+    if (error) throw error;
+    return json({ group_id:data });
+  }
+  const groupId = compactText(body.group_id);
+  if (!(await requireAdminGroupMember(groupId,userId))) return json({ error:"你不是這個群組的成員" },403);
+  if (body.action === "load_admin_group_messages") {
+    const before = Number(body.before_seq || 0);
+    if (!Number.isSafeInteger(before) || before < 0) return json({error:"無效的訊息位置"},400);
+    return json(await loadAdminGroupMessages(groupId,before));
+  }
+  if (body.action === "mark_admin_group_read") {
+    const through = Number(body.through_seq || 0);
+    if (!Number.isSafeInteger(through) || through < 0) return json({error:"無效的訊息位置"},400);
+    const { error } = await db.rpc("mark_admin_chat_group_read",{p_group_id:groupId,p_user_id:userId,p_through_seq:through});
+    if (error) throw error;
+    return json({ok:true});
+  }
+  const message = compactText(body.message);
+  if (!message || message.length > 2000) return json({error:"請輸入 1 至 2000 字的訊息"},400);
+  const { data, error } = await db.from("admin_chat_group_messages").insert({group_id:groupId,sender_id:userId,sender_name:compactText(session.admin_name,session.is_super_admin?"最高管理員":"管理者"),message}).select("*").single();
+  if (error) throw error;
+  return json({data});
+}
+
 async function loadAdminData(session: Record<string, unknown>, scope = "all") {
   const result: Record<string, unknown[]> = {};
   const homeTables = ["admin_users", "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes"];
@@ -285,6 +343,7 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all") {
         .order("created_at", { ascending: true });
       if (error) throw error;
       result[table] = data || [];
+      result.admin_chat_groups = await loadAdminChatGroups(myChatId);
       return;
     }
     if (table === "vehicle_loans" && !session.is_super_admin) {
@@ -1291,6 +1350,8 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json(await pushLineForRecord(body.table, record || {}));
     }
+    const groupChatResponse = await handleAdminGroupChat(body,session);
+    if (groupChatResponse) return groupChatResponse;
     if (body.action === "load_admin_chat") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
@@ -1305,7 +1366,14 @@ Deno.serve(async (req) => {
       const byId = new Map<string, Record<string, unknown>>();
       [...(sent.data || []), ...(received.data || [])].forEach((item) => byId.set(String(item.id), item));
       const messages = [...byId.values()].sort((a, b) => compactText(a.created_at).localeCompare(compactText(b.created_at)));
-      return json(await signStorageUrls({ admin_users: users.data || [], admin_chat_messages: messages }));
+      const groups = await loadAdminChatGroups(myChatId);
+      let groupMessages: {messages:Record<string,unknown>[],has_more:boolean} = { messages:[], has_more:false };
+      const groupId = compactText(body.group_id);
+      if (groupId) {
+        if (!groups.some((group: any)=>group.id===groupId)) return json({error:"你不是這個群組的成員"},403);
+        groupMessages = await loadAdminGroupMessages(groupId);
+      }
+      return json(await signStorageUrls({ admin_users: users.data || [], admin_chat_messages: messages, admin_chat_groups:groups, group_id:groupId, group_messages:groupMessages.messages, group_has_more:groupMessages.has_more }));
     }
     if (body.action === "send_admin_chat_message") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);

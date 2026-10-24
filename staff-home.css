@@ -184,3 +184,34 @@
  .admin-chat-contact-list{height:auto;flex:1;min-height:0;overflow:auto}
  .admin-chat-messages{height:auto;min-height:0}
 }
+/* A modal always owns the foreground; chat must never cover its actions. */
+body:has(.modal-backdrop) .admin-chat-widget { visibility: hidden !important; pointer-events: none !important; }
+.admin-chat-group-avatar { background:#e4f3ed;color:#25704d;display:grid;place-items:center; }
+.admin-chat-group-avatar svg { width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.7; }
+.admin-chat-members-btn,.admin-chat-new-group,.admin-chat-history { border:1px solid #d4e5dc;border-radius:8px;background:#f5faf7;color:#28704f;padding:7px 9px;font-size:12px;white-space:nowrap;cursor:pointer; }
+.admin-chat-current strong { flex:1; }
+.admin-chat-current .admin-chat-members-btn { flex:0 0 auto; }
+.admin-chat-contacts-title { gap:8px;justify-content:space-between; }
+.admin-chat-new-group { font-size:11px;padding:6px; }
+.admin-chat-history { justify-self:center; }
+.admin-chat-group-editor { width:min(520px,calc(100vw - 24px)); }
+.admin-chat-group-editor form { display:flex;flex-direction:column;min-height:0;overflow:hidden; }
+.admin-chat-group-editor .modal-form-body { overflow:auto;min-height:0;max-height:65dvh;padding:20px; }
+.chat-group-name,.chat-group-search { display:grid;gap:8px;font-size:13px;font-weight:700; }
+.chat-group-search { margin-block:16px; }
+.admin-chat-group-editor input:not([type=checkbox]) { width:100%;min-width:0;font-size:16px; }
+.admin-chat-group-editor p { color:#758395;font-size:12px;line-height:1.7; }
+.chat-group-choices { border:1px solid #e1e8ee;border-radius:14px;padding:4px 12px;margin:12px 0; }
+.chat-group-choices legend { padding:0 7px;font-size:12px;color:#64748b; }
+.chat-group-choices label { display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #eef2f5;cursor:pointer; }
+.chat-group-choices label:last-child { border-bottom:0; }
+.chat-group-choices label[hidden] { display:none; }
+.chat-group-choices input[type=checkbox] { margin:0;width:19px;height:19px;flex:0 0 19px;accent-color:#17865d; }
+.chat-group-choices label>span:last-child { display:grid;gap:4px;font-size:14px; }
+.chat-group-choices small { font-size:11px;color:#7d8997; }
+@media(max-width:700px){
+  .admin-chat-current .admin-chat-members-btn{font-size:11px;padding:7px;}
+  .admin-chat-new-group{font-size:13px;padding:8px 10px;}
+  .admin-chat-group-editor{max-height:calc(100dvh - 28px);}
+  .admin-chat-group-editor .modal-form-body{max-height:calc(100dvh - 220px);}
+}

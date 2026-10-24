@@ -219,3 +219,6 @@
     letter-spacing: 2px;
   }
 }
+/* Supplied complete wordmark; no recreated text or square cropping. */
+.public-brand-lockup > img, .modern-air-login .public-brand-lockup > img { width:174px;height:auto;object-fit:contain;object-position:center; }
+@media(max-width:700px){.public-brand-lockup > img,.modern-air-login .public-brand-lockup > img{width:150px;height:auto;}}

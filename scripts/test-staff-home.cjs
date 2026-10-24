@@ -19,7 +19,7 @@ async function backendTests() {
   data.admin_users[1].permissions = {internalAnnouncements:true,internalCalendar:true};
   let handler;
   let session = {session_type:'admin',admin_user_id:'me',admin_name:'王小明',is_super_admin:false};
-  const db = {from(table){
+  const db = {rpc:async()=>({data:[],error:null}),from(table){
     let mode='select', payload, filters=[], columns='*', range=null;
     const query={
       select(value='*'){columns=value;return this},eq(key,value){filters.push(row=>row[key]===value);return this},neq(key,value){filters.push(row=>row[key]!==value);return this},order(){return this},or(){return this},range(start,end){range=[start,end];return this},
@@ -337,4 +337,4 @@ async function uiTests(){
     console.log('PASS: office navigation, notices/calendar, avatars/chat, forecast, broadcast preview/double-submit/status refresh and 320/390/768/1440 layouts');
   }finally{await browser.close()}
 }
-backendTests().then(uiTests).catch(err=>{console.error(err);process.exitCode=1});
+backendTests().then(()=>process.argv.includes('--backend-only')?undefined:uiTests()).catch(err=>{console.error(err);process.exitCode=1});
