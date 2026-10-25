@@ -63,6 +63,11 @@
     eupError: "",
     eupSelectedVehicle: "",
     loginHistoryFilter: "",
+    loginHistoryOutcome: "",
+    loginHistoryPage: 1,
+    loginHistoryTotal: 0,
+    loginHistoryLoading: false,
+    loginHistoryError: "",
     mailTab: "addresses",
     hiringApplicationFilter: "unnotified",
     dispatchDateFilter: today(),
@@ -111,6 +116,7 @@
   let dispatchRefreshTimer = null;
   let adminChatRefreshTimer = null;
   let adminChatLoadPromise = null;
+  let loginHistoryRequest = 0;
   let weatherTicker = null;
   let satelliteMap = null;
   let satelliteMarkerLayer = null;
@@ -4454,58 +4460,32 @@
   }
 
   function adminLoginHistory() {
-    if (!adminCan("super")) return `<div class="empty">僅最高管理員可查看登入紀錄。</div>`;
-    const typeLabels = [
-      ["", "全部"],
-      ["員工", "員工"],
-      ["司機", "司機"],
-      ["車商", "車商"],
-      ["保經", "保經"],
-      ["保修廠", "保修廠"],
-      ["保險公司", "保險公司"]
-    ];
-    const latest = new Map();
-    [...(state.data.login_audit_logs || [])]
-      .sort((a, b) => String(b.login_at || b.created_at || "").localeCompare(String(a.login_at || a.created_at || "")))
-      .forEach((item) => {
-        const role = item.actor_role || loginActorRole(item);
-        const key = `${role}:${item.actor_id || item.actor_name || item.id}`;
-        if (!latest.has(key)) latest.set(key, { ...item, actor_role: role });
-      });
-    const rows = [...latest.values()].filter((item) => !state.loginHistoryFilter || item.actor_role === state.loginHistoryFilter);
-    return `
-      <div class="section-head">
-        <div><h2>登入紀錄</h2><small>依使用者分類顯示最後一次登入時間。</small></div>
-        <button class="ghost-btn" data-action="refresh-login-history">重新整理</button>
-      </div>
-      <div class="compact-filter-bar">
-        ${typeLabels.map(([value, label]) => `<button class="filter-btn ${state.loginHistoryFilter === value ? "active" : ""}" data-login-history-filter="${value}">${label}<b>${value ? rowsForLoginRole(value).length : latest.size}</b></button>`).join("")}
-      </div>
-      <div class="login-history-list">
-        ${rows.length ? rows.map((item) => `<article class="login-history-row">
-          <div class="login-history-type">${escapeHtml(item.actor_role || "-")}</div>
-          <div class="login-history-main">
-            <strong>${escapeHtml(item.actor_name || "未命名")}</strong>
-            <small>${escapeHtml(loginActorSubtitle(item))}</small>
-          </div>
-          <div><small>最後登入</small><b>${fmtDateTime(item.login_at || item.created_at)}</b></div>
-          <div><small>來源 IP</small><b>${escapeHtml(item.ip_address || "-")}</b></div>
-          <div><small>裝置</small><b>${escapeHtml(shortUserAgent(item.user_agent))}</b></div>
-        </article>`).join("") : `<div class="empty">目前沒有登入紀錄</div>`}
-      </div>
-    `;
+    const rows = state.data.login_audit_logs || [], page=state.loginHistoryPage || 1, total=state.loginHistoryTotal || 0;
+    const roles=[['','全部'],['員工','員工'],['司機','司機'],['車商','車商'],['保經','保經'],['保修廠','保修廠'],['保險公司','保險公司'],['廠商','未驗證廠商']];
+    return `<section class="login-audit-page"><div class="section-head"><div><h2>登入紀錄</h2><small>每次登入分別記錄，依時間由新至舊；不顯示登入密碼或代碼。</small></div><button class="ghost-btn" data-action="refresh-login-history" ${state.loginHistoryLoading?'disabled':''}>${state.loginHistoryLoading?'載入中…':'重新整理'}</button></div>
+      <div class="compact-filter-bar">${roles.map(([value,label])=>`<button class="filter-btn ${state.loginHistoryFilter===value?'active':''}" data-login-history-filter="${value}">${label}</button>`).join('')}</div>
+      <div class="compact-filter-bar">${[['','全部結果'],['success','登入成功'],['failure','登入失敗']].map(([value,label])=>`<button class="filter-btn ${state.loginHistoryOutcome===value?'active':''}" data-login-history-outcome="${value}">${label}</button>`).join('')}</div>
+      ${state.loginHistoryError?`<p class="error" role="alert">${escapeHtml(state.loginHistoryError)}</p>`:''}
+      <p class="login-audit-summary" role="status">${state.loginHistoryLoading?'正在讀取登入紀錄…':`共 ${total.toLocaleString()} 筆 · 第 ${page}／${Math.max(1,Math.ceil(total/50))} 頁`}</p>
+      <div class="login-history-list">${rows.map(item=>`<article class="login-history-row"><div class="login-history-type">${escapeHtml(item.actor_role || loginActorRole(item))}<span class="login-audit-result ${item.outcome==='failure'?'is-failure':'is-success'}">${item.outcome==='failure'?'失敗':'成功'}</span></div><div class="login-history-main"><strong>${escapeHtml(item.actor_name || '未驗證使用者')}</strong><small>${escapeHtml(item.outcome==='failure'?(item.failure_reason || '驗證失敗'):loginActorSubtitle(item))}</small></div><div><small>登入時間</small><b>${fmtDateTime(item.login_at || item.created_at)}</b></div><div><small>來源 IP</small><b>${escapeHtml(item.ip_address || '未取得')}</b></div><div><small>裝置</small><b>${escapeHtml(shortUserAgent(item.user_agent))}</b></div></article>`).join('')}${!rows.length&&!state.loginHistoryLoading&&!state.loginHistoryError?'<div class="empty">此篩選條件沒有登入紀錄</div>':''}</div>
+      <div class="login-audit-pagination"><button class="ghost-btn" data-login-history-page="${page-1}" ${page<=1||state.loginHistoryLoading?'disabled':''}>上一頁</button><span>每頁 50 筆</span><button class="ghost-btn" data-login-history-page="${page+1}" ${page*50>=total||state.loginHistoryLoading?'disabled':''}>下一頁</button></div></section>`;
   }
 
-  function rowsForLoginRole(role) {
-    const latest = new Map();
-    [...(state.data.login_audit_logs || [])]
-      .sort((a, b) => String(b.login_at || b.created_at || "").localeCompare(String(a.login_at || a.created_at || "")))
-      .forEach((item) => {
-        const actorRole = item.actor_role || loginActorRole(item);
-        const key = `${actorRole}:${item.actor_id || item.actor_name || item.id}`;
-        if (!latest.has(key)) latest.set(key, { ...item, actor_role: actorRole });
-      });
-    return [...latest.values()].filter((item) => item.actor_role === role);
+  async function loadLoginHistory(page = 1) {
+    if (!state.admin || !adminCan('super') || !state.apiSession) return;
+    const request=++loginHistoryRequest, session=state.apiSession;
+    state.loginHistoryLoading=true; state.loginHistoryError=''; state.data.login_audit_logs=[];
+    render();
+    try {
+      const result=await apiRequest('load_login_history',{page,role:state.loginHistoryFilter || '',outcome:state.loginHistoryOutcome || ''});
+      if (request!==loginHistoryRequest || state.apiSession!==session) return;
+      state.data.login_audit_logs=result.data || [];
+      state.loginHistoryPage=result.page || page; state.loginHistoryTotal=Number(result.total || 0);
+    } catch(error) {
+      if (request===loginHistoryRequest && state.apiSession===session) state.loginHistoryError=`登入紀錄載入失敗：${error.message || error}`;
+    } finally {
+      if (request===loginHistoryRequest && state.apiSession===session) { state.loginHistoryLoading=false; render(); }
+    }
   }
 
   function loginActorRole(item) {
@@ -7638,7 +7618,7 @@
         const driverAttempt = ["driver", "login_driver", { phone: loginValue }];
         const adminAttempt = ["admin", "login_admin", { code: loginValue }];
         const partnerAttempt = ["partner", "login_partner", { code: loginValue }];
-        const attempts = /^09\d{8}$/.test(loginValue)
+        const attempts = loginValue === "0000" ? [adminAttempt] : /^09[0-9]{8}$/.test(loginValue)
           ? [driverAttempt, adminAttempt, partnerAttempt]
           : [adminAttempt, partnerAttempt, driverAttempt];
         let result = null;
@@ -8518,6 +8498,7 @@
       }
       render();
       if (state.adminView === "storage" && !state.storageFiles.length) await loadStorageUsage();
+      if (state.adminView === "loginHistory") await loadLoginHistory(1);
       if (state.adminView === "trafficMonitor" && !state.storageFiles.length) await loadStorageUsage();
       if (state.adminView === "satelliteMonitor" && !state.eupSnapshot && !state.eupLoading) await loadSatelliteSnapshot();
     }
@@ -8629,12 +8610,12 @@
     }
     if (target.dataset.loginHistoryFilter !== undefined) {
       state.loginHistoryFilter = target.dataset.loginHistoryFilter;
-      render();
+      await loadLoginHistory(1);
     }
+    if (target.dataset.loginHistoryOutcome !== undefined) { state.loginHistoryOutcome=target.dataset.loginHistoryOutcome; await loadLoginHistory(1); }
+    if (target.dataset.loginHistoryPage) await loadLoginHistory(Number(target.dataset.loginHistoryPage));
     if (target.dataset.action === "refresh-login-history") {
-      await withAppLoading("正在重新整理登入紀錄", async () => {
-        await loadAll();
-      });
+      await loadLoginHistory(state.loginHistoryPage || 1);
     }
     if (target.dataset.loanFilter !== undefined) {
       state.loanStatusFilter = target.dataset.loanFilter;
@@ -9460,7 +9441,6 @@
       if (isHiringPath()) {
         await loadPublicHiringPage();
       } else {
-        if (desktopMode && !state.apiSession) await handleLogin("0000");
         await loadAll({ homeOnly: state.admin && !initialAdminView });
       }
       state.appLoading = false;

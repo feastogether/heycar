@@ -157,7 +157,7 @@ const partnerRoleName = (type: unknown) => partnerRoleLabels[String(type || "")]
 
 async function recordLogin(req: Request, entry: Record<string, unknown>) {
   try {
-    await db.from("login_audit_logs").insert({
+    const { error } = await db.from("login_audit_logs").insert({
       actor_type: entry.actor_type || "",
       actor_id: entry.actor_id || null,
       actor_name: entry.actor_name || "",
@@ -165,11 +165,31 @@ async function recordLogin(req: Request, entry: Record<string, unknown>) {
       login_identifier: entry.login_identifier || "",
       ip_address: requestIp(req),
       user_agent: req.headers.get("user-agent") || "",
-      login_at: new Date().toISOString()
+      login_at: new Date().toISOString(),
+      outcome: entry.outcome === "failure" ? "failure" : "success",
+      failure_reason: compactText(entry.failure_reason).slice(0,200)
     });
+    if (error) throw error;
   } catch (error) {
     console.error("login audit failed", error);
+    throw new Error("登入紀錄寫入失敗，請稍後再試");
   }
+}
+
+async function recordFailedLogin(req: Request, type: string, reason: string) {
+  await recordLogin(req,{actor_type:type,actor_name:"未驗證使用者",actor_role:type==="admin"?"員工":type==="driver"?"司機":"廠商",outcome:"failure",failure_reason:reason});
+}
+
+async function loadLoginAuditHistory(body: Record<string, unknown>, session: Record<string,unknown>) {
+  if (session.session_type!=="admin" || !session.is_super_admin) return json({error:"SUPER_ADMIN_REQUIRED"},403);
+  const page=Number(body.page || 1), role=compactText(body.role), outcome=compactText(body.outcome);
+  if (!Number.isInteger(page) || page<1 || page>100000 || !["","員工","司機","車商","保經","保修廠","保險公司","廠商"].includes(role) || !["","success","failure"].includes(outcome)) return json({error:"INVALID_AUDIT_FILTER"},400);
+  let query=db.from("login_audit_logs").select("*",{count:"exact"}).order("login_at",{ascending:false}).order("id",{ascending:false});
+  if(role)query=query.eq("actor_role",role);
+  if(outcome)query=query.eq("outcome",outcome);
+  const {data,error,count}=await query.range((page-1)*50,page*50-1);
+  if(error)throw error;
+  return json({data:data || [],total:count || 0,page,page_size:50});
 }
 
 async function getSession(req: Request) {
@@ -323,6 +343,11 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all") {
     if (table === "login_audit_logs" && !session.is_super_admin) {
       result[table] = [];
       return;
+    }
+    if (table === "login_audit_logs") {
+      const {data,error}=await db.from(table).select("*").order("login_at",{ascending:false}).order("id",{ascending:false}).limit(100);
+      if(error)throw error;
+      result[table]=data || [];return;
     }
     if (table === "key_access_codes" && !session.is_super_admin) {
       const { data, error } = await db
@@ -1009,12 +1034,15 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   try {
     const body = await req.json();
+    if (["login_admin","login_partner","login_driver"].includes(body.action) && normalizeLoginCode(body.code ?? body.phone)==="0000") {
+      await recordFailedLogin(req,body.action==="login_admin"?"admin":body.action==="login_driver"?"driver":"partner","已停用的登入碼");
+      return json({error:"此登入代碼已停用，請改用個人帳號。"},401);
+    }
     if (body.action === "login_driver") {
       const { data, error } = await db.from("drivers").select("*").eq("login_enabled", true);
       if (error) throw error;
       const driver = (data || []).find((item) => phoneMatches(item.phone, body.phone));
-      if (!driver) return json({ error: "DRIVER_LOGIN_FAILED" }, 401);
-      const sessionData = await createSession("driver", driver.id);
+      if (!driver) { await recordFailedLogin(req,"driver","手機號碼無法驗證"); return json({ error: "DRIVER_LOGIN_FAILED" }, 401); }
       await recordLogin(req, {
         actor_type: "driver",
         actor_id: driver.id,
@@ -1022,6 +1050,7 @@ Deno.serve(async (req) => {
         actor_role: "司機",
         login_identifier: driver.phone || ""
       });
+      const sessionData = await createSession("driver", driver.id);
       return json(await signStorageUrls({ ...sessionData, user: driver }));
     }
     if (body.action === "login_line_driver") {
@@ -1030,6 +1059,7 @@ Deno.serve(async (req) => {
         lineIdentity = await verifyLineIdentity(body);
       } catch (error) {
         const lineError = error as Error & { status?: number };
+        await recordFailedLogin(req,"driver","LINE 身分驗證失敗");
         return json({ error: lineError.message || "LINE_ID_TOKEN_INVALID" }, lineError.status || 401);
       }
       const { data: driver, error } = await db
@@ -1039,8 +1069,7 @@ Deno.serve(async (req) => {
         .eq("login_enabled", true)
         .maybeSingle();
       if (error) throw error;
-      if (!driver) return json({ error: "LINE_NOT_BOUND" }, 404);
-      const sessionData = await createSession("driver", driver.id);
+      if (!driver) { await recordFailedLogin(req,"driver","LINE 尚未綁定"); return json({ error: "LINE_NOT_BOUND" }, 404); }
       await recordLogin(req, {
         actor_type: "driver",
         actor_id: driver.id,
@@ -1048,14 +1077,12 @@ Deno.serve(async (req) => {
         actor_role: "司機",
         login_identifier: "LINE"
       });
+      const sessionData = await createSession("driver", driver.id);
       return json(await signStorageUrls({ ...sessionData, user: driver }));
     }
     if (body.action === "login_admin") {
       const loginCode = normalizeLoginCode(body.code);
-      // The local printer station uses the dedicated 0000 kiosk code.
-      // Its desktop client restricts navigation to vehicle loans and mail management.
-      if ((adminCode && loginCode === normalizeLoginCode(adminCode)) || loginCode === "0000") {
-        const sessionData = await createSession("admin", undefined, { name: "最高管理員", isSuper: true });
+      if (adminCode && loginCode === normalizeLoginCode(adminCode)) {
         await recordLogin(req, {
           actor_type: "admin",
           actor_id: "super",
@@ -1063,19 +1090,19 @@ Deno.serve(async (req) => {
           actor_role: "員工",
           login_identifier: "最高權限"
         });
+        const sessionData = await createSession("admin", undefined, { name: "最高管理員", isSuper: true });
         return json({ ...sessionData, admin_profile: { name: "最高管理員", is_super_admin: true, permissions: { all: true } } });
       }
       const codeHash = await hashCode(loginCode);
       const { data: adminUser, error } = await db.from("admin_users")
         .select("id,name,active,permissions,extension,avatar_url,avatar_name").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
-      if (!adminUser) return json({ error: "ADMIN_LOGIN_FAILED" }, 401);
+      if (!adminUser) { await recordFailedLogin(req,"admin","登入代碼無法驗證"); return json({ error: "ADMIN_LOGIN_FAILED" }, 401); }
       if (adminUser.extension !== loginCode) {
         const { error: extensionError } = await db.from("admin_users").update({ extension: loginCode }).eq("id", adminUser.id);
         if (extensionError) throw extensionError;
         adminUser.extension = loginCode;
       }
-      const sessionData = await createSession("admin", adminUser.id, { name: adminUser.name });
       await recordLogin(req, {
         actor_type: "admin",
         actor_id: adminUser.id,
@@ -1083,6 +1110,7 @@ Deno.serve(async (req) => {
         actor_role: "員工",
         login_identifier: "管理代碼"
       });
+      const sessionData = await createSession("admin", adminUser.id, { name: adminUser.name });
       return json(await signStorageUrls({
         ...sessionData,
         admin_profile: { ...adminUser, is_super_admin: false }
@@ -1097,8 +1125,7 @@ Deno.serve(async (req) => {
         .eq("active", true)
         .maybeSingle();
       if (error) throw error;
-      if (!partner) return json({ error: "PARTNER_LOGIN_FAILED" }, 401);
-      const sessionData = await createSession("partner", partner.id);
+      if (!partner) { await recordFailedLogin(req,"partner","登入代碼無法驗證"); return json({ error: "PARTNER_LOGIN_FAILED" }, 401); }
       await recordLogin(req, {
         actor_type: "partner",
         actor_id: partner.id,
@@ -1106,6 +1133,7 @@ Deno.serve(async (req) => {
         actor_role: partnerRoleName(partner.partner_type),
         login_identifier: partner.partner_type || ""
       });
+      const sessionData = await createSession("partner", partner.id);
       return json(await signStorageUrls({ ...sessionData, partner }));
     }
     if (body.action === "public_login_slogans") {
@@ -1158,6 +1186,7 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action==="load_login_history") return await loadLoginAuditHistory(body,session);
     if (body.action === "load_maintenance_notifications") {
       if (session.session_type !== "admin" || !(await adminCan(session,"maintenanceNotifications"))) return json({error:"ADMIN_PERMISSION_DENIED"},403);
       const [notifications,batches] = await Promise.all([dispatchRows("maintenance_notifications","*"),dispatchRows("maintenance_notification_batches","*")]);

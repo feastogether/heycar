@@ -22,7 +22,7 @@ async function backendTests() {
   const db = {rpc:async()=>({data:[],error:null}),from(table){
     let mode='select', payload, filters=[], columns='*', range=null;
     const query={
-      select(value='*'){columns=value;return this},eq(key,value){filters.push(row=>row[key]===value);return this},neq(key,value){filters.push(row=>row[key]!==value);return this},order(){return this},or(){return this},range(start,end){range=[start,end];return this},
+      select(value='*'){columns=value;return this},eq(key,value){filters.push(row=>row[key]===value);return this},neq(key,value){filters.push(row=>row[key]!==value);return this},order(){return this},or(){return this},limit(n){range=[0,n-1];return this},range(start,end){range=[start,end];return this},
       insert(value){mode='insert';payload=value;return this},upsert(value){mode='upsert';payload=value;return this},update(value){mode='update';payload=value;return this},delete(){mode='delete';return this},
       async execute(single=false){
         let rows=(data[table]||[]).filter(row=>filters.every(fn=>fn(row)));
