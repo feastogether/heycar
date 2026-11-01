@@ -482,6 +482,28 @@
 .hiring-prose iframe {
   max-width: 100%;
 }
+/* About copy uses one heading scale and one body scale, including pasted text. */
+.hiring-about .hiring-prose {
+  font-size: 15px;
+  line-height: 1.9;
+}
+.hiring-page .hiring-about .hiring-prose :is(h3, h4) {
+  margin: 28px 0 10px;
+  font-size: 20px;
+  font-weight: 750;
+  line-height: 1.5;
+  color: var(--hire-ink);
+}
+.hiring-page .hiring-about .hiring-prose > :first-child {
+  margin-top: 0;
+}
+.hiring-about .hiring-prose :is(p, li, div) {
+  font-size: inherit;
+  line-height: inherit;
+}
+.hiring-about .hiring-prose :is(span, font) {
+  font-size: inherit !important;
+}
 .hiring-plans-section {
   background: #f1ebdf;
 }
