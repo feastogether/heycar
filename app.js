@@ -882,10 +882,10 @@
     return item;
   }
 
-  async function update(table, id, patch) {
+  async function update(table, id, patch, options = {}) {
     const item = { ...patch, updated_at: now() };
     if (hasApi && state.apiSession) {
-      const { data } = await apiRequest("update", { table, id, record: item });
+      const { data } = await apiRequest("update", { table, id, record: item, ...options });
       state.data[table] = state.data[table].map((row) => row.id === id ? data : row);
       return data;
     }
@@ -5625,6 +5625,10 @@
       e.preventDefault();
       const form = e.currentTarget;
       if (form.dataset.saving === "true") return;
+      if (type === "vehicleFolder" && form.querySelector("[data-vehicle-document-upload]:disabled")) {
+        await showAlert("請等車輛文件上傳完成後再儲存。", "文件上傳中");
+        return;
+      }
       form.dataset.saving = "true";
       const saveButton = form.querySelector('button[type="submit"]');
       const originalSaveText = saveButton?.textContent || "儲存";
@@ -5688,7 +5692,8 @@
           ? normalizeDriverOnboardingRecord(record)
           : normalizeRecord(tableName, record);
         const saved = id
-          ? await update(tableName, id, normalizedRecord)
+          ? await update(tableName, id, normalizedRecord, type === "vehicleFolder"
+            ? { vehicle_files_expected_updated_at: item?.updated_at ?? null } : undefined)
           : await insert(tableName, normalizedRecord);
         if (tableName === "calendar_events") await syncCalendarNotification(saved);
         const pushMessage = !id && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(tableName)

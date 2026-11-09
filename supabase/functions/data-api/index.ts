@@ -1707,13 +1707,23 @@ Deno.serve(async (req) => {
         }
         delete body.record.login_code;
       }
-      if (body.table === "vehicles" && Array.isArray(body.record.vehicle_files)) {
-        // Older vehicle-folder forms sent an empty driver history with the file list.
-        const folderFields = ["vehicle_files", "plate_no", "driver_history", "current_driver_id", "assigned_driver_names", "updated_at"];
-        if (Object.keys(body.record).every((field) => folderFields.includes(field))) {
-          const { vehicle_files, updated_at } = body.record;
-          body.record = { vehicle_files, updated_at };
+      if (body.table === "vehicles" && Array.isArray(body.record?.vehicle_files)) {
+        const expected = body.vehicle_files_expected_updated_at;
+        const expectedMs = typeof expected === "string" ? Date.parse(expected) : NaN;
+        if (expected !== null && !Number.isFinite(expectedMs)) {
+          return json({ error: "請重新整理頁面後再儲存車輛文件。" }, 409);
         }
+        // Update the file list only when the vehicle still matches the open form.
+        const updatedAt = new Date(Math.max(Date.now(), Number.isFinite(expectedMs) ? expectedMs + 1 : 0)).toISOString();
+        const updateFiles = db.from("vehicles").update({
+          vehicle_files: body.record.vehicle_files,
+          updated_at: updatedAt
+        }).eq("id", body.id);
+        const checkedUpdate = expected === null ? updateFiles.is("updated_at", null) : updateFiles.eq("updated_at", expected);
+        const { data, error } = await checkedUpdate.select().maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "這台車的資料已更新。請重新整理後，再重新開啟資料夾確認並儲存。" }, 409);
+        return json(await signStorageUrls({ data }));
       }
       let query = db.from(body.table).update(body.record).eq("id", body.id);
       if (session.session_type === "driver") query = query.eq("driver_id", session.driver_id);
