@@ -5618,7 +5618,10 @@
       </div>
     `;
     document.body.appendChild(modal);
-    modal.querySelector("#modalForm").addEventListener("submit", async (e) => {
+    const modalForm = modal.querySelector("#modalForm");
+    const initialDriverHistory = type === "vehicle" && id
+      ? JSON.stringify(collectVehicleDriverHistory(modalForm)) : null;
+    modalForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       if (form.dataset.saving === "true") return;
@@ -5630,15 +5633,17 @@
       collectServiceParts(e.currentTarget);
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
-      if (tableName === "vehicles") {
-        const driverHistory = collectVehicleDriverHistory(e.currentTarget);
-        const activeHistory = vehicleActiveDriverRecords({ driver_history: driverHistory });
-        record.driver_history = driverHistory;
-        record.current_driver_id = activeHistory.find((item) => item.driver_id)?.driver_id || null;
-        record.assigned_driver_names = activeHistory
-          .map((item) => item.driver_name || driverName(item.driver_id))
-          .filter(Boolean)
-          .join("/");
+      if (type === "vehicle") {
+        const driverHistory = collectVehicleDriverHistory(form);
+        if (JSON.stringify(driverHistory) !== initialDriverHistory) {
+          const activeHistory = vehicleActiveDriverRecords({ driver_history: driverHistory });
+          record.driver_history = driverHistory;
+          record.current_driver_id = activeHistory.find((item) => item.driver_id)?.driver_id || null;
+          record.assigned_driver_names = activeHistory
+            .map((item) => item.driver_name || driverName(item.driver_id))
+            .filter(Boolean)
+            .join("/");
+        }
         delete record.assigned_driver_ids;
         delete record.driver_history_start_at;
         delete record.driver_history_end_at;
@@ -5650,6 +5655,8 @@
         delete record.attachment_url;
         delete record.attachment_name;
       }
+      if (type === "vehicleFolder") delete record.plate_no;
+      if (type === "vehicleReturn") record.status = "return_pending";
       if (tableName === "vehicle_service_records") {
         record.record_type = formData.getAll("record_types").filter(Boolean).join("+") || record.record_type || "定期保養";
         delete record.record_types;
@@ -5833,12 +5840,12 @@
       if (record.end_time && (!record.start_time || record.end_time < record.start_time)) throw new Error("結束時間不可早於開始時間");
     }
     if (tableName === "vehicle_loans") {
-      record.vehicle_id = record.vehicle_id || null;
+      if ("vehicle_id" in record) record.vehicle_id = record.vehicle_id || null;
       delete record.requested_by_type;
       if ("borrow_at" in record) record.borrow_at = taipeiLocalDateTimeToIso(record.borrow_at);
       if ("return_at" in record) record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
       if ("actual_return_at" in record) record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
-      record.status = record.status || "pending_approval";
+      if ("status" in record) record.status = record.status || "pending_approval";
     }
     if (tableName === "dispatch_orders") {
       const selectedDriver = (state.data.drivers || []).find((driver) => String(driver.id) === String(record.driver_id || ""));
@@ -5926,20 +5933,22 @@
       if ("vehicle_id" in record) record.vehicle_id = record.vehicle_id || null;
       if ("dealer_partner_id" in record) record.dealer_partner_id = record.dealer_partner_id || null;
       if ("created_by_partner_type" in record) record.created_by_partner_type = record.created_by_partner_type || (state.partner?.partner_type || (state.admin ? "admin" : ""));
-      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
-      if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
-      if (!record.request_type && String(record.status || "").startsWith("addition_")) record.request_type = "addition";
-      if (!record.request_type && String(record.status || "").startsWith("amendment_")) record.request_type = "amendment";
-      if (!record.request_type && String(record.status || "").startsWith("document_")) record.request_type = "document";
-      if (!record.request_type && "vehicle_id" in record && !record.vehicle_id) delete record.vehicle_id;
-      if (!record.request_type && "dealer_partner_id" in record && !record.dealer_partner_id) delete record.dealer_partner_id;
-      if (record.request_type === "quote" && record.insurance_type === "批改") record.insurance_type = "";
-      if (!record.insurance_type) {
-        if (record.request_type === "amendment") record.insurance_type = "批改";
-        else if (record.request_type === "addition") record.insurance_type = "批加申請";
-        else if (record.request_type === "document") record.insurance_type = "文件請求";
-        else if (record.request_type === "quote") record.insurance_type = "強制險";
-        else delete record.insurance_type;
+      if ("request_type" in record || "insurance_type" in record) {
+        const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
+        if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
+        if (!record.request_type && String(record.status || "").startsWith("addition_")) record.request_type = "addition";
+        if (!record.request_type && String(record.status || "").startsWith("amendment_")) record.request_type = "amendment";
+        if (!record.request_type && String(record.status || "").startsWith("document_")) record.request_type = "document";
+        if (!record.request_type && "vehicle_id" in record && !record.vehicle_id) delete record.vehicle_id;
+        if (!record.request_type && "dealer_partner_id" in record && !record.dealer_partner_id) delete record.dealer_partner_id;
+        if (record.request_type === "quote" && record.insurance_type === "批改") record.insurance_type = "";
+        if (!record.insurance_type) {
+          if (record.request_type === "amendment") record.insurance_type = "批改";
+          else if (record.request_type === "addition") record.insurance_type = "批加申請";
+          else if (record.request_type === "document") record.insurance_type = "文件請求";
+          else if (record.request_type === "quote") record.insurance_type = "強制險";
+          else delete record.insurance_type;
+        }
       }
       if ("quote_amount" in record) record.quote_amount = Number(record.quote_amount || 0) || null;
       ["license_files", "amendment_files", "quote_request_files", "quote_files"].forEach((key) => {

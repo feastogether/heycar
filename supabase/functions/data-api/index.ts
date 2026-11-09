@@ -1707,6 +1707,14 @@ Deno.serve(async (req) => {
         }
         delete body.record.login_code;
       }
+      if (body.table === "vehicles" && Array.isArray(body.record.vehicle_files)) {
+        // Older vehicle-folder forms sent an empty driver history with the file list.
+        const folderFields = ["vehicle_files", "plate_no", "driver_history", "current_driver_id", "assigned_driver_names", "updated_at"];
+        if (Object.keys(body.record).every((field) => folderFields.includes(field))) {
+          const { vehicle_files, updated_at } = body.record;
+          body.record = { vehicle_files, updated_at };
+        }
+      }
       let query = db.from(body.table).update(body.record).eq("id", body.id);
       if (session.session_type === "driver") query = query.eq("driver_id", session.driver_id);
       if (session.session_type === "partner") {
