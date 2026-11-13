@@ -15,7 +15,7 @@
   const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
   const hasApi = Boolean(dataApiUrl);
   const app = document.getElementById("app");
-  const directDriverViews = new Set(["dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
+  const directDriverViews = new Set(["driverReporting", "dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
   const initialDriverView = requestedDriverView();
 
   const state = {
@@ -132,6 +132,7 @@
   function ensureOptionalLibrary(name) {
     const libraries = {
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
+      screenshot: ["html2canvas", "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"],
       ocr: ["Tesseract", "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"],
       line: ["liff", "https://static.line-scdn.net/liff/edge/2/sdk.js"]
     };
@@ -263,6 +264,7 @@
   const loanStatuses = [["", "進行中"], ["pending_approval", "待審核"], ["approved", "已核准借用中"], ["return_pending", "待確認還車"], ["completed", "已結案"]];
 
   const featureIcons = {
+    driverReporting: "M7 3v4M17 3v4M4 9h16M5 5h14v15H5V5Zm3 9 3 3 5-6",
     announcements: "M4 6.5A2.5 2.5 0 0 1 6.5 4H20v13H7.5A3.5 3.5 0 0 0 4 20.5v-14Zm3 0h10M7.5 10h8M7.5 13.5h6",
     maintenance: "M14.7 6.3a4.5 4.5 0 0 0-5.9 5.9L4 17l3 3 4.8-4.8a4.5 4.5 0 0 0 5.9-5.9l-3 3-3-3 3-3Z",
     payments: "M4 7h16v10H4V7Zm2 3h12M7 14h4",
@@ -280,6 +282,7 @@
   };
 
   const driverFrontendFeatures = [
+    ["driverReporting", "司機報班"],
     ["dispatchCenter", "派趟中心"],
     ["messagesCenter", "訊息中心"],
     ["myVehicle", "我的車輛"],
@@ -448,8 +451,13 @@
       const saved = JSON.parse(localStorage.getItem("afide-view-state") || "{}");
       if (!saved || saved.type !== type) return;
       if (saved.view) state.view = saved.view;
-      if (saved.adminView) state.adminView = saved.adminView;
-      if (saved.partnerView) state.partnerView = saved.partnerView;
+      if (saved.adminView) state.adminView = ({ fleetOperations: "idleManagement", calendar: "maintenanceManagement",
+        maintenanceNotifications: "maintenanceManagement" })[saved.adminView] || saved.adminView;
+      if (saved.partnerView) state.partnerView = saved.partnerView === "fleetOperations" ? "idleManagement" : saved.partnerView;
+      if (type === "admin" && ["calendar", "maintenanceNotifications"].includes(saved.adminView)) {
+        const section = saved.adminView === "calendar" ? "calendar" : "notifications";
+        if (fleetWorkspaceTabs().some(([key]) => key === section)) fleetOperationsState("maintenanceManagement").section = section;
+      }
       if (saved.insuranceStatusFilter !== undefined) state.insuranceStatusFilter = saved.insuranceStatusFilter;
       if (saved.messageReadFilter) state.messageReadFilter = saved.messageReadFilter;
       if (saved.loanStatusFilter !== undefined) state.loanStatusFilter = saved.loanStatusFilter;
@@ -882,10 +890,10 @@
     return item;
   }
 
-  async function update(table, id, patch) {
+  async function update(table, id, patch, options = {}) {
     const item = { ...patch, updated_at: now() };
     if (hasApi && state.apiSession) {
-      const { data } = await apiRequest("update", { table, id, record: item });
+      const { data } = await apiRequest("update", { table, id, record: item, ...options });
       state.data[table] = state.data[table].map((row) => row.id === id ? data : row);
       return data;
     }
@@ -894,11 +902,11 @@
     return state.data[table].find((row) => row.id === id);
   }
 
-  function showAppDialog({ title = "系統訊息", message = "", kind = "info", input = false, defaultValue = "", confirmText = "確定", cancelText = "取消", showCancel = false } = {}) {
+  function showAppDialog({ title = "系統訊息", message = "", kind = "info", input = false, inputRequired = false, defaultValue = "", confirmText = "確定", cancelText = "取消", showCancel = false } = {}) {
     return new Promise((resolve) => {
       const modal = document.createElement("div");
       modal.className = "modal-backdrop app-dialog-backdrop";
-      modal.innerHTML = `<div class="app-dialog ${kind}">
+      modal.innerHTML = `<div class="app-dialog ${kind}" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
         <div class="app-dialog-icon">${kind === "danger" ? "!" : kind === "prompt" ? "↗" : "i"}</div>
         <div class="app-dialog-body">
           <h3>${escapeHtml(title)}</h3>
@@ -912,18 +920,30 @@
       </div>`;
       document.body.appendChild(modal);
       const inputEl = modal.querySelector(".app-dialog-input");
-      setTimeout(() => inputEl?.focus(), 0);
+      (inputEl || modal.querySelector("[data-dialog-cancel], [data-dialog-confirm]"))?.focus();
       const close = (value) => {
         modal.remove();
         resolve(value);
       };
+      const confirm = () => {
+        if (inputRequired && !inputEl.value.trim()) {
+          inputEl.setCustomValidity("請填寫變更內容。");
+          inputEl.reportValidity();
+          return;
+        }
+        close(input ? inputEl.value : true);
+      };
+      if (inputRequired) inputEl.addEventListener("input", () => inputEl.setCustomValidity(""));
       modal.addEventListener("click", (event) => {
         if (event.target === modal || event.target.closest("[data-dialog-cancel]")) close(input ? null : false);
-        if (event.target.closest("[data-dialog-confirm]")) close(input ? inputEl.value : true);
+        if (event.target.closest("[data-dialog-confirm]")) confirm();
       });
       modal.addEventListener("keydown", (event) => {
         if (event.key === "Escape") close(input ? null : false);
-        if (event.key === "Enter" && (input || event.target.closest(".app-dialog"))) close(input ? inputEl?.value : true);
+        if (event.key === "Enter" && event.target === inputEl) {
+          event.preventDefault();
+          confirm();
+        }
       });
     });
   }
@@ -1150,7 +1170,7 @@
   }
 
   function partnerTypeName(type) {
-    return ({ dealer: "車商", broker: "保經", repair_shop: "保修廠", insurance_company: "保險公司" })[type] || type || "-";
+    return ({ dealer: "車商", broker: "保經", repair_shop: "保養廠", insurance_company: "保險公司" })[type] || type || "-";
   }
 
   function normalizedText(value) {
@@ -1725,7 +1745,7 @@
     if (state.partner) {
       const isDealerPartner = state.partner.partner_type === "dealer";
       app.innerHTML = `
-        <div class="app-shell partner-shell">
+        <div class="app-shell partner-shell${isDealerPartner ? " dealer-shell" : ""}">
           <header class="topbar admin-topbar">
             <div class="brand compact-brand">
               ${isDealerPartner ? `<button class="ghost-btn menu-btn" data-action="toggle-partner-sidebar" aria-label="開啟選單">☰</button>` : ""}
@@ -1737,7 +1757,7 @@
               </div>
             </div>
             <div class="userbox">
-              <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
+              ${!isDealerPartner ? `<div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>` : ""}
               <button class="ghost-btn" data-action="logout">登出</button>
             </div>
           </header>
@@ -1745,7 +1765,7 @@
           ${appLoadingMarkup()}
         </div>
       `;
-      loadAirportWeather();
+      if (!isDealerPartner) loadAirportWeather();
       return;
     }
 
@@ -1838,6 +1858,7 @@
           layout(`
             <div class="dashboard-grid">
           ${driverFeature("dispatchCenter", "派趟中心", "今日與未完成派趟", dispatchCount)}
+          ${driverFeature("driverReporting", "司機報班", "每月休假填報與審核進度", 0)}
           ${driverFeature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
           ${driverFeature("myVehicle", "我的車輛", "行照與車輛資訊", 0)}
           ${driverFeature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
@@ -1855,6 +1876,7 @@
     }
 
     const views = {
+      driverReporting: reportingPlaceholder,
       announcements: driverAnnouncements,
       dispatchCenter: driverDispatchCenter,
       messagesCenter: driverMessagesCenter,
@@ -1876,6 +1898,19 @@
       return;
     }
     layout(views[state.view]());
+    if (state.view === "driverReporting") mountDriverReporting(true);
+  }
+
+  function reportingPlaceholder() {
+    return '<div id="driverReportingRoot"></div>';
+  }
+
+  function mountDriverReporting(driver) {
+    if (!window.HeycarDriverReporting) return;
+    window.HeycarDriverReporting.mount(document.getElementById("driverReportingRoot"), {
+      driver, identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}`,
+      api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert
+    });
   }
 
   function feature(view, title, desc, count) {
@@ -1994,8 +2029,17 @@
   }
 
   function canShowDriverFeature(view) {
+    if (view === "driverReporting") return reportingEnabledForDealer(driverDealer());
     const permissions = driverFrontendPermissions();
     return !permissions || permissions[view] !== false;
+  }
+
+  function reportingEnabledForDealer(dealer) {
+    if (!dealer || dealer.partner_type !== "dealer" || dealer.active === false) return false;
+    let permissions = dealer.frontend_permissions;
+    if (typeof permissions === "string") { try { permissions = JSON.parse(permissions); } catch { permissions = {}; } }
+    return Object.prototype.hasOwnProperty.call(permissions || {}, "driverReporting")
+      ? permissions.driverReporting === true : dealer.name === "亞菲得股份有限公司";
   }
 
   function driverFeature(view, title, desc, count) {
@@ -2576,10 +2620,12 @@
 
   function repairShopCalendarItems() {
     const partnerNameText = normalizedText(state.partner?.name);
-    const visibleCalendarEvents = (state.data.calendar_events || []).filter((item) => normalizedText(item.vendor) === partnerNameText);
+    const assignedToShop = item => item.vendor_partner_id
+      ? item.vendor_partner_id === state.partner.id : normalizedText(item.vendor) === partnerNameText;
+    const visibleCalendarEvents = (state.data.calendar_events || []).filter(assignedToShop);
     const eventKeys = new Set(visibleCalendarEvents.map((item) => `${item.event_date || ""}|${String(item.plate_no || "").toUpperCase()}|${normalizedText(item.vendor)}`));
     const notificationEvents = (state.data.maintenance_notifications || [])
-      .filter((item) => normalizedText(item.vendor) === partnerNameText)
+      .filter(assignedToShop)
       .filter((item) => item.service_date)
       .map((item) => {
         const plate = vehiclePlate(item.vehicle_id);
@@ -2638,66 +2684,106 @@
     state.calendarMonth = localDateValue(new Date(year, month - 1 + step, 1));
   }
 
-  function renderCalendar(isAdmin) {
+  function renderCalendar(isAdmin, suggestions = null, exportOnly = false) {
+    const fleetOnly = suggestions !== null;
+    const view = fleetOnly ? fleetOperationsState() : null;
+    const items = calendarItems(isAdmin).filter(item => !fleetOnly || fleetCalendarMatches(item, view));
+    const completedDates = fleetOnly ? fleetCompletedServiceDates() : null;
+    const overdue = item => completedDates && fleetCalendarOverdue(item, completedDates);
+    const byDate = new Map();
+    for (const item of items) {
+      if (!byDate.has(item.event_date)) byDate.set(item.event_date, []);
+      byDate.get(item.event_date).push(item);
+    }
     const focus = new Date(`${state.calendarMonth}T00:00:00`);
     const year = focus.getFullYear();
     const month = focus.getMonth();
     const start = new Date(year, month, 1);
     const firstOffset = start.getDay();
     const days = [];
-    for (let index = 0; index < 42; index += 1) {
+    const cells = fleetOnly ? Math.ceil((firstOffset + new Date(year, month + 1, 0).getDate()) / 7) * 7 : 42;
+    for (let index = 0; index < cells; index += 1) {
       const date = new Date(year, month, index - firstOffset + 1);
       const value = localDateValue(date);
-      const events = calendarItems(isAdmin).filter((item) => item.event_date === value);
+      const events = byDate.get(value) || [];
+      const proposed = suggestions?.get(value) || [];
+      const dayLabel = `<span>${date.getDate()}</span>`;
+      const preset = fleetOnly ? ' data-fleet-maintenance-day' : '';
       days.push(`
         <div class="calendar-cell ${date.getMonth() === month ? "" : "outside"} ${value === today() ? "today" : ""}" data-calendar-cell-date="${value}">
-          <button class="calendar-day-button" data-calendar-date="${value}" ${isAdmin ? 'title="新增此日行程"' : 'title="查看此日行程"'}>
-            <span>${date.getDate()}</span>
-            ${isAdmin ? `<small>+</small>` : ""}
-          </button>
-          ${events.length ? `<span class="calendar-count">${events.length}</span>` : ""}
+          ${exportOnly ? `<div class="calendar-day-button">${dayLabel}</div>` :
+            `<button class="calendar-day-button" data-calendar-date="${value}"${preset} ${isAdmin ? 'title="新增此日行程"' : 'title="查看此日行程"'}>
+              ${dayLabel}${isAdmin ? "<small>+</small>" : ""}</button>`}
+          ${!exportOnly && events.length ? `<span class="calendar-count">${events.length}</span>` : ""}
           <div class="calendar-events">
-            ${events.map((item) => isAdmin
-              ? `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}" data-modal="calendarEvent" data-id="${item.id}">${escapeHtml(item.plate_no)}</button>`
+            ${events.map((item) => exportOnly
+              ? `<span class="calendar-pill ${escapeHtml(item.event_type || "other")}${overdue(item) ? " fleet-schedule-overdue" : ""}">${escapeHtml(item.plate_no || "未指定車牌")}${overdue(item) ? " · 逾期未完成" : ""}</span>`
+              : isAdmin
+              ? `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}${overdue(item) ? " fleet-schedule-overdue" : ""}" data-modal="calendarEvent" data-id="${item.id}">${escapeHtml(item.plate_no || "未指定車牌")}${overdue(item) ? " · 逾期未完成" : ""}</button>`
               : `<button class="calendar-pill ${escapeHtml(item.event_type || "other")}" data-calendar-open-date="${value}">${escapeHtml(item.plate_no)}</button>`
+            ).join("")}
+            ${proposed.map(({ plate, id, kind }) => exportOnly
+              ? `<span class="calendar-pill fleet-calendar-proposed ${kind}">${escapeHtml(plate)}</span>`
+              : `<button class="calendar-pill fleet-calendar-proposed ${kind}" data-fleet-schedule="${escapeHtml(id)}" data-kind="${kind}" data-date="${value}" aria-label="安排 ${escapeHtml(plate)} ${calendarTypeName(kind)}">${escapeHtml(plate)}</button>`
             ).join("")}
           </div>
         </div>
       `);
     }
     const content = `
-      <div class="panel calendar-panel">
+      <div class="panel calendar-panel ${fleetOnly ? "fleet-maintenance-calendar" : ""}">
         <div class="calendar-toolbar">
-          <button class="ghost-btn calendar-nav" data-calendar-month="-1" aria-label="上個月">${iconSvg("M15 18 9 12l6-6")}</button>
+          ${exportOnly ? "" : `<button class="ghost-btn calendar-nav" data-calendar-month="-1" aria-label="上個月">${iconSvg("M15 18 9 12l6-6")}</button>`}
           <h3>${year} 年 ${month + 1} 月</h3>
-          <button class="ghost-btn calendar-nav" data-calendar-month="1" aria-label="下個月">${iconSvg("M9 18l6-6-6-6")}</button>
+          ${exportOnly ? "" : `<button class="ghost-btn calendar-nav" data-calendar-month="1" aria-label="下個月">${iconSvg("M9 18l6-6-6-6")}</button>`}
         </div>
         <div class="calendar-legend">
-          <span class="maintenance">保養</span><span class="repair">維修</span><span class="tires">調胎</span><span class="other">其他</span>
+          <span class="maintenance">${exportOnly ? "紅色 · " : ""}保養</span><span class="repair">${exportOnly ? "橘色 · " : ""}維修</span><span class="tires">${exportOnly ? (fleetOnly ? "琥珀色 · " : "藍色 · ") : ""}調胎</span><span class="other">其他</span>${fleetOnly ? '<span class="fleet-calendar-proposed">虛線：預估，尚未排定</span>' : ""}
         </div>
         <div class="calendar-weekdays">${["日", "一", "二", "三", "四", "五", "六"].map((day) => `<span>${day}</span>`).join("")}</div>
         <div class="calendar-grid">${days.join("")}</div>
       </div>
     `;
+    if (exportOnly) return content;
+    const monthItems = items.filter(item => String(item.event_date || "").slice(0, 7) === state.calendarMonth.slice(0, 7))
+      .sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)) || String(a.event_time || "").localeCompare(String(b.event_time || "")));
     if (!isAdmin) {
       const title = state.partner?.partner_type === "repair_shop" ? `${state.partner.name} 保養行事曆` : "共同行事曆";
       const header = state.partner ? `<div class="driver-page-head"><h2>${escapeHtml(title)}</h2></div>` : pageHeader(title);
       return `${header}${content}`;
     }
     return `
-      <div class="section-head calendar-admin-head">
-        <h2>共同行事曆</h2>
+      <div class="section-head calendar-admin-head${fleetOnly ? " fleet-calendar-heading" : ""}">
+        <div><h2>${fleetOnly ? "保養月曆" : "共同行事曆"}</h2>
+        ${fleetOnly ? '<p class="fleet-forecast-note">實色為已登記行程。虛線是里程推算，點車牌可安排。</p>' : ""}</div>
         <div class="calendar-admin-actions">
           <input type="file" accept=".xlsx,.xls" data-maintenance-excel-import hidden>
           <button class="ghost-btn" type="button" data-action="pick-maintenance-excel">匯入保養排程</button>
-          <button class="primary-btn" data-modal="calendarEvent">新增行程</button>
+          <input type="month" value="${escapeHtml(state.calendarMonth.slice(0, 7))}" data-fleet-calendar-month aria-label="選擇行事曆月份">
+          <button class="ghost-btn" type="button" data-fleet-export="calendarExcel">匯出排程 Excel</button>
+          <button class="ghost-btn" type="button" data-fleet-export="calendarPng">下載月曆 PNG</button>
+          <button class="primary-btn" ${fleetOnly ? 'data-fleet-maintenance-new' : 'data-modal="calendarEvent"'}>新增行程</button>
         </div>
       </div>
+      ${fleetOnly ? `<div class="fleet-calendar-counts"><strong>${monthItems.length} 項排程</strong><span>${[...suggestions.values()].reduce((n, entries) => n + entries.length, 0)} 項系統建議</span></div>` : ""}
       ${content}
-      ${table(["日期", "時間", "類型", "車商", "車牌", "指定駕駛", "保養廠", "內容", "操作"], calendarMonthItems(true).map((item) => [
-        fmtDate(item.event_date), item.event_time || "-", calendarTypeName(item.event_type), item.fleet_name || "", item.plate_no || "",
-        driverName(item.driver_id), item.vendor || "-", item.content || "", rowActions("calendarEvent", "calendar_events", item.id)
-      ]))}
+      ${fleetOnly ? `<section class="fleet-calendar-agenda"><h3>本月排程</h3>
+        ${monthItems.length ? monthItems.map(item => `<article><div><strong>${escapeHtml(item.plate_no || "未指定車牌")}</strong>
+          <small>${escapeHtml(item.event_date)} ${escapeHtml(item.event_time?.slice(0, 5) || "")} · ${calendarTypeName(item.event_type)}</small>
+          ${item.vendor ? `<small>${escapeHtml(item.vendor)}</small>` : ""}
+          ${overdue(item) ? '<span class="fleet-status" data-tone="rose">逾期未完成</span>' : ""}</div>
+          <button class="ghost-btn" data-modal="calendarEvent" data-id="${escapeHtml(item.id)}">查看／編輯</button></article>`).join("") :
+          '<p class="empty">本月沒有已排定的保養、維修或調胎。</p>'}
+        </section><section class="fleet-calendar-agenda fleet-calendar-suggestions"><h3>本月預估</h3>
+        ${suggestions.size ? [...suggestions.entries()].sort(([a],[b]) => a.localeCompare(b)).map(([date, entries]) =>
+          `<div class="fleet-calendar-suggestion-day"><strong>${date}</strong><div>${entries.map(({plate, id, kind}) =>
+            `<button class="ghost-btn" data-fleet-schedule="${escapeHtml(id)}" data-kind="${kind}" data-date="${date}">${escapeHtml(plate)} · ${calendarTypeName(kind)}</button>`
+          ).join("")}</div></div>`).join("") : '<p class="empty">本月沒有未排定的保養或調胎預估。</p>'}</section>` : ""}
+      ${table(["日期", "時間", "類型", "車商", "車牌", "指定駕駛", "保養廠", "內容", "操作"], monthItems.map((item) => [
+        ...[fmtDate(item.event_date), item.event_time || "-", calendarTypeName(item.event_type), item.fleet_name || "", item.plate_no || "",
+          driverName(item.driver_id), item.vendor || "-", item.content || ""].map(escapeHtml),
+          (overdue(item) ? '<span class="fleet-status" data-tone="rose">逾期未完成</span> ' : "") + rowActions("calendarEvent", "calendar_events", item.id)
+      ]), fleetOnly ? "fleet-calendar-desktop-table" : "")}
     `;
   }
 
@@ -2766,7 +2852,7 @@
   }
 
   function insuranceFinishedStatuses() {
-    return ["completed", "amendment_completed", "addition_completed"];
+    return ["completed", "amendment_completed", "addition_completed", "document_received"];
   }
 
   function insurancePrimaryStatuses(requests) {
@@ -2780,26 +2866,58 @@
     return insuranceStatuses.filter(([status]) => counts[status] || state.insuranceStatusFilter === status || important.includes(status));
   }
 
+  const dealerInsuranceLabels = { active: "處理中", confirm: "待我確認", done: "已完成", all: "全部" };
+  const legacyInsuranceStatuses = ["quote_confirmed_issue_application", "payment_pending", "receipt_pending"];
+
+  function dealerInsuranceBucket(status) {
+    if (["dealer_review", "addition_dealer_review"].includes(status)) return "confirm";
+    return insuranceFinishedStatuses().includes(status) ? "done" : "active";
+  }
+
   function insuranceControlCenter(requests = state.data.insurance_requests || [], editable = false) {
-    const counts = Object.fromEntries(insuranceStatuses.map(([status]) => [status, requests.filter((item) => item.status === status).length]));
-    const activeCount = requests.filter((item) => !insuranceFinishedStatuses().includes(item.status)).length;
-    const filterStatuses = insurancePrimaryStatuses(requests);
-    const visibleRequests = requests.filter((item) => state.insuranceStatusFilter
-      ? item.status === state.insuranceStatusFilter
-      : !insuranceFinishedStatuses().includes(item.status));
+    const dealer = state.partner?.partner_type === "dealer";
+    const activeLabel = dealer ? "處理中" : "進行中";
+    const options = dealer ? [["", activeLabel], ["confirm", "待我確認"], ["done", "已完成"], ["all", "全部"]]
+      : [["", activeLabel], ...insurancePrimaryStatuses(requests)];
+    const matches = (item, status) => {
+      if (!dealer) return status ? item.status === status : item.status === "document_received" || !insuranceFinishedStatuses().includes(item.status);
+      const bucket = dealerInsuranceBucket(item.status);
+      return status === "all" || bucket === (status || "active");
+    };
+    const filter = options.some(([status]) => status === state.insuranceStatusFilter) ? state.insuranceStatusFilter : "";
+    const visibleRequests = requests.filter(item => matches(item, filter));
     return `
-      <div class="insurance-filter-strip">
-        <button class="filter-btn ${state.insuranceStatusFilter === "" ? "active" : ""}" data-insurance-filter="">\u9032\u884c\u4e2d<b>${activeCount}</b></button>
-        ${filterStatuses.map(([status, label]) => `<button class="filter-btn ${counts[status] ? "has-items" : ""} ${state.insuranceStatusFilter === status ? "active" : ""}" data-insurance-filter="${status}">${label}<b>${counts[status] || 0}</b></button>`).join("")}
+      <div class="insurance-filter-strip ${dealer ? "is-dealer" : ""}">
+        ${options.map(([status, label]) => {
+          const count = requests.filter(item => matches(item, status)).length;
+          return `<button class="filter-btn ${count ? "has-items" : ""} ${filter === status ? "active" : ""}" data-insurance-filter="${status}" aria-pressed="${filter === status}">${label}<b>${count}</b></button>`;
+        }).join("")}
       </div>
       <div class="insurance-request-list">
-        ${visibleRequests.length ? visibleRequests.map((item) => insuranceRequestRow(item, editable)).join("") : `<div class="empty">\u76ee\u524d\u6c92\u6709\u7b26\u5408\u689d\u4ef6\u7684\u4fdd\u96aa\u6848\u4ef6</div>`}
+        ${visibleRequests.length ? visibleRequests.map(item => insuranceRequestRow(item, editable)).join("") : '<div class="empty">目前沒有符合條件的保險案件</div>'}
       </div>
     `;
   }
 
+  function insurancePremium(amount) {
+    return Number.isFinite(Number(amount)) && Number(amount) > 0
+      ? "NT$ " + Number(amount).toLocaleString("zh-TW", { maximumFractionDigits: 2 }) : "";
+  }
+
+  function insuranceHistory(item) {
+    const events = item.status_history || [];
+    if (!events.length) return "";
+    return `<details class="insurance-history"><summary>處理紀錄（${events.length}）</summary><ol>
+      ${[...events].reverse().map(event => `<li><strong>${escapeHtml(dealerInsuranceLabels[event.to] || insuranceStatusLabel(event.to))}</strong>
+        <span>${escapeHtml(event.actor_name || "系統")} · ${escapeHtml(formatDateTime(event.at))}</span>
+        ${event.premium ? `<span>確認保費 ${escapeHtml(insurancePremium(event.premium))}</span>` : ""}
+        ${event.note ? `<p>${escapeHtml(event.note)}</p>` : ""}</li>`).join("")}</ol></details>`;
+  }
+
   function insuranceFileDeleteButton(item, key, index = "") {
     if (state.partner?.partner_type === "dealer") return "";
+    if (["completed", "addition_completed"].includes(item.status) && ["policy", "receipt"].includes(key)) return "";
+    if (!["broker_quoting", "addition_quoting"].includes(item.status) && ["quote", "quote_files"].includes(key)) return "";
     return `<button class="insurance-file-remove" type="button" data-insurance-file-delete="${escapeHtml([item.id, key, index].join(":"))}" title="刪除檔案" aria-label="刪除檔案">×</button>`;
   }
 
@@ -2838,7 +2956,7 @@
 
   function insuranceVisibleFiles(item) {
     const isDealer = state.partner?.partner_type === "dealer";
-    const dealerCanSeeQuote = item.request_type === "quote" && ["dealer_review", "stamping", "awaiting_policy", "completed"].includes(item.status);
+    const dealerCanSeeQuote = ["dealer_review", "stamping", "awaiting_policy", "completed", ...legacyInsuranceStatuses, "addition_dealer_review", "addition_stamping", "addition_policy_pending", "addition_completed"].includes(item.status);
     const dealerCanSeeFinal = ["quote", "addition", "document"].includes(item.request_type) && ["completed", "addition_completed", "document_received"].includes(item.status);
     const quoteFileGroup = Array.isArray(item.quote_files) && item.quote_files.length
       ? jsonFileLinks(item, "quote_files", "報價單")
@@ -2874,7 +2992,7 @@
       patch[`${key}_name`] = null;
     }
     try {
-      await update("insurance_requests", item.id, patch);
+      await update("insurance_requests", item.id, patch, { insurance_expected_updated_at: item.updated_at ?? null });
       render();
     } catch (error) {
       await showAlert(error.message || error, "刪除失敗");
@@ -2885,11 +3003,13 @@
     const actions = [];
     if (editable) {
       const editModal = item.request_type === "amendment" ? "insuranceAmendmentRequest" : item.request_type === "addition" ? "insuranceAdditionRequest" : item.request_type === "document" ? "insuranceDocumentRequest" : "insuranceRequest";
-      actions.push(`<button class="soft-btn" data-modal="${editModal}" data-id="${item.id}">\u7de8\u8f2f</button>`);
+      if (["broker_quoting", "broker_returned", "vehicle_dept_review", "amendment_requested", "addition_quoting", "addition_review", "document_requested"].includes(item.status)) actions.push(`<button class="soft-btn" data-modal="${editModal}" data-id="${item.id}">\u7de8\u8f2f</button>`);
       actions.push(`<button class="soft-btn" data-modal="insuranceStatusOverride" data-id="${item.id}">調整狀態</button>`);
       actions.push(`<button class="danger-btn" data-delete="insurance_requests:${item.id}">\u522a\u9664</button>`);
       if (item.status === "vehicle_dept_review") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:dealer_review">\u78ba\u8a8d\u7121\u8aa4\u9001\u8eca\u5546</button>`);
-      if (item.status === "addition_review") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:${item.created_by_partner_type === "dealer" ? "addition_dealer_review" : "addition_stamping"}">確認批加內容</button>`);
+      if (item.status === "broker_returned") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:broker_quoting">補件完成，重新送保經</button>`);
+      if (["vehicle_dept_review", "dealer_review", "addition_review"].includes(item.status)) actions.push(`<button class="soft-btn" data-insurance-status="${item.id}:${item.request_type === "addition" ? "addition_quoting" : "broker_quoting"}">退回保經重新報價</button>`);
+      if (item.status === "addition_review") actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:addition_dealer_review">確認批加，送車商</button>`);
       if (item.status === "stamping") actions.push(`<button class="primary-btn" data-modal="insuranceStamp" data-id="${item.id}">\u4e0a\u50b3\u7528\u5370\u8981\u4fdd\u66f8</button>`);
       if (item.status === "addition_stamping") actions.push(`<button class="primary-btn" data-modal="insuranceAdditionStamp" data-id="${item.id}">上傳批加用印檔</button>`);
       if (item.status === "payment_pending") actions.push(`<button class="primary-btn" data-modal="insurancePayment" data-id="${item.id}">\u4ed8\u6b3e\u5b8c\u6210</button>`);
@@ -2918,6 +3038,7 @@
     }
     if (state.partner?.partner_type === "dealer" && item.status === "addition_dealer_review") {
       actions.push(`<button class="primary-btn" data-insurance-status="${item.id}:addition_stamping">確認批加內容</button>`);
+      actions.push(`<button class="soft-btn" data-insurance-status="${item.id}:addition_review">更改需求</button>`);
     }
     return actions.join("");
   }
@@ -2936,9 +3057,11 @@
             <b>${escapeHtml(typeLabel)}${insuranceType ? `｜${escapeHtml(insuranceType)}` : ""}${specParts.length ? `｜${escapeHtml(specParts.join("｜"))}` : ""}</b>
             <small>${escapeHtml(partner?.name || "未指定車商")}${item.lienholder ? `｜抵押權人 ${escapeHtml(item.lienholder)}` : ""}</small>
           </div>
-          ${insuranceStatusBadge(item.status)}
+          ${isDealer ? `<span class="insurance-status dealer-stage-${dealerInsuranceBucket(item.status)}">${dealerInsuranceLabels[dealerInsuranceBucket(item.status)]}</span>` : insuranceStatusBadge(item.status)}
         </div>
         <div class="insurance-row-details">
+          ${insurancePremium(item.quote_amount) ? `<span class="insurance-premium"><small>保費</small><b>${insurancePremium(item.quote_amount)}</b></span>` : ""}
+          ${item.policy_start_on && item.policy_end_on ? `<span><small>保險期間</small><b>${escapeHtml(item.policy_start_on)} ～ ${escapeHtml(item.policy_end_on)}</b></span>` : ""}
           <span><small>旅客險</small><b>${item.passenger_limit ? `${escapeHtml(item.passenger_limit)} 萬` : "-"}</b></span>
           <span><small>車體險</small><b>${item.vehicle_body_limit ? `${escapeHtml(item.vehicle_body_limit)} 萬` : "-"}</b></span>
           <span><small>自付額</small><b>${item.deductible ? `${escapeHtml(item.deductible)} 萬` : "-"}</b></span>
@@ -2948,6 +3071,8 @@
         ${!isDealer && (item.vehicle_dept_notes || item.insurance_notes) ? `<p class="insurance-note">車輛部備註：${escapeHtml(item.vehicle_dept_notes || item.insurance_notes)}</p>` : ""}
         ${!isDealer && item.broker_reply ? `<p class="quote-note">保經回覆：${escapeHtml(item.broker_reply)}</p>` : ""}
         ${!isDealer && item.dealer_reply ? `<p class="quote-note">車商回覆：${escapeHtml(item.dealer_reply)}</p>` : ""}
+        ${item.dealer_notes ? `<p class="insurance-note">車商備註：${escapeHtml(item.dealer_notes)}</p>` : ""}
+        ${insuranceHistory(item)}
         <div class="insurance-card-actions">${insuranceRequestActions(item, editable)}</div>
       </article>
     `;
@@ -2966,10 +3091,1638 @@
     renderInsurancePortal();
   }
 
+  let fleetFineView = { token: "", rows: null, loading: false, error: "", tab: "all", search: "", page: 1 };
+
+  function fleetFineState() {
+    if (fleetFineView.token !== state.apiSession) {
+      fleetFineView = { token: state.apiSession, rows: null, loading: false, error: "", tab: "all", search: "", page: 1 };
+    }
+    return fleetFineView;
+  }
+
+  async function loadFleetFines(force = false) {
+    const view = fleetFineState();
+    if (view.loading || (!force && (view.rows || view.error))) return;
+    view.loading = true;
+    view.error = "";
+    try {
+      const result = await apiRequest("load_fleet_fines");
+      view.rows = result.fines || [];
+      if (!state.admin && view.token === state.apiSession && state.partner?.id) {
+        const key = "afide-fleet-fines-seen:" + state.partner.id;
+        try {
+          const read = JSON.parse(localStorage.getItem(key) || "{}");
+          const seen = new Set(read.date === today() && Array.isArray(read.ids) ? read.ids : []);
+          view.newFineCount = view.rows.filter(row => fleetFineCreatedToday(row) && !seen.has(row.id)).length;
+        } catch { view.newFineCount = 0; }
+      }
+    } catch (error) {
+      view.error = error.message;
+    } finally {
+      view.loading = false;
+      if (view.token === state.apiSession && (state.adminView === "fleetCases" || state.partnerView === "fleetCases")) render();
+    }
+  }
+
+  function fleetFineMoney(amount) {
+    return "NT$ " + Number(amount || 0).toLocaleString("zh-TW");
+  }
+
+  const fleetSectionViews = {
+    fuel: "maintenanceManagement", calendar: "maintenanceManagement", notifications: "maintenanceManagement", importFuel: "maintenanceManagement",
+    idle: "idleManagement", importIdle: "idleManagement", maintenanceSettings: "maintenanceManagement", idleSettings: "idleManagement", policy: "fleetPolicies", fines: "fleetCases"
+  };
+
+  function fleetListPage(rows, requested, size, attribute, unit = "輛") {
+    const pages = Math.max(1, Math.ceil(rows.length / size));
+    const page = Math.max(1, Math.min(requested || 1, pages));
+    const controls = pages > 1 ? `<div class="fleet-case-pager">
+      <button class="ghost-btn" ${attribute}="${page - 1}" ${page === 1 ? "disabled" : ""}>上一頁</button>
+      <span>第 ${page} / ${pages} 頁 · ${rows.length} ${unit}</span>
+      <button class="ghost-btn" ${attribute}="${page + 1}" ${page === pages ? "disabled" : ""}>下一頁</button>
+    </div>` : "";
+    return { rows: rows.slice((page - 1) * size, page * size), controls };
+  }
+
+  function fleetWorkspaceTabs() {
+    if (!state.admin) return [["idle", "怠速管理"], ["policy", "保單資料"], ["fines", "我的罰單"]];
+    const canReport = adminCan("fleetOperations");
+    const canConfigure = canReport && adminCan("vehicles");
+    return [
+      ...(canReport ? [["fuel", "保養總覽"]] : []),
+      ...(adminCan("calendar") ? [["calendar", "車輛日曆"]] : []),
+      ...(adminCan("maintenanceNotifications") ? [["notifications", "保養通知"]] : []),
+      ...(canReport ? [["importFuel", "匯入加油"], ["idle", "怠速報表"], ["importIdle", "匯入怠速"]] : []),
+      ...(canConfigure ? [["maintenanceSettings", "報表設定"], ["idleSettings", "報表設定"]] : []),
+      ...(canReport ? [["policy", "保單資料"]] : []),
+      ...(adminCan("fleetCases") ? [["fines", "罰單管理"]] : [])
+    ];
+  }
+
+  function fleetWorkspaceNav(active) {
+    const group = fleetSectionViews[active];
+    const title = group === "fleetCases" && !state.admin ? "我的罰單" : adminNavLabels[group];
+    const tabs = fleetWorkspaceTabs().filter(([key]) => fleetSectionViews[key] === group);
+    const showTitle = !["maintenanceManagement", "idleManagement"].includes(group);
+    if (!showTitle && tabs.length < 2) return "";
+    return `<header class="fleet-module-head" data-fleet-module="${group}">${showTitle ? `<h2>${title}</h2>` : ""}
+      ${group === "fleetPolicies" ? state.admin && adminCan("vehicles")
+        ? '<button type="button" class="ghost-btn" data-admin-view="vehicles">車輛管理</button>'
+        : !state.admin ? '<button type="button" class="ghost-btn" data-partner-view="garage">我的車輛</button>' : "" : ""}
+      ${tabs.length > 1 ? `<nav class="fleet-workspace-nav" aria-label="${title}功能">${tabs.map(([key, label]) =>
+        `<button type="button" data-fleet-go="${key}" aria-pressed="${active === key}">${label}</button>`).join("")}</nav>` : ""}
+    </header>`;
+  }
+
+  function fleetVehicleLinks(plate, active) {
+    const destinations = { fuel: "看保養", calendar: "看排程" };
+    const group = fleetSectionViews[active];
+    const available = fleetWorkspaceTabs().filter(([key]) => destinations[key] && key !== active && fleetSectionViews[key] === group);
+    return available.length ? `<div class="fleet-vehicle-links">${available.map(([key]) =>
+      `<button type="button" data-fleet-go="${key}" data-plate="${escapeHtml(plate)}">${destinations[key]}</button>`).join("")}</div>` : "";
+  }
+
+  function fleetScopedVehicle(search) {
+    const key = window.HeycarFleetReports.plateKey(search);
+    if (!key) return null;
+    const vehicles = state.admin ? state.data.vehicles : dealerVehicles();
+    return (vehicles || []).find(vehicle => window.HeycarFleetReports.plateKey(vehicle.plate_no) === key);
+  }
+
+  function fleetVehicleContext(search, active) {
+    const vehicle = fleetScopedVehicle(search);
+    if (!vehicle) return "";
+    return `<aside class="fleet-vehicle-context">
+      <div><small>目前查看車輛</small><strong>${escapeHtml(vehicle.plate_no)}</strong>
+      <span>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" "))}</span>
+      <button type="button" class="fleet-clear-link" data-fleet-go="${active}" data-plate="">清除車牌</button></div>
+      ${fleetVehicleLinks(vehicle.plate_no, active)}
+    </aside>`;
+  }
+
+  const fleetFineStatuses = ["待處理", "處理中", "已繳待核對", "有異議", "公司已代繳待代扣", "已代扣", "已繳", "已處理", "完成", "結案", "撤銷", "免罰"];
+  const fleetFineDealerStatuses = ["待處理", "已繳待核對", "有異議"];
+  const fleetFineSettled = row => Boolean(row.paid_date) || /已繳|結案|撤銷|免罰|已處理|完成|已代扣|已代繳/.test(row.status || "");
+
+  function fleetFineDatesConflict(row) {
+    return Boolean(row.self_pay_deadline && row.due_date && row.self_pay_deadline > row.due_date);
+  }
+
+  function fleetFineIssues(row) {
+    const name = String(row.driver_name || "").normalize("NFKC").trim();
+    return [
+      fleetFineDatesConflict(row) && "自繳期限晚於繳款期限",
+      Number(row.amount) === 0 && "金額為 NT$ 0",
+      !row.due_date && !fleetFineSettled(row) && "未填繳款期限",
+      name && (/車隊|租賃|有限公司|旅行社|[\dA-Za-z]/.test(name) ||
+        name.split(/[、/／]/).some(part => /^(看復|宸銍)$/.test(part.trim()) || [...part.trim()].length < 2)) && "駕駛名稱待核對",
+    ].filter(Boolean);
+  }
+
+  async function reviewFleetFineInput(records, previous = null) {
+    const invalid = records.filter(row => fleetFineDatesConflict(row) && (!previous ||
+      String(previous.due_date || "") !== row.due_date || String(previous.self_pay_deadline || "") !== row.self_pay_deadline));
+    if (invalid.length) {
+      await showAlert(invalid.slice(0, 8).map(row => row.plate_no + "｜自繳 " + row.self_pay_deadline + " 晚於繳款 " + row.due_date).join("\n") +
+        (invalid.length > 8 ? "\n另有 " + (invalid.length - 8) + " 筆" : "") + "\n請修正日期後再儲存。", "人工審核 · 期限異常");
+      return false;
+    }
+    const flagged = records.map(row => ({ row, issues: fleetFineIssues(row) })).filter(item => item.issues.length);
+    if (!flagged.length) return true;
+    return showAppDialog({ title: "人工審核 · 罰單資料待核對", kind: "danger", showCancel: true, confirmText: "確認保留", cancelText: "返回修改",
+      message: flagged.slice(0, 8).map(({ row, issues }) => row.plate_no + "｜" + issues.join("、")).join("\n") +
+        (flagged.length > 8 ? "\n另有 " + (flagged.length - 8) + " 筆" : "") +
+        "\n若已確認原始資料，可先保留，之後仍可在「資料待清理」找到。" });
+  }
+
+  function fleetFineUrgency(row, field = "due_date") {
+    if (field === "self_pay_deadline" && fleetFineDatesConflict(row)) return "";
+    if (fleetFineDeadline(row, field, "overdue")) return '<span class="fleet-fine-urgency" data-tone="rose">已逾期</span>';
+    if (fleetFineDeadline(row, field, "today")) return '<span class="fleet-fine-urgency" data-tone="amber">今天到期</span>';
+    if (fleetFineDeadline(row, field, "soon")) return '<span class="fleet-fine-urgency" data-tone="amber">快到期</span>';
+    return "";
+  }
+
+  function fleetFineCanReport(row) {
+    return !row.archived_at && (fleetFineDealerStatuses.includes(row.status) || row.status === "處理中");
+  }
+
+  function fleetFineStatusLabel(row) {
+    if (row.archived_at) return "已封存";
+    const reviewLabels = { unclaimed: "待認領", review: "待核對" };
+    return (state.admin && reviewLabels[row.review_state]) || row.status || "待處理";
+  }
+
+  function fleetFineIssueMarker(row, showDetails) {
+    if (!state.admin) return "";
+    const issues = fleetFineIssues(row);
+    if (!issues.length) return "";
+    if (showDetails) return `<small class="fleet-fine-data-issue">${escapeHtml(issues.join("、"))}</small>`;
+    return '<span class="fleet-fine-issue-icon" role="img" aria-label="資料待清理" title="資料待清理">!</span>';
+  }
+
+  function fleetFineMobileCard(row, showIssues) {
+    const self = row.self_pay_deadline && !fleetFineDatesConflict(row) ? "自繳 " + fmtDate(row.self_pay_deadline) : "";
+    const date = row.due_date ? "繳款 " + fmtDate(row.due_date) : "違規 " + fmtDate(row.fine_date);
+    return `<article class="fleet-fine-mobile-card">
+      <button class="fleet-fine-mobile-main" type="button" data-fleet-fine="${escapeHtml(row.id)}" aria-label="查看 ${escapeHtml(row.plate_no)} 罰單">
+        <span><strong class="fleet-fine-plate">${escapeHtml(row.plate_no || "未填車牌")}</strong><strong>${fleetFineMoney(row.amount)}</strong>
+          <small>${escapeHtml(fleetFineStatusLabel(row))}</small>${showIssues ? "" : fleetFineIssueMarker(row, false)}</span>
+        <span><small>${escapeHtml([date, self].filter(Boolean).join(" · "))}</small>${fleetFineUrgency(row)}</span>
+        ${showIssues ? fleetFineIssueMarker(row, true) : ""}
+      </button>
+      ${state.admin
+        ? (!row.archived_at ? `<button type="button" class="soft-btn" data-fleet-fine-edit="${escapeHtml(row.id)}">${row.review_state === "unclaimed" ? "指派" : "編輯"}</button>` : "")
+        : (fleetFineCanReport(row) ? `<button type="button" class="soft-btn" data-fleet-fine-progress="${escapeHtml(row.id)}">回報進度</button>` : "")}
+    </article>`;
+  }
+
+  function fleetFineDuePriority(row, currentDate) {
+    if (fleetFineSettled(row) || !row.due_date) return 2;
+    return row.due_date === currentDate ? 0 : 1;
+  }
+
+  function fleetFineDeadline(row, field, filter) {
+    if (!filter) return true;
+    const date = row[field];
+    const current = today();
+    if (!date || fleetFineSettled(row) || (field === "self_pay_deadline" && fleetFineDatesConflict(row))) return false;
+    return filter === "overdue" ? date < current : filter === "today" ? date === current
+      : date >= current && date <= fleetShiftDate(current, 7);
+  }
+
+  function fleetFineFilters(view) {
+    const selectFilter = (field, label, options) => `<select name="${field}" form="fleetFineSearch" aria-label="${label}">
+      <option value="">${label}</option>${options.map(([value, name]) =>
+        `<option value="${escapeHtml(value)}"${view[field] === value ? " selected" : ""}>${escapeHtml(name)}</option>`).join("")}</select>`;
+    const names = values => values.map(value => [value, value]);
+    const deadlines = [["overdue", "已逾期未繳"], ["today", "今天截止"], ["soon", "7 天內到期"]];
+    return `<div class="fleet-fine-filters">
+      ${state.admin ? selectFilter("dealer", "全部車商", dealerPartners().map(dealer => [dealer.id, dealer.name])) : ""}
+      ${selectFilter("status", "全部狀態", names(fleetFineStatuses))}
+      ${selectFilter("kind", "全部類型", names(["罰單", "停車催繳"]))}
+      ${selectFilter("deadline", "繳款期限", deadlines)}
+      ${selectFilter("selfDeadline", "自行繳款期限", deadlines)}
+      <button type="button" class="ghost-btn" data-fleet-fine-command="reset">清除篩選</button>
+    </div>`;
+  }
+
+  function fleetFineCreatedToday(row) {
+    return Boolean(row.created_at && taipeiDateTimeInput(row.created_at).slice(0, 10) === today());
+  }
+
+  function renderFleetFines() {
+    const view = fleetFineState();
+    if (!view.rows && !view.loading && !view.error) void loadFleetFines();
+    const rows = view.rows || [];
+    const key = value => String(value || "").normalize("NFKC").toUpperCase().replace(/[\s-]/g, "");
+    const search = key(view.search);
+    const exact = fleetScopedVehicle(view.search);
+    const unpaid = row => !fleetFineSettled(row);
+    const matches = rows.filter(row =>
+      Boolean(row.archived_at) === (view.tab === "archived") && (!view.todayOnly || fleetFineCreatedToday(row)) &&
+      (!view.dealer || row.dealer_partner_id === view.dealer) &&
+      (!view.status || row.status === view.status) &&
+      (!view.kind || row.fine_type === view.kind) &&
+      fleetFineDeadline(row, "due_date", view.deadline) && fleetFineDeadline(row, "self_pay_deadline", view.selfDeadline) &&
+      (exact ? key(row.plate_no) === key(exact.plate_no) : !search ||
+        [row.plate_no, row.ticket_number, row.original_dealer, row.violation, row.driver_name].some(value => key(value).includes(search))));
+    const tabs = state.admin
+      ? [["all", "全部案件"], ["unclaimed", "待認領／指派"], ["review", "待核對"], ["unpaid", "待繳款"], ["cleanup", "資料待清理"], ["archived", "已封存"]]
+      : [["all", "我的罰單"], ["unpaid", "待繳款"]];
+    const inTab = (row, tab) => tab === "archived" ? Boolean(row.archived_at) :
+      !row.archived_at && (tab === "all" || (tab === "unpaid" ? unpaid(row) : tab === "cleanup" ? fleetFineIssues(row).length > 0 : row.review_state === tab));
+    const sort = view.sort || (state.admin ? "date" : "due");
+    const currentDate = today();
+    const compare = sort === "due"
+      ? (a, b) => fleetFineDuePriority(a, currentDate) - fleetFineDuePriority(b, currentDate)
+        || (a.due_date || "9999").localeCompare(b.due_date || "9999")
+      : sort === "amount" ? (a, b) => Number(b.amount) - Number(a.amount) : () => 0;
+    const filtered = matches.filter(row => inTab(row, view.tab)).sort((a, b) =>
+      compare(a, b) || String(b.fine_date || "").localeCompare(String(a.fine_date || "")) || String(a.id).localeCompare(String(b.id)));
+    const pageSize = state.admin ? 100 : 25;
+    const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
+    const page = Math.min(view.page, pages);
+    const cases = filtered.slice((page - 1) * pageSize, page * pageSize);
+    const showIssues = view.tab === "cleanup";
+    const unpaidRows = matches.filter(unpaid);
+    return `<section class="fleet-case-page fleet-workspace fleet-fines-page">
+      ${fleetWorkspaceNav("fines")}
+      ${fleetVehicleContext(view.search, "fines")}
+      ${!state.admin && view.newFineCount ? `<aside class="fleet-fine-notice">
+        <strong>今天有 ${view.newFineCount} 筆新罰單</strong>
+        <button class="ghost-btn" data-fleet-fine-command="read-today">查看今日新增</button>
+      </aside>` : ""}
+      ${fleetKpis([
+        ["案件", matches.length.toLocaleString() + " 筆", "slate", "document"],
+        ["未繳金額", fleetFineMoney(unpaidRows.reduce((total, row) => total + Number(row.amount || 0), 0)), "blue", "money", true],
+        ["待繳款", unpaidRows.length + " 筆", "rose", "clock"],
+        ["今日新增", matches.filter(fleetFineCreatedToday).length + " 筆", "amber", "document"]
+      ])}
+      <section class="fleet-surface">
+        ${state.admin ? `<div class="fleet-fine-primary">
+          <button class="primary-btn" data-fleet-fine-command="new">新增罰單</button>
+          <details class="fleet-fine-more"><summary class="ghost-btn">更多</summary><div>
+            <button class="ghost-btn" data-fleet-fine-command="batch">批次匯入</button>
+            <button class="ghost-btn" data-fleet-fine-command="ocr">拍照辨識</button>
+            <button class="ghost-btn" data-fleet-fine-command="daily">今日 LINE 通知</button>
+            <button class="ghost-btn" data-fleet-fine-command="overview">罰單總覽</button>
+            <button class="ghost-btn" data-fleet-refresh>重新整理</button>
+          </div></details>
+        </div>` : ""}
+        <div class="fleet-list-toolbar">
+          <div class="fleet-case-tabs" aria-label="案件分類">${tabs.map(([key, label]) => `<button class="ghost-btn" data-fleet-tab="${key}" aria-pressed="${view.tab === key}">${label} <small>${(key === "archived" || view.tab === "archived" ? rows : matches).filter(row => inTab(row, key)).length}</small></button>`).join("")}</div>
+          <form id="fleetFineSearch">
+            <input type="search" name="q" aria-label="搜尋車牌或罰單編號" placeholder="車牌、單號、駕駛或違規內容" value="${escapeHtml(view.search)}">
+            <select name="sort" aria-label="罰單排序">${[["date", "最新違規日期"], ["due", "繳款期限優先"], ["amount", "金額由高到低"]].map(([key, label]) => `<option value="${key}" ${sort === key ? "selected" : ""}>${label}</option>`).join("")}</select>
+            <button class="ghost-btn" type="submit">搜尋</button>
+          </form>
+        </div>
+        <details class="fleet-fine-filter-bar" ${view.dealer || view.status || view.kind || view.deadline || view.selfDeadline ? "open" : ""}>
+          <summary>進階篩選</summary>${fleetFineFilters(view)}</details>
+        ${view.error ? `<div class="empty" role="alert">${escapeHtml(view.error)} <button class="ghost-btn" data-fleet-refresh>重試</button></div>` : view.loading ? '<div class="empty" role="status">正在載入罰單…</div>' : cases.length ? `
+          <div class="fleet-table-scroll fleet-fines-desktop" tabindex="0" role="region" aria-label="罰單列表"><table class="fleet-data-table fleet-fines-table">
+            <thead><tr>${["車牌／案件", "罰單編號／車商", "違規日期", "繳款期限", "金額", "狀態", "操作"].map(label => `<th scope="col"${label === "車牌／案件" ? ' class="fleet-frozen-column"' : label === "金額" ? ' class="fleet-fine-amount"' : ""}>${label}</th>`).join("")}</tr></thead>
+            <tbody>${cases.map(row => `<tr>
+                <th scope="row" class="fleet-frozen-column"><strong class="fleet-fine-plate">${escapeHtml(row.plate_no || "未填車牌")}</strong><small>${escapeHtml(row.fine_type || "—")}</small></th>
+                <td data-label="罰單編號"><small class="fleet-fine-ticket">${escapeHtml(row.ticket_number || "—")}</small><small>${escapeHtml(row.original_dealer || "車商待確認")}</small>${row.driver_name ? `<small>駕駛 ${escapeHtml(row.driver_name)}</small>` : ""}</td>
+                <td data-label="違規日期">${fmtDate(row.fine_date)}</td><td data-label="繳款期限"><span class="fleet-fine-date">${fmtDate(row.due_date)} ${fleetFineUrgency(row)}</span>
+                  ${row.self_pay_deadline && (!fleetFineDatesConflict(row) || showIssues)
+                    ? `<small>自繳 ${fmtDate(row.self_pay_deadline)} ${fleetFineUrgency(row, "self_pay_deadline")}</small>` : ""}</td>
+                <td class="fleet-fine-amount" data-label="金額"><strong>${fleetFineMoney(row.amount)}</strong></td>
+                <td data-label="狀態"><span class="fleet-case-badge" data-review="${escapeHtml(row.review_state)}">${escapeHtml(fleetFineStatusLabel(row))}</span>
+                  ${fleetFineIssueMarker(row, showIssues)}</td>
+                <td><div class="fleet-fine-row-actions"><button class="ghost-btn" data-fleet-fine="${escapeHtml(row.id)}" aria-label="查看 ${escapeHtml(row.plate_no)} 罰單">明細</button>
+                ${state.admin && !row.archived_at ? `<button class="ghost-btn" data-fleet-fine-edit="${escapeHtml(row.id)}">${row.review_state === "unclaimed" ? "指派" : "編輯"}</button>` : ""}</div></td>
+              </tr>`).join("")}</tbody></table></div>
+          <div class="fleet-fine-mobile-list">${cases.map(row => fleetFineMobileCard(row, showIssues)).join("")}</div>
+          <div class="fleet-case-pager"><button class="ghost-btn" data-fleet-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>上一頁</button><span>第 ${page} / ${pages} 頁 · ${filtered.length} 筆</span><button class="ghost-btn" data-fleet-page="${page + 1}" ${page >= pages ? "disabled" : ""}>下一頁</button></div>
+        ` : '<div class="empty">目前沒有符合條件的罰單</div>'}
+      </section>
+    </section>`;
+  }
+
+  function fleetKpis(metrics) {
+    const icons = {
+      car: "M5 17H3v-5l3-5h12l3 5v5h-2m-14 0h14m-14 0v2m14-2v2M3 12h18m-14 2h1m8 0h1",
+      clock: "M22 12a10 10 0 1 1-20 0 10 10 0 1 1 20 0M12 6v6l4 2",
+      idle: "M4 8h13v5a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5V8m13 1h2a2 2 0 0 1 0 4h-2M3 21h17M8 5V3m4 2V3",
+      route: "M7 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6zm10 14a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM7 8v4a3 3 0 0 0 3 3h4",
+      document: "M5 3h14v18H5zM8 8h8m-8 4h8m-8 4h5",
+      money: "M3 6h18v12H3zM7 12h1m8 0h1m-3 0a2 2 0 1 1-4 0 2 2 0 1 1 4 0"
+    };
+    return `<div class="fleet-kpis" style="--fleet-kpi-count:${metrics.length}">${metrics.map(([label, value, color, icon, primary]) =>
+      `<div class="fleet-kpi${primary ? " fleet-kpi-primary" : ""}" data-tone="${color}"><span class="fleet-kpi-icon" aria-hidden="true">${iconSvg(icons[icon])}</span>
+        <div><small>${label}</small><strong>${value}</strong></div></div>`).join("")}</div>`;
+  }
+
+  async function openFleetFine(id) {
+    const view = fleetFineState();
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = '<section class="modal fleet-case-modal" role="dialog" aria-modal="true" aria-label="罰單明細"><div class="modal-title"><h3>罰單明細</h3><button class="ghost-btn" data-close-modal aria-label="關閉">×</button></div><div class="modal-form-body" data-fleet-detail role="status">正在載入…</div></section>';
+    document.body.appendChild(modal);
+    modal.querySelector("[data-close-modal]").focus();
+    const detail = modal.querySelector("[data-fleet-detail]");
+    try {
+      const { fine, updates, files } = await apiRequest("load_fleet_fine", { id });
+      if (view.token !== state.apiSession || !modal.isConnected) return;
+      detail.removeAttribute("role");
+      detail.innerHTML = `<div class="fleet-case-detail-title"><strong>${escapeHtml(fine.plate_no)}</strong><span>${fleetFineMoney(fine.amount)}</span></div>
+        <dl class="fleet-case-detail-grid">${[
+          ["罰單編號", fine.ticket_number], ["類型", fine.fine_type], ["車商", fine.original_dealer],
+          ["駕駛", fine.driver_name], ["掛牌公司", fine.plate_owner_company],
+          ["狀態", fine.status], ["違規日期", fmtDate(fine.fine_date)], ["繳款期限", fmtDate(fine.due_date)],
+          ["自繳期限", !state.admin && fleetFineDatesConflict(fine) ? "待核對" : fmtDate(fine.self_pay_deadline)], ["繳款日期", fmtDate(fine.paid_date)]
+        ].map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeHtml(value || "—")}</dd></div>`).join("")}</dl>
+        ${fleetScopedVehicle(fine.plate_no) ? fleetVehicleLinks(fine.plate_no, "fines") : ""}
+        ${state.admin && fleetFineIssues(fine).length ? `<p class="fleet-fine-data-issue">資料待清理｜${escapeHtml(fleetFineIssues(fine).join("、"))}</p>` : ""}
+        <h4>違規內容</h4><p>${escapeHtml(fine.violation || "—")}</p><p>${escapeHtml(fine.violation_location || "")}</p>
+        <h4>處理紀錄</h4>${updates.length ? `<ul class="fleet-case-history">${updates.map(row => `<li><strong>${escapeHtml(row.status || "更新")}</strong><time>${escapeHtml(fmtDateTime(row.created_at))}</time><p>${escapeHtml(row.note || "")}</p></li>`).join("")}</ul>` : "<p>目前沒有可查看的紀錄</p>"}
+        <h4>附件</h4>${files.length ? files.map(file => `<div class="fleet-file-row">
+          ${file.url ? `<button class="ghost-btn" data-fine-preview="${escapeHtml(file.id)}">開啟附件 · ${escapeHtml(file.name || "罰單")}</button>` : fleetDocumentLinks(file)}
+          ${state.admin && !fine.archived_at && !file.url ? fleetFileInput("fine", fine.id, file.id) : ""}
+        </div>`).join("") : "<p>目前沒有可查看的附件</p>"}
+        ${state.admin && !fine.archived_at ? fleetFileInput("fine", fine.id) : ""}
+        <div class="fleet-fine-primary">
+          ${fine.archived_at ? '<button class="ghost-btn" data-fine-detail-action="archive">還原罰單</button>' : `
+            ${state.admin ? '<button class="ghost-btn" data-fine-detail-action="edit">編輯／核對車商</button><button class="ghost-btn" data-fine-detail-action="copy">複製 LINE 通知</button><button class="danger-btn" data-fine-detail-action="archive">移至封存</button>' : ""}
+            ${state.admin || fleetFineCanReport(fine) ? '<button class="primary-btn" data-fine-detail-action="report">回報處理進度</button>' : ""}`}
+        </div>`;
+      detail.addEventListener("click", async event => {
+        const previewId = event.target.closest("[data-fine-preview]")?.dataset.finePreview;
+        const file = files.find(item => item.id === previewId);
+        if (file?.url) { openFilePreview(file.url, file.name); return; }
+        const action = event.target.closest("[data-fine-detail-action]")?.dataset.fineDetailAction;
+        if (action === "edit") { modal.remove(); openFleetFineEditor(fine); }
+        if (action === "report") { modal.remove(); openFleetFineProgress(fine); }
+        if (action === "copy") await copyFleetFineNotice(fleetFineNotice(fine));
+        if (action === "archive" && await showConfirm(fine.archived_at ? "確定還原這筆罰單？" : "將這筆罰單移到已封存？附件與處理紀錄會保留。", "罰單管理")) {
+          try {
+            await apiRequest("archive_fleet_fine", { id: fine.id, version: fine.updated_at, archive: !fine.archived_at });
+            modal.remove();
+            await loadFleetFines(true);
+          } catch (error) { await showAlert(error.message, "更新失敗"); }
+        }
+      });
+    } catch (error) {
+      detail.textContent = error.message;
+    }
+  }
+
+  function fleetFineNotice(fine) {
+    return [
+      "罰單通知｜車牌 " + fine.plate_no, fine.fine_type, fine.driver_name && "駕駛：" + fine.driver_name,
+      fine.ticket_number && "罰單編號：" + fine.ticket_number,
+      fine.fine_date && "違規日期：" + fine.fine_date, fleetFineMoney(fine.amount),
+      fine.due_date && "繳款期限：" + fine.due_date,
+      fine.self_pay_deadline && !fleetFineDatesConflict(fine) && "自行繳納期限：" + fine.self_pay_deadline,
+      "請登入系統查看附件並回報進度。", location.origin + location.pathname
+    ].filter(Boolean).join("\n");
+  }
+
+  async function copyFleetFineNotice(message) {
+    try {
+      await navigator.clipboard.writeText(message);
+      await showAlert("通知已複製，可以貼到 LINE。");
+    } catch {
+      openFleetForm("LINE 通知內容", "fleetFineCopyForm",
+        `<label class="field full"><span>通知文字</span><textarea rows="8" readonly>${escapeHtml(message)}</textarea></label>`,
+        () => {}, "完成");
+    }
+  }
+
+  function openFleetFineDaily() {
+    const counts = new Map();
+    for (const row of fleetFineState().rows || []) {
+      if (!row.archived_at && row.review_state === "verified" && fleetFineCreatedToday(row)) {
+        counts.set(row.original_dealer, (counts.get(row.original_dealer) || 0) + 1);
+      }
+    }
+    const form = openFleetForm("今日 LINE 通知", "fleetFineDailyForm", counts.size ? [...counts].map(([name, count], index) =>
+      `<div class="field full fleet-fine-daily-row"><strong>${escapeHtml(name)} · ${count} 筆</strong>
+        <button type="button" class="ghost-btn" data-fine-copy-daily="${index}">複製通知</button></div>`).join("")
+      : '<p class="field full">今天尚無已開放車商查看的新罰單。</p>', () => {}, "完成");
+    form.addEventListener("click", event => {
+      const index = event.target.closest("[data-fine-copy-daily]")?.dataset.fineCopyDaily;
+      if (index === undefined) return;
+      const count = [...counts.values()][Number(index)];
+      void copyFleetFineNotice(`今天新增 ${count} 筆罰單，請登入系統查看並回報進度。\n${location.origin + location.pathname}`);
+    });
+  }
+
+  function openFleetFineOverview() {
+    const rows = (fleetFineState().rows || []).filter(item => !item.archived_at)
+      .sort((a, b) => String(b.created_at || b.fine_date || "").localeCompare(String(a.created_at || a.fine_date || "")));
+    openFleetForm("罰單總覽", "fleetFineOverviewForm", `
+      <p class="field full">${rows.length} 筆案件 · ${rows.filter(row => !fleetFineSettled(row)).length} 筆待繳款 · ${fleetFineMoney(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0))}</p>
+      ${adminCan("fleetOperations") ? `<div class="field full fleet-fine-primary">
+        <button type="button" class="ghost-btn" data-fleet-go="policy" data-plate="" data-policy-expiry="thisMonth">本月到期保單</button>
+        <button type="button" class="ghost-btn" data-fleet-go="policy" data-plate="" data-policy-expiry="nextMonth">下月到期保單</button></div>` : ""}
+      <div class="field full"><strong>最近罰單</strong>${rows.slice(0, 10).map(row =>
+        `<button type="button" class="ghost-btn fleet-fine-overview-row" data-fleet-fine="${escapeHtml(row.id)}">
+          ${escapeHtml(row.plate_no)} <span>${escapeHtml(row.fine_date || "—")}</span><strong>${fleetFineMoney(row.amount)}</strong></button>`).join("")}</div>
+    `, () => {}, "關閉");
+  }
+
+  function openFleetFineProgress(fine) {
+    const options = (state.admin ? fleetFineStatuses : fleetFineDealerStatuses).map(value => [value, value]);
+    const selected = options.some(([value]) => value === fine.status) ? fine.status : "待處理";
+    openFleetForm("回報罰單進度", "fleetFineProgressForm", `
+      <p class="field full fleet-muted">${escapeHtml(fine.plate_no)} · ${escapeHtml(fine.ticket_number || "未填單號")}</p>
+      ${select("status", "處理進度", selected, options)}
+      ${input("paid_date", "繳款日期", fine.paid_date || "", "date")}
+      ${text("note", "備註")}
+      ${state.admin ? checkbox("share", "讓已核對車商看到這則紀錄", false) : ""}
+    `, async fields => {
+      await apiRequest("report_fleet_fine", { id: fine.id, version: fine.updated_at,
+        status: fields.get("status"), note: fields.get("note"), paid_date: fields.get("paid_date"), share: fields.getAll("share").includes("true") });
+      await loadFleetFines(true);
+    });
+  }
+
+  function fleetFineFormRecord(fields) {
+    const data = Object.fromEntries(fields);
+    return Object.fromEntries(["plate_no", "dealer_partner_id", "fine_type", "ticket_number", "fine_date", "due_date",
+      "self_pay_deadline", "paid_date", "status", "driver_name", "plate_owner_company", "violation", "violation_location"]
+      .map(key => [key, String(data[key] || "").trim()]).concat([["amount", Number(data.amount)], ["share", data.share === "true"]]));
+  }
+
+  function openFleetFineEditor(fine = {}, ocr = false) {
+    if (!state.admin || !adminCan("fleetCases") || document.querySelector("#fleetFineEditForm")) return;
+    const id = fine.id || crypto.randomUUID();
+    let saved = false;
+    const form = openFleetForm(fine.id ? "編輯罰單" : ocr ? "拍照辨識罰單" : "新增罰單", "fleetFineEditForm", `
+      ${ocr ? `<div class="field full fleet-fine-ocr">
+        <label>拍攝照片<input type="file" accept="image/*" capture="environment" data-fine-ocr-camera></label>
+        <label>從相簿選取<input type="file" accept="image/*" data-fine-ocr-file></label>
+        <p data-fine-ocr-status role="status">辨識後請核對帶入的欄位。</p></div>` : ""}
+      ${input("plate_no", "車牌", fine.plate_no, "text", true)}
+      ${select("dealer_partner_id", "所屬車商", fine.dealer_partner_id || "", dealerPartnerOptions(fine.dealer_partner_id, "待指派"))}
+      ${input("driver_name", "駕駛", fine.driver_name)}
+      ${input("plate_owner_company", "掛牌公司", fine.plate_owner_company)}
+      ${select("fine_type", "案件類型", fine.fine_type || "罰單", [["罰單", "罰單"], ["停車催繳", "停車催繳"]])}
+      ${input("ticket_number", "罰單編號", fine.ticket_number)}
+      ${input("fine_date", "違規日期", fine.fine_date || "", "date")}
+      ${fleetNumericField("amount", "金額（元）", fine.amount ?? 0, "0.01")}
+      ${input("due_date", "繳款期限", fine.due_date || "", "date")}
+      ${input("self_pay_deadline", "自行繳款期限", fine.self_pay_deadline || "", "date")}
+      ${input("paid_date", "繳款日期", fine.paid_date || "", "date")}
+      ${select("status", "狀態", fine.status || "待處理", fleetFineStatuses.map(value => [value, value]))}
+      ${input("violation_location", "違規地點", fine.violation_location)}
+      ${text("violation", "違規內容", fine.violation)}
+      ${checkbox("share", "已核對車牌，開放所選車商查看", fine.review_state === "verified")}
+      ${fine.id && !fine.dealer_partner_id ? checkbox("assign_same_plate", "同時指派此車牌的其他待認領罰單，列為待核對", false) : ""}
+      ${!fine.id && !ocr ? '<label class="field full"><span>罰單照片或 PDF（選填）</span><input name="attachment" type="file" accept="application/pdf,image/png,image/jpeg"></label>' : ""}
+    `, async (fields, form) => {
+      const record = fleetFineFormRecord(fields);
+      const file = form.fineOcrFile || fields.get("attachment");
+      const attachment = file?.size && !form.fineOcrUploaded ? await readFleetAttachment(file) : null;
+      if (!saved) {
+        if (!await reviewFleetFineInput([record], fine.id ? fine : null)) return false;
+        await apiRequest("write_fleet_fines", { records: [{ ...record, id, original_dealer: fine.original_dealer,
+          expected_version: fine.id ? fine.updated_at : undefined }], assign_same_plate: fields.getAll("assign_same_plate").includes("true") });
+        saved = true;
+        if (attachment) {
+          for (const field of form.elements) {
+            if (field.name && !["attachment"].includes(field.name)) field.disabled = true;
+          }
+          form.fineAttachmentShare = record.share;
+        }
+        await loadFleetFines(true);
+      }
+      if (attachment) {
+        try { await apiRequest("save_fleet_file", { kind: "fine", id, ...attachment, share: form.fineAttachmentShare }); }
+        catch (error) { throw new Error("罰單已儲存，附件上傳失敗。可重新選檔後再按儲存。 " + error.message); }
+        form.fineOcrUploaded = true;
+      }
+      if (form.isConnected) {
+        form.closest(".modal-backdrop")?.remove();
+        await openFleetFine(id);
+      }
+    });
+    form.addEventListener("change", event => {
+      const field = event.target;
+      if (field.name === "plate_no" && !form.elements.dealer_partner_id.value) {
+        const vehicle = fleetScopedVehicle(field.value);
+        if (vehicle?.dealer_partner_id && dealerPartners().some(item => item.id === vehicle.dealer_partner_id)) {
+          form.elements.dealer_partner_id.value = vehicle.dealer_partner_id;
+        }
+      }
+      if (field.matches("[data-fine-ocr-camera], [data-fine-ocr-file]") && field.files[0]) void recognizeFleetFine(form, field.files[0]);
+    });
+  }
+
+  async function readFleetAttachment(file) {
+    if (!file?.size || file.size > 5242880 || !["application/pdf", "image/png", "image/jpeg"].includes(file.type)) {
+      throw new Error("請選擇 5 MB 以內的 PDF、PNG 或 JPG。");
+    }
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result).split(",", 2)[1]);
+      reader.onerror = () => reject(new Error("無法讀取文件"));
+      reader.readAsDataURL(file);
+    });
+    return { name: file.name, base64 };
+  }
+
+  async function recognizeFleetFine(form, file) {
+    const status = form.querySelector("[data-fine-ocr-status]");
+    const submit = form.querySelector('[type="submit"]');
+    if (submit.disabled) return;
+    submit.disabled = true;
+    form.fineOcrFile = file.size <= 5242880 && ["image/png", "image/jpeg"].includes(file.type) ? file : null;
+    status.textContent = "載入辨識工具…";
+    try {
+      await ensureOptionalLibrary("ocr");
+      const source = await prepareOcrImage(file);
+      const result = await window.Tesseract.recognize(source, "chi_tra+eng", { logger: progress => {
+        if (progress.status === "recognizing text") status.textContent = `辨識中 ${Math.round(progress.progress * 100)}%`;
+      } });
+      const raw = (result.data.text || "").normalize("NFKC");
+      const detected = window.HeycarFleetReports.parseFinePhoto(raw);
+      for (const [key, value] of Object.entries(detected)) {
+        if (value && (["amount", "fine_type"].includes(key) || !form.elements[key].value)) form.elements[key].value = value;
+      }
+      form.elements.plate_no.dispatchEvent(new Event("change", { bubbles: true }));
+      if (file.size <= 5242880 && ["image/png", "image/jpeg"].includes(file.type)) {
+        form.fineOcrFile = file;
+      } else if (typeof source === "string") {
+        const jpeg = await (await fetch(source)).blob();
+        form.fineOcrFile = new File([jpeg], "罰單照片.jpg", { type: "image/jpeg" });
+      }
+      status.textContent = form.fineOcrFile ? "辨識完成，請核對欄位。儲存時會一併附上照片。" : "辨識完成，請核對欄位。原照可在明細另行上傳。";
+    } catch (error) {
+      status.textContent = "辨識失敗，可改為手動填寫。 " + error.message;
+    } finally { submit.disabled = false; }
+  }
+
+  function openFleetFineBatch() {
+    const report = window.HeycarFleetReports;
+    const dealers = dealerPartners();
+    let records = [];
+    let photos = [];
+    let stored = false;
+    const fields = `<div class="field full" data-fine-batch-source>
+      <p>可貼上試算表，或選取 Excel、CSV、TSV。支援車牌、車商、單號、違規日期、繳款期限、金額及照片序號等欄位。</p>
+      <label>貼上表格<textarea name="sheet_text" rows="6" placeholder="車牌　罰單編號　違規日期　金額"></textarea></label>
+      <label>選取表格檔<input type="file" name="sheet" accept=".csv,.tsv,.xls,.xlsx"></label>
+      <label>選取原始照片或 PDF（選填）<input type="file" name="photos" accept="image/png,image/jpeg,application/pdf" multiple></label>
+      <label>未填時套用自繳期限（選填）<input type="date" name="default_self"></label>
+    </div><div class="field full" data-fine-batch-preview></div>`;
+    openFleetForm("批次匯入罰單", "fleetFineBatchForm", fields, async (data, form) => {
+      const preview = form.querySelector("[data-fine-batch-preview]");
+      const button = form.querySelector('[type="submit"]');
+      if (!records.length) {
+        const file = data.get("sheet");
+        const pasted = String(data.get("sheet_text") || "").trim();
+        if (!file?.size && !pasted) throw new Error("請貼上表格或選取檔案。");
+        if (file?.size > 5 * 1024 * 1024) throw new Error("表格檔案上限 5 MB。");
+        const XLSX = await ensureOptionalLibrary("excel");
+        const book = file?.size ? XLSX.read(await file.arrayBuffer(), { type: "array" }) : XLSX.read(pasted, { type: "string", raw: true });
+        photos = data.getAll("photos").filter(photo => photo.size);
+        const raw = report.parseFineBatch(XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]], { header: 1, defval: "", raw: true }), XLSX.SSF.parse_date_code);
+        if (!raw.length || raw.length > 200) throw new Error("表格須包含車牌欄及 1 至 200 筆罰單。");
+        const normalizeTicket = value => String(value || "").normalize("NFKC").trim().toUpperCase();
+        const seen = new Set((fleetFineState().rows || []).filter(row => !row.archived_at).map(row => normalizeTicket(row.ticket_number)).filter(Boolean));
+        records = raw.map((row, index) => {
+          const vehicle = fleetScopedVehicle(row.plate_no);
+          const named = dealers.filter(item => item.name === row.original_dealer);
+          const dealer = row.original_dealer ? named.length === 1 ? named[0] : null : dealers.find(item => item.id === vehicle?.dealer_partner_id);
+          const problem = !report.plateKey(row.plate_no) || row.invalidDate || !Number.isFinite(row.amount) || row.amount < 0 ? "資料無效"
+            : row.ticket_number && seen.has(row.ticket_number) ? "單號重複" : "";
+          if (row.ticket_number && !problem) seen.add(row.ticket_number);
+          const exactPhoto = photos.findIndex(item => item.name.toLowerCase() === row.photo.toLowerCase());
+          const photoIndex = row.photo ? exactPhoto >= 0 ? exactPhoto : Number(row.photo) - 1 : index;
+          return { ...row, id: crypto.randomUUID(), status: "待處理", dealer_partner_id: dealer?.id || "",
+            self_pay_deadline: row.self_pay_deadline || String(data.get("default_self") || ""),
+            photoIndex: photos[photoIndex] ? photoIndex : -1, problem, canShare: Boolean(vehicle?.dealer_partner_id) };
+        });
+        form.querySelector("[data-fine-batch-source]").hidden = true;
+        preview.innerHTML = `<p>共 ${records.length} 筆。請核對車商與附件，再確認匯入。勾選「開放」前請確認案件歸屬。</p>
+          <div class="fleet-fine-batch-scroll" tabindex="0" role="region" aria-label="匯入預覽"><table class="fleet-data-table"><thead><tr>
+          <th>匯入</th><th>車牌／單號</th><th>車商</th><th>日期／金額</th><th>附件</th><th>開放</th>
+          </tr></thead><tbody>${records.map((row, index) => `<tr>
+            <td>${row.problem ? escapeHtml(row.problem) : `<input type="checkbox" name="include_${index}" checked aria-label="匯入第 ${index + 1} 筆">`}</td>
+            <td>${escapeHtml(row.plate_no)}<small>${escapeHtml(row.ticket_number)}</small>
+              ${row.problem ? "" : `<details><summary>編輯這筆</summary><div class="fleet-fine-batch-edit">
+                ${[["plate_no", "車牌", "text"], ["ticket_number", "罰單編號", "text"], ["driver_name", "駕駛", "text"],
+                  ["plate_owner_company", "掛牌公司", "text"], ["fine_date", "違規日期", "date"], ["due_date", "繳款期限", "date"],
+                  ["self_pay_deadline", "自行繳款期限", "date"], ["amount", "金額", "number"], ["violation", "違規內容", "text"],
+                  ["violation_location", "違規地點", "text"]].map(([key, label, type]) =>
+                    `<label>${label}<input name="${key}_${index}" type="${type}" ${type === "number" ? 'min="0" step="0.01"' : ""} value="${escapeHtml(row[key])}"></label>`).join("")}
+                <label>類型<select name="fine_type_${index}">${["罰單", "停車催繳"].map(kind => `<option ${kind === row.fine_type ? "selected" : ""}>${kind}</option>`).join("")}</select></label>
+              </div></details>`}</td>
+            <td><select name="dealer_${index}" aria-label="第 ${index + 1} 筆車商"><option value="">待指派</option>${dealers.map(dealer =>
+              `<option value="${escapeHtml(dealer.id)}"${row.dealer_partner_id === dealer.id ? " selected" : ""}>${escapeHtml(dealer.name)}</option>`).join("")}</select>
+              ${row.original_dealer && !row.dealer_partner_id ? `<small>${escapeHtml(row.original_dealer)}</small>` : ""}</td>
+            <td>${escapeHtml(row.fine_date || "—")}<small>${fleetFineMoney(row.amount)}</small></td>
+            <td><select name="photo_${index}" aria-label="第 ${index + 1} 筆附件"><option value="-1">無</option>${photos.map((file, i) =>
+              `<option value="${i}"${row.photoIndex === i ? " selected" : ""}>${escapeHtml(file.name)}</option>`).join("")}</select></td>
+            <td><input type="checkbox" name="share_${index}" ${row.canShare ? "" : "disabled"} aria-label="開放第 ${index + 1} 筆"></td>
+          </tr>`).join("")}</tbody></table></div>`;
+        button.dataset.submitLabel = "確認匯入";
+        return false;
+      }
+
+      if (!stored) {
+        records = records.map((row, index) => ({ ...row,
+          ...Object.fromEntries(["plate_no", "ticket_number", "driver_name", "plate_owner_company", "fine_date", "due_date",
+            "self_pay_deadline", "amount", "violation", "violation_location", "fine_type"]
+            .filter(key => data.has(key + "_" + index)).map(key => [key, key === "amount" ? Number(data.get(key + "_" + index)) : String(data.get(key + "_" + index)).trim()])),
+          included: !row.problem && data.has("include_" + index),
+          dealer_partner_id: String(data.get("dealer_" + index) || ""),
+          photoIndex: Number(data.get("photo_" + index)),
+          share: data.has("share_" + index)
+        }));
+        const chosen = records.filter(row => row.included);
+        if (!chosen.length) throw new Error("請至少勾選一筆可匯入的罰單。");
+        const photoIndexes = chosen.map(row => row.photoIndex).filter(index => index >= 0);
+        if (new Set(photoIndexes).size !== photoIndexes.length) throw new Error("同一張照片對應了多筆罰單，請先核對附件。");
+        for (const index of photoIndexes) {
+          const file = photos[index];
+          if (file.size > 5242880 || !["application/pdf", "image/png", "image/jpeg"].includes(file.type)) {
+            throw new Error(file.name + " 不是 5 MB 以內的 PDF、PNG 或 JPG。");
+          }
+        }
+        if (!await reviewFleetFineInput(chosen)) return false;
+        await apiRequest("write_fleet_fines", { records: chosen });
+        stored = true;
+        preview.querySelectorAll("input, select").forEach(field => { field.disabled = true; });
+        await loadFleetFines(true);
+      }
+      let failures = 0;
+      for (const row of records.filter(item => item.included && item.photoIndex >= 0 && !item.uploaded)) {
+        try {
+          const attachment = await readFleetAttachment(photos[row.photoIndex]);
+          await apiRequest("save_fleet_file", { kind: "fine", id: row.id, ...attachment, share: row.share });
+          row.uploaded = true;
+        } catch { failures++; }
+      }
+      if (failures) {
+        button.dataset.submitLabel = "重試附件";
+        throw new Error(`罰單已匯入，${failures} 個附件上傳失敗。可按「重試附件」。`);
+      }
+      await showAlert(`已匯入 ${records.filter(item => item.included).length} 筆罰單。`, "批次匯入");
+    }, "預覽資料");
+  }
+
+  const fleetServiceTypes = new Set(["maintenance", "repair", "tires"]);
+  const fleetOpsViews = new Map();
+
+  function fleetShiftDate(date, days) {
+    return new Date(Date.parse(date) + days * 86400000).toISOString().slice(0, 10);
+  }
+
+  function fleetIdlePeriod(view, mode, anchor) {
+    const date = new Date(anchor + "T00:00:00Z");
+    if (!Number.isFinite(date.getTime())) return;
+    const monday = fleetShiftDate(anchor, -((date.getUTCDay() + 6) % 7));
+    Object.assign(view, {
+      mode, anchor, weekIndex: 0,
+      start: mode === "day" ? anchor : monday,
+      end: mode === "day" ? anchor : fleetShiftDate(monday, 6)
+    });
+  }
+
+  function fleetOperationsState(group = state.admin ? state.adminView : state.partnerView) {
+    let view = fleetOpsViews.get(group);
+    const sections = fleetWorkspaceTabs();
+    if (!view || view.token !== state.apiSession || !sections.some(([key]) => key === view.section)) {
+      const anchor = today();
+      const section = sections.find(([key]) => fleetSectionViews[key] === group)?.[0] || "idle";
+      view = { token: state.apiSession, section, mode: "week", anchor,
+        start: fleetShiftDate(anchor, -6), end: anchor, latestWeek: true, weekIndex: 0,
+        search: "", page: 1, rows: null, loading: false, error: "", draft: null, request: 0,
+        forecastLayout: "cards", attention: false, calendarLayout: "month", calendarKind: "all", calendarVendor: "", showSuggestions: true,
+        telemetry: null, importedDates: [], importRequest: 0 };
+      fleetOpsViews.set(group, view);
+    }
+    return view;
+  }
+
+  async function loadFleetOperations(view = fleetOperationsState()) {
+    if (["notifications", "importFuel"].includes(view.section) ||
+        (view.section === "calendar" && !adminCan("fleetOperations"))) {
+      view.rows = [];
+      return;
+    }
+    const request = ++view.request;
+    view.loading = true;
+    view.error = "";
+    view.rows = null;
+    const section = view.section === "calendar" ? "fuel" : view.section;
+    try {
+      const latest = today();
+      const fetchIdle = days => apiRequest("load_fleet_operations", { section: "idle", start: fleetShiftDate(latest, -(days - 1)), end: latest });
+      const [first, related] = await Promise.all([
+        section === "importIdle" ? fetchIdle(31) : apiRequest("load_fleet_operations", { section, start: view.start, end: view.end }),
+        section === "fuel" ? fetchIdle(7).catch(() => null) : null
+      ]);
+      let data = first;
+      if (request !== view.request) return;
+      if (section === "idle" && view.latestWeek) {
+        view.latestWeek = false;
+        const latest = data.rows?.reduce((max, row) => row.record_date > max ? row.record_date : max, "");
+        const initialStart = view.start;
+        const initialEnd = view.end;
+        fleetIdlePeriod(view, "week", latest || today());
+        if (view.start !== initialStart || view.end !== initialEnd) {
+          data = await apiRequest("load_fleet_operations", { section, start: view.start, end: view.end });
+        }
+      }
+      if (request === view.request) {
+        view.rows = data.rows || [];
+        if (section === "fuel") view.telemetry = related?.rows || null;
+        if (section === "importIdle") view.importedDates = [...new Set(view.rows.map(row => row.record_date))].sort().reverse();
+      }
+    } catch (error) {
+      if (request === view.request) view.error = error.message;
+    } finally {
+      if (request === view.request) {
+        view.loading = false;
+        if (view.token === state.apiSession &&
+            fleetOpsViews.get(state.admin ? state.adminView : state.partnerView) === view) render();
+      }
+    }
+  }
+
+  function fleetDuration(value) {
+    if (value === null || value === undefined) return "—";
+    const minutes = Number(value);
+    return minutes >= 60 ? Math.floor(minutes / 60) + " 時 " + minutes % 60 + " 分" : minutes + " 分";
+  }
+
+  function fleetReportRows(view) {
+    const key = window.HeycarFleetReports.plateKey(view.search);
+    const query = view.search.normalize("NFKC").toLowerCase();
+    const exactVehicle = fleetScopedVehicle(view.search);
+    const vehicles = state.admin ? state.data.vehicles : dealerVehicles();
+    const byId = new Map((vehicles || []).map(vehicle => [vehicle.id, vehicle]));
+    if (view.section === "policy") {
+      const imported = new Map();
+      for (const row of view.rows || []) {
+        if (!imported.has(row.vehicle_id)) imported.set(row.vehicle_id, []);
+        imported.get(row.vehicle_id).push(row);
+      }
+      const dealers = new Map((state.data.insurance_partners || []).map(item => [item.id, item.name]));
+      return [...byId.values()].filter(v => !key || window.HeycarFleetReports.plateKey(v.plate_no).includes(key))
+        .sort((a, b) => String(a.plate_no).localeCompare(String(b.plate_no)))
+        .map(vehicle => fleetPolicyVehicle(vehicle, imported.get(vehicle.id), dealers.get(vehicle.dealer_partner_id)));
+    }
+    const visibility = view.section === "idle" ? "show_idle_report" : "show_maintenance_report";
+    const reportRows = [...(view.rows || [])];
+    if (["fuel", "calendar"].includes(view.section)) {
+      const ids = new Set(reportRows.map(row => row.vehicle_id));
+      const tracked = [...(view.telemetry || []), ...(state.data.vehicle_service_records || []).filter(record => /定期保養|輪胎|調胎/.test(record.record_type || ""))];
+      for (const { vehicle_id } of tracked) {
+        if (!byId.has(vehicle_id) || ids.has(vehicle_id)) continue;
+        ids.add(vehicle_id);
+        reportRows.push({ vehicle_id, avg_daily_km: null });
+      }
+    }
+    return reportRows.map(row => {
+      const vehicle = byId.get(row.vehicle_id);
+      return { ...row, plate: vehicle?.[visibility] !== false ? vehicle?.plate_no : "", model: vehicle?.model || "",
+        driver: view.section === "idle" ? String(row.driver_name || "").trim() || (state.admin && vehicle ? fleetDriverForDate(vehicle, row.record_date) : "")
+          : state.admin && vehicle ? fleetCurrentDriver(vehicle) : "" };
+    }).filter(row => {
+      if (!row.plate) return false;
+      if (exactVehicle) return row.vehicle_id === exactVehicle.id;
+      return !query || (key && window.HeycarFleetReports.plateKey(row.plate).includes(key)) ||
+        (state.admin && [row.driver, row.model].some(value => value.normalize("NFKC").toLowerCase().includes(query)));
+    })
+      .sort((a, b) => String(b.record_date || b.last_fill_date).localeCompare(String(a.record_date || a.last_fill_date)) || a.plate.localeCompare(b.plate));
+  }
+
+  function fleetDriverForDate(vehicle, date) {
+    if (!date) return "";
+    return parseVehicleDriverHistory(vehicle)
+      .filter(item => {
+        const start = formDate(item.start_at);
+        const end = formDate(item.end_at);
+        return (start || end) && (!start || start <= date) && (!end || end >= date);
+      })
+      .map(item => item.driver_name || (item.driver_id ? driverName(item.driver_id) : "")).filter(Boolean).join("／");
+  }
+
+  function fleetCurrentDriver(vehicle) {
+    return vehicleActiveDriverRecords(vehicle).map(item => item.driver_name || driverName(item.driver_id)).filter(Boolean).join("／") ||
+      vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "") || "";
+  }
+
+  function fleetDocumentLinks(file) {
+    const href = /^https?:\/\//i.test(file.url || "") ? file.url : "";
+    const original = /^https:\/\/drive\.google\.com\//i.test(file.legacy_url || "") ? file.legacy_url : "";
+    return [
+      href ? '<a class="ghost-btn" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(href) + '">' + escapeHtml(file.name || "下載原檔") + '</a>' : "",
+      original && !href ? '<a class="ghost-btn" target="_blank" rel="noopener noreferrer" href="' + escapeHtml(original) + '">' +
+        (original.includes("/folders/") ? "開啟舊資料夾" : "開啟舊檔") + "</a>" : "",
+      !href && !original ? "<small>" + escapeHtml(file.name || "附件") + " · 原檔待搬移</small>" : "",
+    ].join("");
+  }
+
+  function fleetFileInput(kind, id, fileId = "") {
+    return '<form class="fleet-file-upload" data-fleet-file-form data-kind="' + kind + '" data-id="' + escapeHtml(id) + '" data-file-id="' + escapeHtml(fileId) + '">' +
+      '<input required type="file" name="file" accept="application/pdf,image/png,image/jpeg" aria-label="選擇文件">' +
+      (kind === "fine" ? '<label><input type="checkbox" name="share"> 允許已核對車商查看</label>' : "") +
+      '<button type="submit" class="ghost-btn">' + (fileId ? "上傳原檔" : "上傳文件") + "</button></form>";
+  }
+
+  function fleetPolicyExpiryMatches(item, filter) {
+    const expiry = formDate(item.current_expiry || item.expiry_date);
+    if (!expiry || expiry === "-") return false;
+    const current = today();
+    if (filter === "expired") return expiry < current;
+    const next = new Date(current.slice(0, 7) + "-01T00:00:00Z");
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    const month = filter === "nextMonth" ? next.toISOString().slice(0, 7) : current.slice(0, 7);
+    return expiry >= current && expiry.startsWith(month);
+  }
+
+  function fleetPolicyVehicle(vehicle, rows = [], dealer = "") {
+    return {
+      id: vehicle.id,
+      plate: vehicle.plate_no,
+      model: [vehicle.brand, vehicle.model].filter(Boolean).join(" "),
+      dealer,
+      policies: ["compulsory", "voluntary"].map(type => ({
+        ...rows.find(item => item.policy_type === type),
+        policy_type: type,
+        current_company: vehicle[type + "_insurance_company"],
+        current_expiry: vehicle[type + "_insurance_expiry"],
+      })),
+    };
+  }
+
+  function fleetPolicyCard(vehicle, inVehicleHistory = false) {
+    return `<article class="fleet-policy-card">
+      <header class="fleet-policy-vehicle">
+        <h3>${escapeHtml(vehicle.plate)}</h3>
+        ${vehicle.model ? `<span>${escapeHtml(vehicle.model)}</span>` : ""}
+        ${vehicle.dealer ? `<span class="fleet-policy-dealer">${escapeHtml(vehicle.dealer)}</span>` : ""}
+      </header>
+      <div class="fleet-policy-sections">${vehicle.policies.map(row => {
+        const type = row.policy_type === "compulsory" ? "強制險" : "任意險";
+        const expiry = row.current_expiry || row.expiry_date;
+        const attachment = row.has_file
+          ? `<button class="ghost-btn" type="button" data-fleet-policy-open="${escapeHtml(row.id)}" data-policy-vehicle="${escapeHtml(vehicle.id)}">開啟保單</button>`
+          : state.admin && row.legacy_reference ? fleetDocumentLinks(row) : "<small>尚未上傳保單</small>";
+        return `<section class="fleet-policy-section" data-policy-type="${row.policy_type}" aria-label="${type}">
+          <h4>${type}</h4>
+          <dl>
+            <div><dt>保險公司</dt><dd>${escapeHtml(row.current_company || row.company || "未填寫")}</dd></div>
+            <div><dt>${row.current_expiry || !expiry ? "到期日" : "舊保單到期日"}</dt><dd>${expiry ? expiryDateBadge(expiry, 30) : "未填寫"}</dd></div>
+          </dl>
+          ${row.policy_number || row.start_date ? `<div class="fleet-policy-history">
+            ${row.policy_number ? `<small>舊保單號 ${escapeHtml(row.policy_number)}</small>` : ""}
+            ${row.start_date ? `<small>舊保單期間 ${escapeHtml(row.start_date)} ～ ${escapeHtml(row.expiry_date || "—")}</small>` : ""}
+          </div>` : ""}
+          <div class="fleet-policy-actions">${attachment}
+            ${!inVehicleHistory && state.admin && row.id && !row.has_file ? `<details class="fleet-policy-upload">
+              <summary>上傳保單</summary>
+              ${fleetFileInput("policy", row.id)}
+            </details>` : ""}
+          </div>
+        </section>`;
+      }).join("")}</div>
+    </article>`;
+  }
+
+  function fleetKm(value) {
+    return value == null ? "—" : Number(value).toLocaleString("zh-TW", { maximumFractionDigits: 1 }) + " km";
+  }
+
+  function fleetIdleMatrix(view, rows) {
+    const start = fleetShiftDate(view.start, view.weekIndex * 7);
+    const end = [fleetShiftDate(start, 6), view.end].sort()[0];
+    const reportedDates = [...new Set(rows.map(row => row.record_date).filter(date => date >= start && date <= end))].sort();
+    const displayStart = reportedDates[0] || start;
+    const displayEnd = reportedDates.at(-1) || end;
+    const dates = [];
+    for (let date = displayStart; date <= displayEnd; date = fleetShiftDate(date, 1)) dates.push(date);
+    const byPlate = new Map();
+    const metrics = { count: 0, drive: 0, idle: 0, mileage: 0 };
+    for (const row of rows) {
+      if (row.record_date < start || row.record_date > end) continue;
+      if (!byPlate.has(row.plate)) byPlate.set(row.plate, { vehicleId: row.vehicle_id, plate: row.plate, drivers: new Set(), days: new Map(), drive: 0, idle: 0, mileage: 0 });
+      const entry = byPlate.get(row.plate);
+      entry.days.set(row.record_date, row);
+      for (const name of String(row.driver || "").split(/[／/、]/)) {
+        if (name.trim()) entry.drivers.add(name.trim());
+      }
+      metrics.count++;
+      for (const [key, field] of [["drive", "drive_mins"], ["idle", "idle_mins"], ["mileage", "mileage"]]) {
+        entry[key] += Number(row[field]);
+        metrics[key] += Number(row[field]);
+      }
+    }
+    return { start, end, displayStart, displayEnd, dates, metrics, vehicles: [...byPlate.values()]
+      .map(entry => ({ ...entry, driver: [...entry.drivers].join("／") }))
+      .sort((a,b) => b.drive - a.drive || a.plate.localeCompare(b.plate)) };
+  }
+
+  function fleetIdleTitle(matrix) {
+    return matrix.displayStart === matrix.displayEnd ? matrix.displayStart : matrix.displayStart + " ～ " + matrix.displayEnd;
+  }
+
+  function fleetIdleMetrics({ metrics, vehicles }) {
+    return fleetKpis([
+      ["出勤車輛 · " + metrics.count + " 筆日報", vehicles.length + " 輛", "amber", "car"],
+      ["總開車時間", fleetDuration(metrics.drive), "blue", "clock"],
+      ["總怠速時間", fleetDuration(metrics.idle), "violet", "idle"],
+      ["總行駛里程", fleetKm(metrics.mileage), "green", "route"]
+    ]);
+  }
+
+  function fleetIdleTable(matrix, exportOnly = false) {
+    const multiDay = matrix.start !== matrix.end;
+    const dateGroups = multiDay ? matrix.dates.map(date => `<th class="fleet-idle-date" scope="colgroup" colspan="2">
+      <time datetime="${date}">${date.slice(5).replace("-", "/")}（${"日一二三四五六"[new Date(date).getUTCDay()]}）</time></th>`).join("") : "";
+    const canEdit = !exportOnly && state.admin && adminCan("fleetOperations");
+    const totals = `<th scope="col" class="fleet-drive-total">${multiDay ? "總開車" : "開車時間"}</th>
+      <th scope="col" class="fleet-idle-total">${multiDay ? "總怠速" : "怠速時間"}</th>
+      <th scope="col" class="fleet-mileage-total">${multiDay ? "總里程" : "里程"}</th>`;
+    return `<table class="fleet-idle-table${multiDay ? " fleet-idle-table-week fleet-two-tier" : ""}" aria-label="怠速${multiDay ? "週報" : "日報"}">
+      <colgroup span="1"></colgroup>
+      ${multiDay ? matrix.dates.map(() => '<colgroup span="2"></colgroup>').join("") : ""}
+      <colgroup span="3"></colgroup>
+      <thead><tr><th scope="col" class="fleet-frozen-column" rowspan="${multiDay ? 2 : 1}">車牌／駕駛</th>
+      ${dateGroups}${multiDay ? '<th scope="colgroup" colspan="3" class="fleet-group-summary">本段合計</th>' : totals}</tr>
+      ${multiDay ? `<tr>${matrix.dates.map(() => '<th scope="col" class="fleet-day-drive">開車</th><th scope="col" class="fleet-day-idle">怠速</th>').join("")}${totals}</tr>` : ""}</thead>
+      <tbody>${matrix.vehicles.map(row => `<tr>
+        <th scope="row" class="fleet-frozen-column">${exportOnly ? escapeHtml(row.plate) : `<button class="fleet-plate-link" data-fleet-go="idle" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button>`}<small class="fleet-idle-driver-name">${escapeHtml(row.driver || "駕駛未記錄")}</small></th>
+        ${multiDay ? matrix.dates.map(date => {
+          const day = row.days.get(date);
+          const edit = canEdit && day ? fleetIdleEditAttrs(row, date) : "";
+          return `<td${edit} class="fleet-day-drive${day ? "" : " fleet-no-reading"}">${fleetDuration(day?.drive_mins)}</td>
+            <td${edit} class="fleet-day-idle${day ? "" : " fleet-no-reading"}${day?.idle_mins > 60 ? " fleet-idle-alert" : ""}">${fleetDuration(day?.idle_mins)}</td>`;
+        }).join("") : ""}
+        <td${canEdit && !multiDay ? fleetIdleEditAttrs(row, matrix.start) : ""} class="fleet-drive-total">${fleetDuration(row.drive)}</td>
+        <td${canEdit && !multiDay ? fleetIdleEditAttrs(row, matrix.start) : ""} class="fleet-idle-total${!multiDay && row.idle > 60 ? " fleet-idle-alert" : ""}">${fleetDuration(row.idle)}</td>
+        <td${canEdit && !multiDay ? fleetIdleEditAttrs(row, matrix.start) : ""} class="fleet-mileage-total">${fleetKm(row.mileage)}</td>
+      </tr>`).join("")}</tbody></table>`;
+  }
+
+  function fleetIdleEditAttrs(row, date, button = false) {
+    return ` data-${button ? "fleet-idle-edit" : "fleet-idle-cell"}="${escapeHtml(row.vehicleId)}" data-fleet-idle-date="${date}"${button ? "" : ' tabindex="0" title="點兩下或按 Enter 編輯日報"'}`;
+  }
+
+  function openFleetIdleEditor(vehicleId, date) {
+    if (!state.admin || !adminCan("fleetOperations") || document.querySelector("#fleetIdleEditForm")) return;
+    const view = fleetOperationsState();
+    const row = view.rows?.find(item => item.vehicle_id === vehicleId && item.record_date === date);
+    const vehicle = state.data.vehicles.find(item => item.id === vehicleId);
+    if (!row || !vehicle) return;
+    const durationField = (key, label, value) => `<fieldset class="field fleet-idle-duration">
+      <legend>${label}</legend>
+      <label><input type="number" name="${key}_hours" min="0" max="24" step="1" value="${Math.floor(value / 60)}" required> 小時</label>
+      <label><input type="number" name="${key}_minutes" min="0" max="59" step="1" value="${value % 60}" required> 分鐘</label>
+    </fieldset>`;
+    openFleetForm("編輯怠速日報", "fleetIdleEditForm", `
+      <p class="field full fleet-muted">${escapeHtml(vehicle.plate_no)} · ${escapeHtml(date)}</p>
+      ${durationField("drive", "開車時間", row.drive_mins)}
+      ${durationField("idle", "怠速時間", row.idle_mins)}
+      ${fleetNumericField("mileage", "里程（公里）", row.mileage, "any")}
+    `, async fields => {
+      const duration = key => Number(fields.get(key + "_hours")) * 60 + Number(fields.get(key + "_minutes"));
+      const values = { drive_mins: duration("drive"), idle_mins: duration("idle"), mileage: Number(fields.get("mileage")) };
+      if (values.drive_mins > 1440 || values.idle_mins > 1440) throw new Error("單日時間最多 24 小時 0 分鐘。");
+      await apiRequest("edit_fleet_idle", { vehicle_id: vehicleId, record_date: date, values, before: row });
+      await loadFleetOperations(view);
+    });
+  }
+
+  function fleetNumericField(name, label, value, step, max) {
+    return `<label class="field"><span>${label}</span><input type="number" name="${name}" min="0" step="${step}" ${max ? `max="${max}"` : ""} value="${escapeHtml(value)}" required></label>`;
+  }
+
+  function openFleetForm(title, id, content, save, submitLabel = "儲存") {
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<section class="modal fleet-case-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}">
+      <div class="modal-title"><h3>${escapeHtml(title)}</h3><button class="ghost-btn" data-close-modal aria-label="關閉">×</button></div>
+      <form id="${id}" class="modal-form"><div class="modal-form-body fleet-edit-fields">${content}<p data-fleet-form-error class="field full fleet-overdue" role="alert" hidden></p></div>
+      <div class="modal-actions"><button class="ghost-btn" type="button" data-close-modal>取消</button><button class="primary-btn" type="submit">${submitLabel}</button></div></form></section>`;
+    const form = modal.querySelector("form");
+    form.addEventListener("submit", async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const button = form.querySelector('[type="submit"]');
+      if (button.disabled) return;
+      const errorBox = form.querySelector("[data-fleet-form-error]");
+      errorBox.hidden = true;
+      button.disabled = true;
+      button.textContent = "處理中…";
+      try {
+        if (await save(new FormData(form), form) !== false) modal.remove();
+      } catch (error) {
+        errorBox.textContent = error.message;
+        errorBox.hidden = false;
+      } finally {
+        button.disabled = false;
+        button.textContent = button.dataset.submitLabel || submitLabel;
+      }
+    });
+    document.body.appendChild(modal);
+    (form.querySelector("input:not([type=hidden]), select, textarea") || modal.querySelector("[data-close-modal]")).focus();
+    return form;
+  }
+
+  document.addEventListener("dblclick", event => {
+    const cell = event.target.closest("[data-fleet-idle-cell]");
+    if (cell) openFleetIdleEditor(cell.dataset.fleetIdleCell, cell.dataset.fleetIdleDate);
+  });
+  document.addEventListener("keydown", event => {
+    const cell = event.target.closest?.("[data-fleet-idle-cell]");
+    if (cell && event.key === "Enter") {
+      event.preventDefault();
+      openFleetIdleEditor(cell.dataset.fleetIdleCell, cell.dataset.fleetIdleDate);
+    }
+  });
+
+  function fleetIdleCards(matrix) {
+    return '<div class="fleet-idle-cards">' + matrix.vehicles.map(row =>
+      '<article class="fleet-idle-card"><button class="fleet-plate-link" data-fleet-go="idle" data-plate="' + escapeHtml(row.plate) + '">' + escapeHtml(row.plate) + '</button>' +
+      ('<small class="fleet-muted">' + (row.driver ? '駕駛 · ' + escapeHtml(row.driver) : "駕駛未記錄") + '</small>') +
+      (state.admin && matrix.start === matrix.end ? `<button class="ghost-btn" type="button"${fleetIdleEditAttrs(row, matrix.start, true)}>編輯日報</button>` : "") +
+      '<dl><div><dt>總開車</dt><dd>' + fleetDuration(row.drive) + '</dd></div><div><dt>總怠速</dt><dd class="' +
+      (matrix.start === matrix.end && row.idle > 60 ? "fleet-idle-alert" : "") + '">' + fleetDuration(row.idle) +
+      '</dd></div><div><dt>總里程</dt><dd>' + fleetKm(row.mileage) + '</dd></div></dl>' +
+      (matrix.start !== matrix.end ? '<details><summary>逐日明細（' + row.days.size + ' 天有紀錄）</summary><div class="fleet-idle-card-days">' +
+        '<span>日期</span><span>開車</span><span>怠速</span>' + matrix.dates.map(date => {
+          const day = row.days.get(date);
+          return (state.admin && day ? `<button class="fleet-plate-link" type="button"${fleetIdleEditAttrs(row, date, true)}>${date.slice(5).replace("-", "/")}</button>` :
+            '<time datetime="' + date + '">' + date.slice(5).replace("-", "/") + '</time>') + '<span>' +
+            fleetDuration(day?.drive_mins) + '</span><span class="' + (day?.idle_mins > 60 ? "fleet-idle-alert" : "") +
+            '">' + fleetDuration(day?.idle_mins) + '</span>';
+        }).join("") + '</div></details>' : "") + '</article>').join("") + '</div>';
+  }
+
+  function fleetScheduleIsClosed(event) {
+    return /已完成|已取消|已結案/.test(event.status || "") ||
+      /^(?:completed?|cancelled|canceled|closed)$/i.test(String(event.status || "").trim());
+  }
+
+  function fleetCompletedServiceDates() {
+    const dates = new Map();
+    for (const record of state.data.vehicle_service_records || []) {
+      if (!record.vehicle_id || !record.service_date || record.service_date > today()) continue;
+      for (const [kind, types] of [["maintenance", /定期保養/], ["tires", /輪胎|調胎/], ["repair", /維修|事故修復/]]) {
+        if (!types.test(record.record_type || "")) continue;
+        const key = record.vehicle_id + "/" + kind;
+        if (!dates.has(key) || dates.get(key) < record.service_date) dates.set(key, record.service_date);
+      }
+    }
+    return dates;
+  }
+
+  function fleetCalendarOverdue(event, completedDates) {
+    if (!fleetServiceTypes.has(event.event_type) || !event.event_date || event.event_date >= today() || fleetScheduleIsClosed(event)) return false;
+    const vehicleId = event.vehicle_id || fleetScopedVehicle(event.plate_no || "")?.id;
+    return !vehicleId || (completedDates.get(vehicleId + "/" + event.event_type) || "") < event.event_date;
+  }
+
+  function fleetProjections(rows, telemetry = []) {
+    const asOf = today();
+    const serviceHistory = new Map();
+    const completedDates = fleetCompletedServiceDates();
+    for (const record of state.data.vehicle_service_records || []) {
+      if (!record.service_date || record.service_date > asOf) continue;
+      if (!serviceHistory.has(record.vehicle_id)) serviceHistory.set(record.vehicle_id, []);
+      serviceHistory.get(record.vehicle_id).push(record);
+    }
+    const vehicleByPlate = new Map((state.data.vehicles || []).map(vehicle => [window.HeycarFleetReports.plateKey(vehicle.plate_no), vehicle.id]));
+    const events = new Map();
+    for (const event of calendarItems(true)) {
+      if (!event.event_date || fleetScheduleIsClosed(event)) continue;
+      const id = event.vehicle_id || vehicleByPlate.get(window.HeycarFleetReports.plateKey(event.plate_no));
+      const key = id + "/" + event.event_type;
+      if (completedDates.get(key) >= event.event_date) continue;
+      const prev = events.get(key);
+      if (!prev || (prev.event_date >= asOf && event.event_date < prev.event_date) ||
+          (prev.event_date < asOf && event.event_date > prev.event_date)) events.set(key, event);
+    }
+    const observed = new Map();
+    for (const row of telemetry || []) {
+      if (!observed.has(row.vehicle_id)) observed.set(row.vehicle_id, { days: 0, km: 0, idle: 0 });
+      const totals = observed.get(row.vehicle_id);
+      totals.days++;
+      totals.km += Number(row.mileage || 0);
+      totals.idle += Number(row.idle_mins || 0);
+    }
+    return rows.map(row => {
+      const history = [...(serviceHistory.get(row.vehicle_id) || [])]
+        .sort((a, b) => b.service_date.localeCompare(a.service_date) || Number(b.odometer || 0) - Number(a.odometer || 0));
+      const readings = history.filter(item => item.odometer !== null && item.odometer !== undefined && Number.isFinite(Number(item.odometer)) && Number(item.odometer) >= 0)
+        .map(item => ({ date: item.service_date, km: Number(item.odometer) }));
+      const fuel = row.last_fill_date && row.last_fill_mileage > 0 ? { date: row.last_fill_date, km: Number(row.last_fill_mileage) } : null;
+      const trusted = window.HeycarFleetReports.trustedOdometerReadings(fuel ? [...readings, fuel] : readings);
+      const isTrusted = (date, km) => trusted.has(Date.parse(date) + "/" + Number(km));
+      const fuelIssue = fuel && !isTrusted(fuel.date, fuel.km);
+      const staleFuel = fuel && fuel.date < fleetShiftDate(asOf, -30);
+      const odometer = readings.find(item => isTrusted(item.date, item.km));
+      const newerOdometer = !fuelIssue && !staleFuel && odometer && fuel && odometer.date >= fuel.date && odometer.km >= fuel.km;
+      const estimateStats = newerOdometer ? { ...row, last_fill_date: odometer.date, last_fill_mileage: odometer.km } : row;
+      return { ...row, fuelIssue, staleFuel, observed: observed.get(row.vehicle_id),
+        services: [["maintenance", /定期保養/, 10000], ["tires", /輪胎|調胎/, 20000]].map(([kind, types, interval]) => {
+          const last = history.find(record => types.test(record.record_type || ""));
+          const suspect = last && ((last.odometer != null && !isTrusted(last.service_date, last.odometer)) ||
+            (last.odometer != null && last.next_service_odometer != null && Number(last.next_service_odometer) <= Number(last.odometer)));
+          return { kind, last, suspect: Boolean(suspect || fuelIssue), baselineSuspect: Boolean(suspect),
+            scheduled: events.get(row.vehicle_id + "/" + kind),
+            forecast: suspect || fuelIssue || staleFuel ? null :
+              window.HeycarFleetReports.projectService(estimateStats, last?.odometer, last?.next_service_odometer, interval, asOf) };
+        })
+      };
+    });
+  }
+
+  function fleetServiceScheduleExpired(service) {
+    return Boolean(service.scheduled?.event_date && service.scheduled.event_date < today());
+  }
+
+  function fleetServiceScheduleNote(service) {
+    if (fleetServiceScheduleExpired(service)) return '<small class="fleet-overdue">排程已過期，請改排</small>';
+    const { scheduled, forecast } = service;
+    if (scheduled) return `<small>排程 ${escapeHtml(scheduled.event_date)}${scheduled.vendor ? " · " + escapeHtml(scheduled.vendor) : ""}</small>`;
+    return `<small>系統建議 ${escapeHtml(forecast?.date || "—")}</small>`;
+  }
+
+  function fleetServiceStatus(service) {
+    if (fleetServiceScheduleExpired(service)) return ["逾期未完成", "rose"];
+    if (service.suspect) return ["里程可疑", "amber"];
+    if (service.scheduled) return ["已排程", "slate"];
+    const status = service.forecast?.status;
+    if (status === "已達建議里程") return ["已達里程", "rose"];
+    if (status === "即將到期") return ["即將到期", "amber"];
+    if (status === "未到期") return ["正常", "green"];
+    return [service.last?.odometer == null ? "待登記里程" : "待補加油資料", "blue"];
+  }
+
+  function fleetNeedsAttention(service) {
+    return service.suspect || (fleetServiceStatus(service)[1] !== "green" && !(
+      service.scheduled && service.scheduled.event_date >= today()
+    ));
+  }
+
+  function fleetServiceActions(row, service) {
+    const { kind, scheduled, forecast } = service;
+    const label = calendarTypeName(kind);
+    const attrs = `data-vehicle="${escapeHtml(row.vehicle_id)}" data-kind="${kind}"`;
+    return `<div class="fleet-service-actions">
+      ${adminCan("calendar") ? (scheduled
+        ? `<button class="ghost-btn" data-modal="calendarEvent" data-id="${escapeHtml(scheduled.id)}">${fleetServiceScheduleExpired(service) ? "改排" : "查看排程"}</button>`
+        : `<button class="ghost-btn" data-fleet-schedule="${escapeHtml(row.vehicle_id)}" data-kind="${kind}" data-date="${forecast?.date || today()}">安排${label}</button>`) : ""}
+      ${adminCan("serviceRecords") ? service.baselineSuspect && service.last?.id
+        ? `<button class="fleet-register-btn" data-modal="serviceRecord" data-id="${escapeHtml(service.last.id)}">核對里程</button>`
+        : `<button class="fleet-register-btn" ${attrs} data-fleet-register>登記${label}</button>` : ""}
+    </div>`;
+  }
+
+  function fleetServiceDistance(service) {
+    const remaining = service.forecast?.remaining;
+    if (remaining == null) return "—";
+    return (remaining < 0 ? "超過 " : "剩 ") + fleetKm(Math.abs(remaining));
+  }
+
+  function fleetServiceBaseline(service) {
+    return service.last ? escapeHtml(service.last.service_date) + " · " + fleetKm(service.last.odometer) : "尚未登記";
+  }
+
+  function fleetServiceBadge(service) {
+    const [label, tone] = fleetServiceStatus(service);
+    return `<span class="fleet-status" data-tone="${tone}">${label}</span>
+      ${service.suspect && label !== "里程可疑" ? '<span class="fleet-status" data-tone="amber">里程可疑</span>' : ""}`;
+  }
+
+  function fleetFuelRow(row) {
+    const estimate = row.services.find(service => service.forecast)?.forecast.estimate;
+    return `<article class="fleet-forecast-card">
+      <header><div><button class="fleet-plate-link" data-fleet-go="fuel" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button>
+        <small>${escapeHtml([row.driver, row.model].filter(Boolean).join(" · ") || "車輛管理資料")}</small></div>
+        <div class="fleet-average"><small>平均日里程</small><strong>${fleetKm(row.avg_daily_km)}</strong></div></header>
+      <div class="fleet-forecast-services">${row.services.map(service => {
+        const { kind, last, forecast } = service;
+        const interval = forecast?.target - Number(last?.odometer);
+        const progress = interval > 0 && forecast?.remaining != null ? Math.round(100 * (1 - forecast.remaining / interval)) : null;
+        return `<section data-kind="${kind}">
+          <div class="fleet-forecast-kind"><strong>${calendarTypeName(kind)}</strong>${fleetServiceBadge(service)}</div>
+          ${progress == null ? "" : `<progress max="100" value="${Math.min(100, Math.max(0, progress))}" aria-label="${calendarTypeName(kind)}里程進度"></progress>`}
+          <div class="fleet-distance"><span>下次 <strong>${fleetKm(forecast?.target)}</strong></span>
+          <strong class="${forecast?.remaining < 0 ? "fleet-overdue" : ""}">${fleetServiceDistance(service)}</strong></div>
+          <small>上次 ${fleetServiceBaseline(service)}</small>
+          ${fleetServiceScheduleNote(service)}
+          ${fleetServiceActions(row, service)}
+        </section>`;
+      }).join("")}</div>
+      <footer>
+        <span>加油 ${fleetKm(row.last_fill_mileage)}${row.last_fill_date ? " · " + escapeHtml(row.last_fill_date) : ""}${row.fuelIssue ? " · 里程可疑，暫停預測" : row.staleFuel ? " · 加油資料超過 30 天，暫停預測" : ""}</span>
+        ${estimate == null ? "" : `<span>估計目前 ${fleetKm(estimate)}</span>`}
+        ${row.observed ? `<span>近 7 日實際 ${fleetKm(row.observed.km)} · ${row.observed.days} 天有日報</span>` : ""}
+        <button data-fleet-go="idle" data-recent data-plate="${escapeHtml(row.plate)}">看近七日怠速 →</button>
+      </footer></article>`;
+  }
+
+  function fleetForecastTable(rows) {
+    const services = [["maintenance", "保養"], ["tires", "調胎"]];
+    return `<div class="fleet-table-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格">
+      <table class="fleet-data-table fleet-forecast-table fleet-two-tier">
+        <colgroup span="1"></colgroup><colgroup span="2"></colgroup><colgroup span="3"></colgroup><colgroup span="3"></colgroup><colgroup span="1"></colgroup>
+        <thead><tr>
+          <th scope="col" rowspan="2" class="fleet-frozen-column">車輛</th><th scope="colgroup" colspan="2">里程資料</th>
+          ${services.map(([kind, label]) => `<th scope="colgroup" colspan="3" data-kind="${kind}">${label}</th>`).join("")}
+          <th scope="col" rowspan="2">近七日實際行駛</th>
+        </tr><tr>
+          <th scope="col">平均里程</th><th scope="col">最近加油</th>
+          ${services.map(([kind]) => ["狀態／剩餘", "上次／目標", "建議日期／排程"].map(label => `<th scope="col" data-kind="${kind}">${label}</th>`).join("")).join("")}
+        </tr></thead><tbody>
+        ${rows.map(row => `<tr>
+          <th scope="row" class="fleet-frozen-column">
+            <button class="fleet-plate-link" data-fleet-go="fuel" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button>
+            ${row.driver ? `<small>${escapeHtml(row.driver)}</small>` : ""}
+            <small>${escapeHtml(row.model || "—")}</small>
+          </th>
+          <td data-label="平均里程">
+            <div class="fleet-cell-pair"><span>日均</span><strong>${fleetKm(row.avg_daily_km)}</strong></div>
+            <div class="fleet-cell-pair"><span>週均</span><strong>${fleetKm(row.avg_daily_km == null ? null : row.avg_daily_km * 7)}</strong></div>
+            <div class="fleet-cell-pair"><span>月均</span><strong>${fleetKm(row.avg_daily_km == null ? null : row.avg_daily_km * 30)}</strong></div>
+          </td>
+          <td data-label="最近加油"><strong>${fleetKm(row.last_fill_mileage)}</strong><small>${escapeHtml(row.last_fill_date || "尚無紀錄")}</small>
+            ${row.fuelIssue || row.staleFuel ? `<span class="fleet-status" data-tone="amber">${row.fuelIssue ? "里程可疑" : "加油資料過舊"}</span>` : ""}</td>
+          ${row.services.map(service => {
+            const label = calendarTypeName(service.kind);
+            const { forecast } = service;
+            return `<td data-label="${label} · 狀態／剩餘" data-kind="${service.kind}">
+              ${fleetServiceBadge(service)}<strong class="fleet-table-distance${forecast?.remaining < 0 ? " fleet-overdue" : ""}">${fleetServiceDistance(service)}</strong>
+            </td><td data-label="${label} · 上次／目標" data-kind="${service.kind}">
+              <small>上次 ${fleetServiceBaseline(service)}</small><div class="fleet-cell-pair"><span>目標</span><strong>${fleetKm(forecast?.target)}</strong></div>
+            </td><td data-label="${label} · 日期／操作" data-kind="${service.kind}" class="fleet-forecast-actions-cell">
+              ${fleetServiceScheduleNote(service)}
+              ${fleetServiceActions(row, service)}
+            </td>`;
+          }).join("")}
+          <td data-label="近七日實際行駛">${row.observed ? `<strong>${fleetKm(row.observed.km)}</strong><small>怠速 ${fleetDuration(row.observed.idle)}</small><small>${row.observed.days} 天有日報</small>` : "<small>無日報</small>"}
+            <button class="fleet-plate-link" data-fleet-go="idle" data-recent data-plate="${escapeHtml(row.plate)}">查看日報</button></td>
+        </tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function fleetForecastMetrics(rows) {
+    const services = rows.flatMap(row => row.services);
+    const count = (kind, tone) => services.filter(service => service.kind === kind && fleetServiceStatus(service)[1] === tone).length;
+    const booked = services.filter(service => service.scheduled && service.scheduled.event_date >= today()).length;
+    return fleetKpis([
+      ["追蹤車輛", rows.length + " 輛", "slate", "car"],
+      ["保養 · 已達／待登記", count("maintenance", "rose") + " 輛", "rose", "clock"],
+      ["調胎 · 已達／待登記", count("tires", "rose") + " 輛", "amber", "clock"],
+      ["即將到期", services.filter(service => fleetServiceStatus(service)[1] === "amber").length + " 項", "amber", "route"],
+      ["已排程", booked + " 項", "blue", "document"],
+      ["待補資料", services.filter(service => fleetServiceStatus(service)[1] === "blue").length + " 項", "violet", "idle"]
+    ]);
+  }
+
+  function fleetCalendarMatches(item, view) {
+    const vehicle = item.vehicle_id ? state.data.vehicles.find(row => row.id === item.vehicle_id)
+      : item.plate_no ? fleetScopedVehicle(item.plate_no) : null;
+    if (vehicle?.show_maintenance_report === false) return false;
+    const key = window.HeycarFleetReports.plateKey(view.search);
+    return (view.calendarKind === "all" || view.calendarKind === (item.event_type || "other")) &&
+      (!view.calendarVendor || item.vendor === view.calendarVendor ||
+        (item.vendor_partner_id && state.data.insurance_partners.some(shop => shop.id === item.vendor_partner_id && shop.name === view.calendarVendor))) &&
+      (!view.search || (key && window.HeycarFleetReports.plateKey(item.plate_no).includes(key)));
+  }
+
+  function fleetCalendarSuggestions(view, projections = fleetProjections(fleetReportRows(view), view.telemetry)) {
+    const suggestions = new Map();
+    if (!adminCan("fleetOperations") || !view.showSuggestions || view.calendarVendor) return suggestions;
+    for (const row of projections) {
+      for (const service of row.services) {
+        const date = service.forecast?.date;
+        if (service.scheduled || !date || date.slice(0, 7) !== state.calendarMonth.slice(0, 7) ||
+            (view.calendarKind !== "all" && view.calendarKind !== service.kind)) continue;
+        if (!suggestions.has(date)) suggestions.set(date, []);
+        suggestions.get(date).push({ plate: row.plate, id: row.vehicle_id, kind: service.kind });
+      }
+    }
+    return suggestions;
+  }
+
+  function fleetCalendarControls(view, projections) {
+    const vendors = repairShopNames();
+    if (view.calendarVendor && !vendors.includes(view.calendarVendor)) vendors.push(view.calendarVendor);
+    const due = !adminCan("fleetOperations") || view.calendarVendor ? [] : projections.flatMap(row => row.services
+      .filter(service => !service.scheduled && service.forecast?.remaining != null && fleetNeedsAttention(service) &&
+        (view.calendarKind === "all" || view.calendarKind === service.kind))
+      .map(service => ({ row, service }))).sort((a, b) => a.service.forecast.remaining - b.service.forecast.remaining);
+    return `<section class="fleet-surface fleet-calendar-controls">
+      <div class="fleet-list-toolbar"><form id="fleetOpsSearch" class="fleet-ops-search">
+        <input type="search" name="q" aria-label="搜尋月曆車牌" placeholder="搜尋車牌" value="${escapeHtml(view.search)}">
+        <button class="ghost-btn" type="submit">搜尋</button></form>
+        <div class="fleet-case-tabs" aria-label="月曆顯示方式">${[["month", "月曆"], ["list", "清單"]].map(([key, label]) =>
+          `<button class="ghost-btn" data-fleet-calendar-layout="${key}" aria-pressed="${view.calendarLayout === key}">${label}</button>`).join("")}
+          <button class="ghost-btn" data-fleet-calendar-today>今天</button>
+        </div></div>
+      <div class="fleet-calendar-filters">
+        <div class="fleet-case-tabs" aria-label="排程類型">${[["all", "全部"], ["maintenance", "保養"], ["tires", "調胎"], ["repair", "維修"], ["other", "其他"]].map(([key, label]) =>
+          `<button class="ghost-btn" data-fleet-calendar-kind="${key}" aria-pressed="${view.calendarKind === key}">${label}</button>`).join("")}</div>
+        <select data-fleet-calendar-vendor aria-label="保養廠"><option value="">全部保養廠</option>${vendors.map(vendor =>
+          `<option value="${escapeHtml(vendor)}" ${view.calendarVendor === vendor ? "selected" : ""}>${escapeHtml(vendor)}</option>`).join("")}</select>
+        ${adminCan("fleetOperations") ? `<label class="fleet-check"><input type="checkbox" data-fleet-show-suggestions ${view.showSuggestions ? "checked" : ""}>顯示系統建議</label>` : ""}
+      </div>
+    </section>
+    ${due.length ? `<section class="fleet-surface fleet-calendar-queue">
+      <h3>待安排 <small>${due.length} 項</small></h3>
+      <div>${due.map(({row, service}) => `<button data-fleet-schedule="${escapeHtml(row.vehicle_id)}" data-kind="${service.kind}" data-date="${service.forecast.date || today()}" data-tone="${fleetServiceStatus(service)[1]}">
+        <strong>${escapeHtml(row.plate)} <small>${escapeHtml(row.model)}</small></strong><span>${calendarTypeName(service.kind)} · ${fleetServiceDistance(service)}</span></button>`).join("")}</div>
+    </section>` : ""}`;
+  }
+
+  function renderFleetImport(view, preview) {
+    const idle = view.section === "importIdle";
+    const [kind, title, note, label] = idle
+      ? ["idle", "每日多工彙總表", "可一次匯入多天的開車、停不熄火和里程報表。", "匯入怠速 Excel"]
+      : ["fuel", "加油站交易明細", "以車牌彙整加油里程，供保養及調胎預測。", "匯入加油 Excel"];
+    return `<section class="fleet-surface fleet-import-card">
+      <h3>${title}</h3><p>${note}</p>
+      <label class="fleet-dropzone">${iconSvg("M7 17H6a4 4 0 1 1 1-8 5 5 0 0 1 10 1h1a3.5 3.5 0 1 1 0 7h-1M12 20V11m-3 3 3-3 3 3")}
+        <strong>${label}</strong><small>可選多份 .xls 或 .xlsx</small>
+        <input type="file" aria-label="${label}" data-fleet-import="${kind}" accept=".xls,.xlsx" multiple ${view.draft?.saving ? "disabled" : ""}>
+      </label>
+    </section>
+    ${preview}
+    ${idle ? `<section class="fleet-surface fleet-import-dates"><h3>近 31 天已匯入的怠速日期</h3>
+      ${view.error ? `<p role="alert">${escapeHtml(view.error)} <button class="ghost-btn" data-fleet-ops-refresh>重試</button></p>` : view.loading ? '<p role="status">正在載入…</p>' : view.importedDates.length
+        ? `<div>${view.importedDates.map(date => `<button data-fleet-go="idle" data-date="${date}">${date}</button>`).join("")}</div>`
+        : "<p>這段期間沒有怠速日報。</p>"}
+    </section>` : ""}`;
+  }
+
+  function renderFleetReportSettings(view, navigation) {
+    const query = normalizedText(view.settingsSearch || "");
+    const vehicles = state.data.vehicles.map(vehicle => ({ vehicle, driver: vehicleAssignedDriverLabel(vehicle) }))
+      .filter(({ vehicle, driver }) => !query || normalizedText([vehicle.plate_no, vehicle.model, driver].join(" ")).includes(query))
+      .sort((a, b) => String(a.vehicle.plate_no).localeCompare(String(b.vehicle.plate_no)));
+    const page = fleetListPage(vehicles, view.settingsPage, 25, "data-fleet-settings-page");
+    const toggle = (vehicle, key, label) => `<label class="fleet-report-toggle"><input type="checkbox" data-report-visibility="${key}"
+      data-report-vehicle="${escapeHtml(vehicle.id)}" aria-label="${escapeHtml(vehicle.plate_no + " " + label)}"
+      ${vehicle[key] !== false ? "checked" : ""}><span>${label}</span></label>`;
+    return `<section class="fleet-case-page fleet-workspace">${navigation}
+      <section class="fleet-surface fleet-report-settings">
+        <form id="fleetReportSettingsSearch" class="fleet-list-toolbar"><label>搜尋車輛或使用人
+          <input type="search" name="q" value="${escapeHtml(view.settingsSearch || "")}"></label><button class="ghost-btn">查詢</button></form>
+        <p class="fleet-muted">使用人取自車輛管理。勾選後會立即更新報表顯示設定。</p>
+        <div class="fleet-report-settings-list">${page.rows.map(({ vehicle, driver }) => `<article>
+          <div><strong>${escapeHtml(vehicle.plate_no || "—")}</strong><small>使用人 ${escapeHtml(driver || "未登記")}</small></div>
+          ${toggle(vehicle, "show_maintenance_report", "顯示保養")}${toggle(vehicle, "show_idle_report", "顯示怠速")}
+        </article>`).join("") || '<p class="empty">沒有符合的車輛</p>'}</div>${page.controls}
+      </section>
+    </section>`;
+  }
+
+  function renderFleetOperations() {
+    const view = fleetOperationsState();
+    const navigation = fleetWorkspaceNav(view.section);
+    if (["maintenanceSettings", "idleSettings"].includes(view.section)) return renderFleetReportSettings(view, navigation);
+    if (view.section === "notifications") {
+      return `<section class="fleet-case-page fleet-workspace">${navigation}${renderFleetNotifications(view)}</section>`;
+    }
+    if (!view.rows && !view.loading && !view.error) void loadFleetOperations(view);
+    const context = fleetVehicleContext(view.search, view.section);
+    if (view.section === "calendar") {
+      const projections = fleetProjections(fleetReportRows(view), view.telemetry);
+      const suggestions = fleetCalendarSuggestions(view, projections);
+      return `<section class="fleet-case-page fleet-workspace" data-calendar-layout="${view.calendarLayout}">${navigation}${context}
+        ${fleetCalendarControls(view, projections)}
+        ${view.loading ? '<p role="status">正在讀取保養預測…</p>' :
+          view.error ? '<p role="alert">保養預測載入失敗：' + escapeHtml(view.error) + ' <button class="ghost-btn" data-fleet-ops-refresh>重試</button></p>' : ""}
+        ${renderCalendar(true, suggestions)}</section>`;
+    }
+    const importing = view.section === "importIdle" || view.section === "importFuel";
+    const allRows = importing ? [] : fleetReportRows(view);
+    const projections = view.section === "fuel" ? fleetProjections(allRows, view.telemetry).sort((a, b) =>
+      Number(b.services.some(fleetNeedsAttention)) - Number(a.services.some(fleetNeedsAttention)) || a.plate.localeCompare(b.plate)) : [];
+    const rows = view.section === "fuel" ? (view.attention ? projections.filter(row => row.services.some(fleetNeedsAttention)) : projections)
+      : view.section === "policy" && view.policyFilter && view.policyFilter !== "all"
+        ? allRows.filter(row => row.policies.some(item => fleetPolicyExpiryMatches(item, view.policyFilter))) : allRows;
+    const idle = view.section === "idle";
+    const policy = view.section === "policy";
+    const { rows: visible, controls: pager } = policy
+      ? fleetListPage(rows, view.page, 12, "data-fleet-ops-page")
+      : { rows, controls: "" };
+    const matrix = idle ? fleetIdleMatrix(view, rows) : null;
+    const importer = state.admin && (idle || view.section === "fuel")
+      ? '<label class="ghost-btn fleet-ops-upload">匯入' + (idle ? "怠速" : "加油") + ' Excel<input type="file" data-fleet-import="' + (idle ? "idle" : "fuel") + '" accept=".xlsx,.xls" multiple></label>' : "";
+    const draft = view.draft;
+    const idleDraft = draft?.kind === "idle";
+    const preview = draft ? '<section class="fleet-ops-preview"><h3>' + (idleDraft ? "怠速報表" : "加油紀錄") + ' · 匯入預覽</h3><p>可匯入 ' + draft.rows.length +
+      ' 筆 · 無效 ' + draft.invalid + ' 筆 · 無法對應車牌 ' + draft.unmatched + ' 筆 · 檔案重複 ' + draft.duplicates +
+      ' 筆</p>' + (draft.conflicts ? '<p role="alert">同車同日有 ' + draft.conflicts + ' 筆數值衝突，請修正報表再匯入。</p>' : "") +
+      (idleDraft ? '<p>已存在的同車同日紀錄會以這次確認的數值更新。</p>' : "") +
+      '<ul>' + draft.rows.slice(0, 8).map(row => '<li>' + escapeHtml(row.plate) + ' · ' +
+        escapeHtml(row.record_date || row.last_fill_date) + ' · ' +
+        (idleDraft ? "怠速 " + fleetDuration(row.idle_mins) : "里程 " + Number(row.last_fill_mileage).toLocaleString() + " km") + '</li>').join("") + '</ul>' +
+      (idleDraft ? '<label><input type="checkbox" data-fleet-share-idle> 已核對當時歸屬，依現有車商開放本批報表</label>' : "") +
+      '<div class="actions"><button class="primary-btn" data-fleet-import-save ' +
+      (!draft.rows.length || draft.rows.length > 2000 || draft.conflicts || draft.saving ? "disabled" : "") + '>確認匯入</button>' +
+      '<button class="ghost-btn" data-fleet-import-cancel ' + (draft.saving ? "disabled" : "") + '>取消</button></div></section>' : "";
+    if (importing) {
+      return `<section class="fleet-case-page fleet-workspace">${navigation}${renderFleetImport(view, preview)}</section>`;
+    }
+    const idleRange = idle && view.mode === "range" && view.start !== view.end ? '<div class="fleet-case-pager">' +
+      '<button class="ghost-btn" data-fleet-range-step="-1" ' + (view.weekIndex === 0 ? "disabled" : "") + '>上一段</button>' +
+      '<span>顯示 ' + fleetIdleTitle(matrix) + '</span><button class="ghost-btn" data-fleet-range-step="1" ' +
+      (matrix.end >= view.end ? "disabled" : "") + '>下一段</button></div>' : "";
+    const body = view.error ? '<div class="empty" role="alert">' + escapeHtml(view.error) + ' <button class="ghost-btn" data-fleet-ops-refresh>重試</button></div>'
+      : view.loading ? '<div class="empty" role="status">正在載入車務資料…</div>'
+      : idle ? idleRange + (matrix.vehicles.length ? fleetIdleMetrics(matrix) +
+        '<div class="fleet-idle-report"><header><h3>車輛怠速' + (matrix.start === matrix.end ? "日報" : "週報") +
+        '</h3><p>' + fleetIdleTitle(matrix) + ' · 單日怠速超過 60 分鐘以紅字標記。' + (state.admin ? " 點兩下數字可編輯該車日報。" : "") + '</p></header>' +
+        '<div class="fleet-idle-scroll" tabindex="0" role="region" aria-label="怠速報表明細">' + fleetIdleTable(matrix) + '</div>' +
+        fleetIdleCards(matrix) + '</div>' : '<div class="empty">這段期間沒有符合條件的怠速紀錄</div>')
+      : visible.length ? (policy ? '<div class="fleet-case-list">' + visible.map(vehicle => fleetPolicyCard(vehicle)).join("") + '</div>'
+        : view.forecastLayout === "table" ? fleetForecastTable(visible)
+        : '<div class="fleet-forecast-grid">' + visible.map(fleetFuelRow).join("") + '</div>') + pager
+      : '<div class="empty">' + (policy ? "目前沒有符合條件的資料" : "沒有符合條件的車輛。可調整篩選或先匯入加油報表。") + '</div>';
+    const policyTools = policy ? `<div class="fleet-case-tabs" aria-label="保單到期篩選">${[["all", "全部保單"], ["thisMonth", "本月到期"], ["nextMonth", "下月到期"], ["expired", "已到期"]]
+      .map(([key, label]) => `<button class="ghost-btn" data-policy-expiry-filter="${key}" aria-pressed="${(view.policyFilter || "all") === key}">${label}</button>`).join("")}</div>` : "";
+    const idleTools = idle ? '<div class="fleet-idle-modes" aria-label="怠速報表期間">' +
+      [["day", "單日"], ["week", "整週"], ["range", "自訂期間"]].map(([key, name]) =>
+        '<button class="ghost-btn" type="button" data-fleet-idle-period="' + key + '" aria-pressed="' + (view.mode === key) + '">' +
+        name + '</button>').join("") + '</div>' + (view.mode === "range"
+        ? '<label>起日<input type="date" name="start" required value="' + view.start + '"></label><label>迄日<input type="date" name="end" required value="' + view.end + '"></label>'
+        : '<div class="fleet-idle-date-controls"><button class="ghost-btn" type="button" data-fleet-idle-step="-1" aria-label="' +
+          (view.mode === "day" ? "前一天" : "上一週") + '">‹</button><label>' + (view.mode === "day" ? "日期" : "週內日期") +
+          '<input type="date" name="anchor" required value="' + view.anchor + '"></label><button class="ghost-btn" type="button" data-fleet-idle-step="1" aria-label="' +
+          (view.mode === "day" ? "後一天" : "下一週") + '">›</button></div>') : "";
+    const forecastTools = view.section === "fuel" ? `<div class="fleet-case-tabs" aria-label="保養顯示方式">
+      <button class="ghost-btn" data-fleet-attention aria-pressed="${view.attention}">只看需關注</button>
+      <button class="ghost-btn" data-fleet-forecast-layout="cards" aria-pressed="${view.forecastLayout === "cards"}">卡片</button>
+      <button class="ghost-btn" data-fleet-forecast-layout="table" aria-pressed="${view.forecastLayout === "table"}">完整表格</button>
+    </div>` : "";
+    return '<section class="fleet-case-page fleet-workspace">' + navigation + context +
+      (projections.length && !view.loading && !view.error ? fleetForecastMetrics(projections) : "") +
+      '<div class="fleet-case-tools fleet-surface fleet-report-controls"><form id="fleetOpsSearch" class="fleet-ops-search">' + idleTools +
+      '<input type="search" name="q" aria-label="搜尋車輛" placeholder="' + (state.admin && !policy ? '車牌、目前駕駛或車款' : '搜尋車牌') + '" value="' + escapeHtml(view.search) +
+      '"><button class="ghost-btn" type="submit">查詢</button></form>' + forecastTools + '<div class="actions">' + importer +
+      (idle && rows.length ? '<button class="ghost-btn" data-fleet-export="idleExcel">匯出 Excel</button>' : "") +
+      (matrix?.vehicles.length ? '<button class="ghost-btn" data-fleet-export="idlePng">下載報表 PNG</button>' : "") +
+      '</div></div>' + (!idle && !policy ? '<p class="fleet-forecast-note">預測依加油趨勢與最新可用儀表里程計算。近七日實際里程取自已匯入的怠速報表。' +
+        (view.rows && view.telemetry === null ? ' 怠速資料暫時讀取失敗。' : '') + '</p>' : "") +
+      policyTools + preview + body + '</section>';
+  }
+
+  async function previewFleetImport(files, kind) {
+    const view = fleetOperationsState();
+    const section = view.section;
+    if (!state.admin || !["idle", "fuel"].includes(kind) || view.draft?.saving) return;
+    const input = [...files];
+    if (!input.length) return;
+    const request = ++view.importRequest;
+    if (input.some(file => file.size > 10 * 1024 * 1024)) throw new Error("每份 Excel 需在 10 MB 以內");
+    const XLSX = await ensureOptionalLibrary("excel");
+    const sheets = [];
+    for (const file of input) {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      sheets.push(...wb.SheetNames.map(name => XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true })));
+    }
+    const reports = window.HeycarFleetReports;
+    const parsed = kind === "idle" ? sheets.map(rows => reports.parseIdle(rows, XLSX.SSF.parse_date_code)).filter(Boolean)
+      : [reports.parseFuel(sheets, XLSX.SSF.parse_date_code)].filter(Boolean);
+    if (!parsed.length) throw new Error("找不到可辨識的報表欄位");
+    const known = new Map();
+    for (const vehicle of state.data.vehicles || []) {
+      const plate = reports.plateKey(vehicle.plate_no);
+      if (plate) known.set(plate, known.has(plate) ? null : vehicle.plate_no);
+    }
+    const unique = new Map();
+    let duplicates = 0;
+    let conflicts = 0;
+    let unmatched = 0;
+    for (const row of parsed.flatMap(item => item.data)) {
+      const key = reports.plateKey(row.plate);
+      const plate = known.get(key);
+      if (!plate) { unmatched++; continue; }
+      const id = key + "/" + (row.record_date || "");
+      if (unique.has(id)) {
+        duplicates++;
+        const previous = unique.get(id);
+        if (kind === "idle") {
+          if (["drive_mins", "idle_mins", "mileage"].some(field => previous[field] !== row[field]) ||
+              (previous.driver_name && row.driver_name && previous.driver_name !== row.driver_name)) conflicts++;
+          else if (!previous.driver_name && row.driver_name) previous.driver_name = row.driver_name;
+        }
+        continue;
+      }
+      unique.set(id, { ...row, plate });
+    }
+    if (view.token !== state.apiSession || view !== fleetOperationsState() || view.section !== section ||
+        request !== view.importRequest || view.draft?.saving) return;
+    view.draft = { kind, rows: [...unique.values()], invalid: parsed.reduce((n, row) => n + row.invalid, 0), unmatched, duplicates, conflicts };
+    render();
+  }
+
+  async function confirmFleetImport(button) {
+    const view = fleetOperationsState();
+    const draft = view.draft;
+    if (!draft?.rows.length || draft.conflicts || draft.saving) return;
+    const share = Boolean(document.querySelector("[data-fleet-share-idle]")?.checked);
+    draft.saving = true;
+    button.disabled = true;
+    try {
+      const { count } = await apiRequest("save_fleet_operations", { section: draft.kind, rows: draft.rows, share });
+      if (view.token !== state.apiSession) return;
+      view.draft = null;
+      if (draft.kind === "idle" && view.section === "idle") {
+        const latest = draft.rows.map(row => row.record_date).sort().at(-1);
+        view.latestWeek = false;
+        fleetIdlePeriod(view, "week", latest);
+      }
+      await loadFleetOperations(view);
+      await showAlert("已匯入 " + count + " 筆資料", "匯入完成");
+    } finally {
+      draft.saving = false;
+      button.disabled = false;
+    }
+  }
+
+  async function exportFleetReport(kind) {
+    const view = fleetOperationsState();
+    if (kind.endsWith("Png")) {
+      const calendar = kind === "calendarPng";
+      const month = state.calendarMonth.slice(0, 7);
+      const matrix = calendar ? null : fleetIdleMatrix(view, fleetReportRows(view));
+      if (!calendar && !matrix.vehicles.length) throw new Error("目前沒有可下載的資料");
+      const suggestions = calendar && state.adminView === "maintenanceManagement" && view.section === "calendar"
+        ? fleetCalendarSuggestions(view) : null;
+      const node = document.createElement("div");
+      node.className = "fleet-report-export";
+      node.setAttribute("aria-hidden", "true");
+      node.innerHTML = '<header><div class="fleet-case-kicker">HEYCAR · 車輛事業</div><h2>' +
+        (calendar ? (suggestions ? "保養月曆" : "共同行事曆") : matrix.dates.length > 1 ? "車輛怠速週報" : "車輛怠速日報") + '</h2>' +
+        (calendar ? '</header>' + renderCalendar(true, suggestions, true) :
+          '<p>' + fleetIdleTitle(matrix) + ' · 單日怠速超過 60 分鐘以紅字標記，— 代表無紀錄。</p></header>' +
+          fleetIdleMetrics(matrix) + fleetIdleTable(matrix, true));
+      const html2canvas = await ensureOptionalLibrary("screenshot");
+      document.body.appendChild(node);
+      let canvas;
+      try {
+        if (!calendar && node.scrollWidth > node.clientWidth) node.style.width = (node.scrollWidth + 22) + "px";
+        const width = node.scrollWidth;
+        const scale = Math.min(2, 12000 / Math.max(node.scrollHeight, width));
+        canvas = await html2canvas(node, { scale, backgroundColor: "#ffffff", windowWidth: Math.max(1440, width), scrollX: 0, scrollY: 0,
+          onclone: (_doc, clone) => { clone.style.visibility = "visible"; } });
+      } finally {
+        node.remove();
+      }
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      if (!blob?.size) throw new Error("無法產生圖檔");
+      const link = document.createElement("a");
+      link.download = (calendar ? "保養月曆_" + month : "怠速報表_" + matrix.start + (matrix.start === matrix.end ? "" : "_" + matrix.end)) + ".png";
+      const url = URL.createObjectURL(blob);
+      link.href = url;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    const XLSX = await ensureOptionalLibrary("excel");
+    const wb = XLSX.utils.book_new();
+    const append = (name, rows) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), name);
+    if (kind === "calendarExcel") {
+      const workspace = state.adminView === "maintenanceManagement" && view.section === "calendar";
+      const items = calendarMonthItems(true).filter(item => workspace ? fleetCalendarMatches(item, view) : fleetServiceTypes.has(item.event_type));
+      if (!items.length) throw new Error("本月沒有保養排程");
+      append("保養排程", items.map(item => ({
+        日期: item.event_date, 時間: item.event_time || "", 車牌: item.plate_no, 服務類型: calendarTypeName(item.event_type),
+        保養廠: item.vendor || "", 狀態: item.status || "", 備註: item.content || "",
+      })));
+      XLSX.writeFile(wb, "保養排程_" + state.calendarMonth.slice(0, 7) + ".xlsx");
+      return;
+    }
+    const rows = fleetReportRows(view);
+    if (!rows.length) throw new Error("目前沒有可匯出的怠速資料");
+    const totals = new Map();
+    for (const row of rows) {
+      const summary = totals.get(row.plate) || { 車牌: row.plate, 駕駛: new Set(), 行駛分鐘: 0, 怠速分鐘: 0, 里程: 0 };
+      for (const name of String(row.driver || "").split(/[／/、]/)) if (name.trim()) summary.駕駛.add(name.trim());
+      summary.行駛分鐘 += Number(row.drive_mins);
+      summary.怠速分鐘 += Number(row.idle_mins);
+      summary.里程 += Number(row.mileage);
+      totals.set(row.plate, summary);
+    }
+    append("逐日明細", rows.map(row => ({ 車牌: row.plate, 駕駛: row.driver, 日期: row.record_date, 行駛分鐘: row.drive_mins, 怠速分鐘: row.idle_mins, 里程: row.mileage })));
+    append("期間彙總", [...totals.values()].map(row => ({ ...row, 駕駛: [...row.駕駛].join("／") })));
+    XLSX.writeFile(wb, "怠速報表_" + view.start + "_" + view.end + ".xlsx");
+  }
+
+
   function partnerLayout(content) {
     const nav = [
       ["insurance", "保險進度", "🛡️"],
       ["garage", "車庫管理", "🚐"],
+      ["fleetCases", "我的罰單", "🧾"],
+      ["idleManagement", "怠速管理", "📋"],
       ["dispatchCenter", "派趟中心", "🧭"]
     ];
     layout(`
@@ -2995,9 +4748,9 @@
 
   function renderDealerPortal() {
     const requests = dealerInsuranceRequests();
-    if (!["insurance", "garage", "dispatchCenter"].includes(state.partnerView)) state.partnerView = "insurance";
-    const body = state.partnerView === "dispatchCenter" ? adminDispatchCenter() : state.partnerView === "garage" ? dealerGarageView(requests) : dealerInsuranceView(requests);
-    partnerLayout(body);
+    const views = { insurance: () => dealerInsuranceView(requests), garage: () => dealerGarageView(requests), dispatchCenter: adminDispatchCenter, fleetCases: renderFleetFines, idleManagement: renderFleetOperations, fleetPolicies: renderFleetOperations };
+    if (!Object.hasOwn(views, state.partnerView)) state.partnerView = "insurance";
+    partnerLayout(views[state.partnerView]());
   }
 
   function dealerInsuranceRequests() {
@@ -3010,10 +4763,58 @@
     return (state.data.vehicles || []).filter((vehicle) => vehicle.dealer_partner_id === state.partner.id);
   }
 
+  function vehicleInsuranceRequests(vehicle, requests) {
+    return requests.filter(request => request.vehicle_id ? request.vehicle_id === vehicle.id : request.plate_no === vehicle.plate_no);
+  }
+
+  function renewalOptions(vehicle, requests) {
+    const related = vehicleInsuranceRequests(vehicle, requests);
+    const cutoff = new Date(Date.parse(today()) + 60 * 86400000).toISOString().slice(0, 10);
+    return [["強制險", "compulsory"], ["任意險", "voluntary"]].flatMap(([name, key]) => {
+      const expiry = vehicle[key + "_insurance_expiry"];
+      const pending = related.some(item => item.request_type === "quote" && !insuranceFinishedStatuses().includes(item.status) &&
+        insuranceTypeDisplay(item).includes(name));
+      return expiry && expiry <= cutoff && !pending ? [{ name, expiry }] : [];
+    });
+  }
+
+  function insuranceRenewalButtons(vehicle, requests) {
+    return renewalOptions(vehicle, requests).map(({ name, expiry }) => `<button class="soft-btn insurance-renewal" data-insurance-renew-vehicle="${escapeHtml(vehicle.id)}" data-renew-type="${name}">
+      發起續保 · ${name}<small>${escapeHtml(expiry)} ${expiry < today() ? "已到期" : "到期"}</small></button>`).join("");
+  }
+
+  function insuranceRenewalList(requests) {
+    const vehicles = insuranceVehiclesForForm().filter(vehicle => renewalOptions(vehicle, requests).length);
+    if (!vehicles.length) return "";
+    return `<details class="insurance-renewal-list"><summary>60 天內到期或已到期 · ${vehicles.length} 輛待續保</summary>
+      <div>${vehicles.map(vehicle => `<article><strong>${escapeHtml(vehicle.plate_no)}</strong>${insuranceRenewalButtons(vehicle, requests)}</article>`).join("")}</div></details>`;
+  }
+
+  const insuranceCoverageFields = ["coverage_spec", "passenger_limit", "vehicle_body_limit", "deductible", "requested_driver", "lienholder", "assigned_insurance_company"];
+
+  function insuranceCoverageDefaults(vehicle, coverage) {
+    if (!vehicle) return {};
+    const requests = vehicleInsuranceRequests(vehicle, state.data.insurance_requests || []);
+    const current = requests.filter(item => item.request_type === "quote" && item.status === "completed" &&
+      (!coverage || insuranceTypeDisplay(item).includes(coverage)))
+      .sort((a, b) => String(b.policy_end_on || b.created_at).localeCompare(String(a.policy_end_on || a.created_at)))[0];
+    const company = coverage === "強制險" ? vehicle.compulsory_insurance_company : vehicle.voluntary_insurance_company;
+    return {
+      ...Object.fromEntries(insuranceCoverageFields.map(key => [key, current?.[key] ?? ""])),
+      assigned_insurance_company: canonicalInsurer(current?.issued_insurance_company || current?.assigned_insurance_company || company || "")
+    };
+  }
+
+  function canonicalInsurer(value) {
+    const name = String(value || "").trim();
+    return name === "富邦" || name === "富邦產物保險" || name === "富邦產物" ? "富邦產險" : name;
+  }
+
   function dealerInsuranceView(requests) {
     const dealerActions = `<button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceAdditionRequest">發起批加</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button>`;
     return `
       <div class="section-head"><div><h2>保險進度</h2><small>${escapeHtml(state.partner.name)} · 車商案件</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button>${dealerActions}</div></div>
+      ${insuranceRenewalList(requests)}
       ${insuranceControlCenter(requests, false)}
     `;
   }
@@ -3030,8 +4831,9 @@
     if (!vehicles.length) return `<div class="empty">尚未指定所屬車輛</div>`;
     return `<div class="vehicle-visual-grid dealer-garage-grid">${vehicles.map((vehicle) => {
       const drivers = vehicleDrivers(vehicle);
-      const relatedRequests = requests.filter((request) => request.vehicle_id === vehicle.id || request.plate_no === vehicle.plate_no);
-      const latest = relatedRequests[0];
+      const relatedRequests = vehicleInsuranceRequests(vehicle, requests);
+      const active = relatedRequests.find(request => !insuranceFinishedStatuses().includes(request.status));
+      const driver = vehicleAssignedDriverLabel(vehicle, false);
       const files = relatedRequests.map((request) => [
         insuranceFileLink(request, "policy", "保單"),
         insuranceFileLink(request, "receipt", "收據"),
@@ -3046,12 +4848,19 @@
         ${vehicleVisualArt(vehicle, drivers)}
         <div class="vehicle-visual-info">
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
-          <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
-          <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
+          <small>目前使用人：${escapeHtml(driver && driver !== partnerName(vehicle.dealer_partner_id) ? driver : "未指定")}</small>
+          <small>油品：${escapeHtml(vehicle.fuel_type || "-")}</small>
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
-          <small>保險進度：${latest ? insuranceStatusLabel(latest.status) : "尚未發起"}</small>
+          <small>保險進度：${active ? dealerInsuranceLabels[dealerInsuranceBucket(active.status)] : "無進行中案件"}</small>
         </div>
+        <div class="fleet-policy-grid">
+          <div><small>強制險</small><strong>${escapeHtml(canonicalInsurer(vehicle.compulsory_insurance_company) || "未填保險公司")}</strong>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 60)}</div>
+          <div><small>任意險</small><strong>${escapeHtml(canonicalInsurer(vehicle.voluntary_insurance_company) || "未填保險公司")}</strong>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 60)}</div>
+        </div>
+        <div class="insurance-renewal-actions">${insuranceRenewalButtons(vehicle, requests)}</div>
         ${files ? `<div class="insurance-files dealer-garage-files">${files}</div>` : `<small class="dealer-garage-empty">尚無可檢視保單</small>`}
+        <button class="ghost-btn" data-fleet-plate="${escapeHtml(vehicle.plate_no)}">查詢這台車的罰單</button>
+        <button class="ghost-btn" data-fleet-policy-plate="${escapeHtml(vehicle.plate_no)}">查看保單資料</button>
       </article>`;
     }).join("")}</div>`;
   }
@@ -3107,15 +4916,22 @@
     const requests = [...(state.data.insurance_requests || [])].sort((a, b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
     return `
       <div class="section-head"><div><h2>保險中心</h2><small>管理報價、批改、批加、保單與收據補發流程</small></div><div class="actions"><button class="ghost-btn" data-action="refresh-insurance">重新整理</button><button class="ghost-btn" data-export="insurance">匯出 Excel</button><button class="soft-btn" data-modal="insuranceAmendmentRequest">發起批改</button><button class="soft-btn" data-modal="insuranceAdditionRequest">發起批加</button><button class="soft-btn" data-modal="insuranceDocumentRequest">保單/收據補發</button><button class="primary-btn" data-modal="insuranceRequest">發起報價</button></div></div>
+      ${insuranceRenewalList(requests)}
       ${insuranceControlCenter(requests, true)}
     `;
   }
 
 
   function adminInsurancePartners() {
-    const partners = state.data.insurance_partners || [];
+    const all = state.data.insurance_partners || [];
+    const categories = [["all", "全部"], ["dealer", "車商"], ["repair_shop", "保養廠"], ["insurance_company", "保險公司"], ["broker", "保經"]];
+    const category = state.partnerDirectoryCategory || "all";
+    const inCategory = (item, key) => key === "all" || (key === "insurance_company" ? isInsuranceCompanyPartner(item) : item.partner_type === key);
+    const partners = all.filter(item => inCategory(item, category));
     return `
-      <div class="section-head"><div><h2>廠商管理</h2><small>設定車商、保經、保修廠與前台登入代碼</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
+      <div class="section-head"><div><h2>廠商管理</h2><small>車商、保養廠、保險公司及保經資料</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
+      <div class="fleet-case-tabs partner-directory-tabs" aria-label="廠商類別">${categories.map(([key, label]) =>
+        `<button class="ghost-btn" data-partner-category="${key}" aria-pressed="${category === key}">${label} <small>${all.filter(item => inCategory(item, key)).length}</small></button>`).join("")}</div>
       <div class="partner-card-grid">
         ${partners.length ? partners.map((item) => {
           const initial = String(item.name || "?").trim().slice(0, 1);
@@ -3694,12 +5510,18 @@
   }
 
   const adminNavLabels = {
+    driverReporting: "司機報班",
     home: "首頁",
     internalAnnouncements: "內部公告發布",
     internalCalendar: "員工行事曆編輯",
     adminUsers: "權限管理",
     drivers: "駕駛管理",
     vehicles: "車輛管理",
+    fleetCases: "罰單管理",
+    fleetOperations: "保養預測與怠速報表",
+    maintenanceManagement: "保養管理",
+    idleManagement: "怠速管理",
+    fleetPolicies: "保單資料",
     vehicleLoans: "車輛租借",
     driverOnboarding: "上線管理",
     dispatchCenter: "派趟中心",
@@ -3715,7 +5537,7 @@
     personalMessages: "個人訊息",
     payments: "費用管理",
     feedbacks: "意見反饋",
-    marquee: "跑馬燈通知",
+    marquee: "跑馬燈號",
     emergencyEvents: "緊急事件",
     driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
     loginSlogans: "\u6a19\u8a9e\u7ba1\u7406",
@@ -3731,8 +5553,8 @@
     ["員工辦公室", ["home"]],
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
-    ["行控中心", ["dispatchCenter", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
-    ["車輛事業", ["vehicleTypes", "vehicles", "serviceRecords", "insuranceCenter", "calendar", "maintenanceNotifications", "emergencyEvents"]],
+    ["行控中心", ["dispatchCenter", "driverReporting", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
+    ["車輛事業", ["vehicleTypes", "vehicles", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
   ];
 
@@ -3741,9 +5563,9 @@
   function adminPermissionCatalog() {
     return [["internalAnnouncements", "內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
       keys
-        .filter((key) => !["home", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
+        .filter((key) => !["home", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor", "maintenanceManagement", "idleManagement"].includes(key))
         .map((key) => [key, adminNavLabels[key] || key, department])
-    )];
+    ), ...["fleetOperations", "calendar", "maintenanceNotifications"].map(key => [key, adminNavLabels[key], "車輛事業"])];
   }
 
   function groupedAdminNav(nav) {
@@ -4180,9 +6002,13 @@
       ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
+      ["driverReporting", "司機報班", "🗓️", "driverReporting"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
+      ["fleetCases", "罰單管理", "🧾", "fleetCases"],
+      ["maintenanceManagement", "保養管理", "🛠️", "maintenanceManagement"],
+      ["idleManagement", "怠速管理", "⏱️", "fleetOperations"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
-      ["serviceRecords", "車輛履歷", "🧾", "serviceRecords"],
+      ["serviceRecords", "車輛履歷", "🚗", "serviceRecords"],
       ["insuranceCenter", "保險中心", "🛡️", "insuranceCenter"],
       ["insurancePartners", "廠商管理", "🏢", "insurancePartners"],
       ["storage", "儲存空間", "💾", "storage"],
@@ -4191,23 +6017,23 @@
       ["driverLinks", "連結管理", "🔗", "driverLinks"],
       ["mailManagement", "寄信管理", "📮", "mailManagement"],
       ["bom", "BOM表", "🧩", "bom"],
-      ["calendar", "共同行事曆", "📅", "calendar"],
-      ["maintenanceNotifications", "保養通知", "🔔", "maintenanceNotifications"],
       ["announcements", "公告管理", "📢", "announcements"],
       ["personalMessages", "個人訊息", "✉️", "personalMessages"],
       ["payments", "費用管理", "💳", "payments"],
       ["driverHelperArticles", "司機幫手", "📘", "driverHelperArticles"],
       ["feedbacks", "意見反饋", "💬", "feedbacks"],
-      ["marquee", "跑馬燈通知", "🚨", "marquee"],
+      ["marquee", "跑馬燈號", "🚨", "marquee"],
       ["emergencyEvents", "緊急事件", "🆘", "emergencyEvents"]
     ].filter(([key, , , permission]) => desktopMode
       ? (key === "vehicleLoans" || key === "mailManagement")
-      : (key === "vehicleLoans" || !permission || adminCan(permission)));
+      : (key === "maintenanceManagement" ? ["fleetOperations", "calendar", "maintenanceNotifications"].some(adminCan)
+        : key === "vehicleLoans" || !permission || adminCan(permission)));
     if (adminCan("loginSlogans") && !nav.some(([key]) => key === "loginSlogans")) {
       const marqueeIndex = nav.findIndex(([key]) => key === "marquee");
       nav.splice(marqueeIndex >= 0 ? marqueeIndex + 1 : nav.length, 0, ["loginSlogans", "\u6a19\u8a9e\u7ba1\u7406", "\u270d", "loginSlogans"]);
     }
-    if (!nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "calendar";
+    const canOpenPolicies = !desktopMode && state.adminView === "fleetPolicies" && adminCan("fleetOperations");
+    if (!canOpenPolicies && !nav.some(([key]) => key === state.adminView)) state.adminView = nav[0]?.[0] || "home";
     const body = {
       home: adminHome,
       adminUsers,
@@ -4217,7 +6043,12 @@
       hiringManagement: adminHiringManagement,
       vehicleTypes: adminVehicleTypes,
       dispatchCenter: adminDispatchCenter,
+      driverReporting: reportingPlaceholder,
       vehicles: adminVehicles,
+      fleetCases: renderFleetFines,
+      maintenanceManagement: renderFleetOperations,
+      idleManagement: renderFleetOperations,
+      fleetPolicies: renderFleetOperations,
       vehicleLoans: adminVehicleLoans,
       serviceRecords: adminServiceRecords,
       insuranceCenter: adminInsuranceCenter,
@@ -4225,13 +6056,11 @@
       storage: adminStorage,
       trafficMonitor: adminTrafficMonitor,
       satelliteMonitor: adminSatelliteMonitor,
-      maintenanceNotifications: () => adminTaskManager("maintenance_notifications", "保養通知"),
       announcements: adminAnnouncements,
       personalMessages: () => adminTaskManager("personal_messages", "個人訊息"),
       payments: () => adminTaskManager("payment_notices", "費用管理"),
       driverHelperArticles: adminDriverHelperArticles,
       feedbacks: adminFeedbacks,
-      calendar: () => renderCalendar(true),
       marquee: adminMarquee,
       loginSlogans: adminLoginSlogans,
       emergencyEvents: adminEmergencyEvents,
@@ -4258,6 +6087,7 @@
         <section class="admin-workspace">${body}</section>
       </div>
     `);
+    if (state.adminView === "driverReporting") mountDriverReporting(false);
     if (state.adminView === "home" && !adminFullDataReady && !adminWarmupScheduled && state.apiSession) {
       adminWarmupScheduled = true;
       const session = state.apiSession;
@@ -4888,6 +6718,7 @@
     const regions = [...new Set(state.data.vehicles.map((item) => item.vehicle_region).filter(Boolean))].sort();
     const fuels = [...new Set(state.data.vehicles.map((item) => item.fuel_type).filter(Boolean))].sort();
     const dealers = dealerPartners();
+    const page = fleetListPage(vehicles, state.vehiclePage, 24, "data-vehicle-page");
     return `
       <div class="vehicle-toolbar">
         <div><h2>車輛管理</h2><small>共 ${vehicles.length} 輛符合條件</small></div>
@@ -4902,7 +6733,8 @@
         </form>
         <div class="actions"><button class="ghost-btn ${state.vehicleViewMode === "list" ? "active" : ""}" data-vehicle-view="list">列表</button><button class="ghost-btn ${state.vehicleViewMode === "visual" ? "active" : ""}" data-vehicle-view="visual">圖像</button><button class="ghost-btn" data-export="vehicles">匯出 Excel</button><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
       </div>
-      ${state.vehicleViewMode === "visual" ? vehicleManagementCards(vehicles) : vehicleManagementRows(vehicles)}
+      ${state.vehicleViewMode === "visual" ? vehicleManagementCards(page.rows) : vehicleManagementRows(page.rows)}
+      ${page.controls}
     `;
   }
 
@@ -5128,6 +6960,16 @@
     </div>`;
   }
 
+  function vehicleHistoryButtons(vehicle) {
+    return `<button type="button" class="soft-btn" data-vehicle-policy="${escapeHtml(vehicle.id)}">保單</button>
+      ${adminCan("fleetCases") ? `<button type="button" class="soft-btn" data-vehicle-fines="${escapeHtml(vehicle.id)}">歷史罰單</button>` : ""}`;
+  }
+
+  function vehicleInsuranceDates(vehicle) {
+    return ["compulsory", "voluntary"].map(type => `<div><dt>${type === "compulsory" ? "強制險到期" : "任意險到期"}</dt>
+      <dd>${expiryDateBadge(vehicle[type + "_insurance_expiry"], 30)}</dd></div>`).join("");
+  }
+
   function vehicleManagementRows(vehicles) {
     if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
     return `<div class="vehicle-management-list">${vehicles.map((vehicle) => `
@@ -5144,20 +6986,19 @@
           <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
           <div class="vehicle-status-fact"><dt>目前狀態</dt><dd>${vehicleStatusBadge(vehicle.status)}</dd></div>
           <div class="vehicle-status-fact"><dt>租賃狀態</dt><dd>${leaseStatusBadge(vehicle.lease_status)}</dd></div>
-          <div><dt>強制險</dt><dd>${expiryDateBadge(vehicle.compulsory_insurance_expiry, 30)}</dd></div>
-          <div><dt>任意險</dt><dd>${expiryDateBadge(vehicle.voluntary_insurance_expiry, 30)}</dd></div>
+          ${vehicleInsuranceDates(vehicle)}
           <div><dt>下次定檢</dt><dd>${expiryDateBadge(vehicle.next_inspection_date, 30)}</dd></div>
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
           <div><dt>道路救援</dt><dd>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</dd></div>
         </dl>
-        <div class="vehicle-row-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-row-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${vehicleHistoryButtons(vehicle)}${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>
     `).join("")}</div>`;
   }
 
   function adminMarquee() {
     return `
-      <div class="section-head"><h2>跑馬燈通知</h2><button class="primary-btn" data-modal="marqueeMessage">新增通知</button></div>
+      <div class="section-head"><h2>跑馬燈號</h2><button class="primary-btn" data-modal="marqueeMessage">新增跑馬燈號</button></div>
       ${table(["通知內容", "狀態", "建立日期", "操作"], (state.data.marquee_messages || []).map((item) => [
         item.message || "",
         item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
@@ -5182,8 +7023,9 @@
           <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
           <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 租賃：${escapeHtml(vehicle.lease_status || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
+          <dl class="vehicle-visual-expiries">${vehicleInsuranceDates(vehicle)}</dl>
         </div>
-        <div class="vehicle-card-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-card-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${vehicleHistoryButtons(vehicle)}${rowActions("vehicle", "vehicles", vehicle.id)}</div>
       </article>`;
     }).join("")}</div>`;
   }
@@ -5199,10 +7041,10 @@
     return (state.data.drivers || []).filter((driver) => vehicle.current_driver_id === driver.id || names.includes(driver.name));
   }
 
-  function vehicleAssignedDriverLabel(vehicle) {
+  function vehicleAssignedDriverLabel(vehicle, fallbackToDealer = true) {
     const activeNames = vehicleActiveDriverRecords(vehicle).map((item) => item.driver_name || driverName(item.driver_id)).filter(Boolean);
     const driverLabel = activeNames.join("/") || vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
-    return driverLabel || partnerName(vehicle.dealer_partner_id) || "";
+    return driverLabel || (fallbackToDealer ? partnerName(vehicle.dealer_partner_id) : "") || "";
   }
 
   function parseVehicleDriverHistory(vehicle = {}) {
@@ -5305,7 +7147,7 @@
 
   function vehicleInsuranceFiles(vehicle = {}) {
     return (state.data.insurance_requests || [])
-      .filter((item) => item.vehicle_id === vehicle.id || (vehicle.plate_no && item.plate_no === vehicle.plate_no))
+      .filter((item) => item.vehicle_id === vehicle.id || (!item.vehicle_id && vehicle.plate_no && item.plate_no === vehicle.plate_no))
       .flatMap((item) => [
         ...(Array.isArray(item.quote_files) && item.quote_files.length
           ? item.quote_files.map((file, index) => ({ url: file.url, name: file.name || `${vehicle.plate_no} 報價單${index + 1}`, type: file.type || "", group: "保險報價" }))
@@ -5317,43 +7159,144 @@
       ].filter(Boolean));
   }
 
+  async function openVehicleHistory(id, kind) {
+    const vehicle = state.data.vehicles.find(row => row.id === id);
+    if (!state.admin || !adminCan("vehicles") || !vehicle || (kind === "fines" && !adminCan("fleetCases"))) return;
+    const title = kind === "fines" ? "歷史罰單" : "保單資料";
+    const token = state.apiSession;
+    const modal = document.createElement("div");
+    modal.className = "modal-backdrop";
+    modal.innerHTML = `<section class="modal fleet-case-modal vehicle-history-modal" role="dialog" aria-modal="true" aria-label="${title}">
+      <div class="modal-title"><div><small>${escapeHtml(vehicle.plate_no)}</small><h3>${title}</h3></div>
+        <button type="button" class="ghost-btn" data-close-modal aria-label="關閉">×</button></div>
+      <div class="modal-form-body" data-vehicle-history-body></div>
+    </section>`;
+    document.body.appendChild(modal);
+    modal.querySelector("[data-close-modal]").focus();
+    const body = modal.querySelector("[data-vehicle-history-body]");
+    async function load() {
+      body.innerHTML = '<p role="status">正在載入車輛資料…</p>';
+      try {
+        const result = kind === "fines" ? await apiRequest("load_fleet_fines", { vehicle_id: id })
+          : await apiRequest("load_fleet_operations", { section: "policy", vehicle_id: id });
+        if (!modal.isConnected || token !== state.apiSession) return;
+        if (kind === "fines") {
+          const fines = (result.fines || []).sort((a, b) => String(b.fine_date || "").localeCompare(String(a.fine_date || "")) || a.id.localeCompare(b.id));
+          const showPage = page => {
+            const visible = fleetListPage(fines, page, 10, "data-history-page", "筆");
+            body.innerHTML = `<div class="vehicle-history-rows">${visible.rows.map(row => `<article>
+              <div><strong>${escapeHtml(row.ticket_number || row.fine_type || "罰單")}</strong>
+                <small>${escapeHtml(fmtDate(row.fine_date))} · ${escapeHtml(row.archived_at ? "已封存" : row.status || "待處理")}</small>
+                ${row.violation ? `<small>${escapeHtml(row.violation)}</small>` : ""}</div>
+              <strong>${fleetFineMoney(row.amount)}</strong>
+              <button class="ghost-btn" data-fleet-fine="${escapeHtml(row.id)}">明細</button>
+            </article>`).join("") || '<p class="empty">此車目前沒有歷史罰單。</p>'}</div>${visible.controls}`;
+          };
+          body.onclick = event => {
+            const page = event.target.closest("[data-history-page]")?.dataset.historyPage;
+            if (page) showPage(Number(page));
+          };
+          showPage(1);
+        } else {
+          const folderPolicies = parseVehicleFiles(vehicle)
+            .filter(file => file?.url && (vehicleFileCategory(file) !== "other" || /保單|投保證明|(?:^|\W)policy(?:\W|$)/i.test([file.name, file.group].filter(Boolean).join(" "))))
+            .map(file => ({ ...file, group: "車輛資料夾" }));
+          const files = [...vehicleInsuranceFiles(vehicle), ...folderPolicies];
+          const uniqueFiles = [...new Map(files.map(file => [file.url, file])).values()];
+          const policy = fleetPolicyVehicle(vehicle, result.rows, partnerById(vehicle.dealer_partner_id)?.name);
+          body.innerHTML = fleetPolicyCard(policy, true) + (uniqueFiles.length ? `<section class="vehicle-folder-section">
+            <h4>已上傳的保險文件</h4><div class="vehicle-file-list">${uniqueFiles.map(file => vehicleFileChip(file)).join("")}</div></section>` : "");
+        }
+      } catch (error) {
+        if (!modal.isConnected || token !== state.apiSession) return;
+        body.innerHTML = `<p role="alert">${escapeHtml(error.message)}</p><button type="button" class="ghost-btn" data-retry-vehicle-history>重試</button>`;
+        body.querySelector("[data-retry-vehicle-history]").onclick = load;
+      }
+    }
+    await load();
+  }
+
+  const vehicleDocumentLabels = {
+    registration: "車輛行照", voluntary: "車輛任意險保單", compulsory: "車輛強制險保單", other: "其他文件"
+  };
+
+  function vehicleFileCategory(file) {
+    if (["voluntary", "compulsory", "other"].includes(file.category)) return file.category;
+    const label = [file.group, file.name].filter(Boolean).join(" ");
+    if (/任意險|任意保險/.test(label)) return "voluntary";
+    if (/強制險|強制保險|強制汽車責任/.test(label)) return "compulsory";
+    return "other";
+  }
+
+  function vehicleFolderList(files, category, extra = []) {
+    const uploaded = files.flatMap((file, index) => vehicleFileCategory(file) === category
+      ? [vehicleFileChip(file, index, true)] : []);
+    const links = [...uploaded, ...extra.map(file => vehicleFileChip(file))];
+    return links.join("") || '<span class="muted-chip">尚未新增文件</span>';
+  }
+
+  function refreshVehicleFolderLists(form, files) {
+    for (const list of form.querySelectorAll("[data-vehicle-file-list]")) {
+      const category = list.dataset.vehicleFileList;
+      list.innerHTML = vehicleFolderList(files, category, form.vehicleInsuranceExtras?.filter(file => vehicleFileCategory(file) === category));
+    }
+  }
+
+  function vehicleRegistrationLink(url, name) {
+    return url ? vehicleFileChip({ url, name: name || vehicleDocumentLabels.registration }) : '<span class="muted-chip">尚未上傳行照</span>';
+  }
+
   function vehicleFolderForm(vehicle = {}) {
-    const customFiles = parseVehicleFiles(vehicle);
-    const insuranceFiles = vehicleInsuranceFiles(vehicle);
+    const files = parseVehicleFiles(vehicle);
+    const extras = vehicleInsuranceFiles(vehicle);
+    const section = ([category, label]) => {
+      const registration = category === "registration";
+      const links = registration
+        ? `<div class="vehicle-file-list" data-folder-registration>${vehicleRegistrationLink(vehicle.registration_doc_url, vehicle.registration_doc_name)}</div>`
+        : `<div class="vehicle-file-list" data-vehicle-file-list="${category}">${vehicleFolderList(files, category, extras.filter(file => vehicleFileCategory(file) === category))}</div>`;
+      return `<article class="vehicle-folder-section">
+        <h4>${label}</h4>${links}
+        ${category === "voluntary" || category === "compulsory" ? `<div class="vehicle-file-list" data-imported-vehicle-policy="${category}"></div>` : ""}
+        <div class="attachment-upload-row">
+          <label class="vehicle-document-pick"><span>${category === "other" ? "選擇檔案並命名" : "選擇檔案"}</span>
+            <input type="file" data-vehicle-document-upload="${category}" aria-label="上傳${label}"
+              ${category !== "other" ? 'accept="image/*,application/pdf"' : ""}></label>
+          <span data-attachment-status role="status"></span>
+        </div>
+      </article>`;
+    };
     return `<input type="hidden" name="plate_no" value="${escapeHtml(vehicle.plate_no || "")}">
-      <input type="hidden" name="vehicle_files" value="${escapeHtml(JSON.stringify(customFiles))}" data-vehicle-files-json>
+      <input type="hidden" name="vehicle_files" value="${escapeHtml(JSON.stringify(files))}" data-vehicle-files-json>
+      <input type="hidden" name="registration_doc_url" value="${escapeHtml(vehicle.registration_doc_url || "")}" disabled>
+      <input type="hidden" name="registration_doc_name" value="${escapeHtml(vehicle.registration_doc_name || "")}" disabled>
       <section class="vehicle-folder-panel field full">
         <div class="vehicle-folder-head">
           <span class="vehicle-plate-art">${escapeHtml(vehicle.plate_no || "-")}</span>
-          <div><strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "車輛資料夾")}</strong><small>行照與此車保險文件集中管理</small></div>
+          <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "車輛文件")}</strong>
         </div>
-        <div class="vehicle-folder-grid">
-          <article>
-            <small>車輛行照</small>
-            ${vehicle.registration_doc_url ? `<button class="soft-btn" type="button" data-preview-file="${escapeHtml(vehicle.registration_doc_url)}" data-preview-name="${escapeHtml(vehicle.registration_doc_name || `${vehicle.plate_no || "車輛"} 行照`)}" data-preview-type="">查看行照</button>` : `<p>尚未上傳行照</p>`}
-          </article>
-          <article>
-            <small>道路救援</small>
-            <strong>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</strong>
-          </article>
-          <article>
-            <small>油品</small>
-            <strong>${escapeHtml(vehicle.fuel_type || "-")}</strong>
-          </article>
-        </div>
-        <div class="vehicle-folder-section">
-          <h4>保險資料</h4>
-          <div class="vehicle-file-list">${insuranceFiles.length ? insuranceFiles.map(vehicleFileChip).join("") : `<span class="muted-chip">尚無保單或收據</span>`}</div>
-        </div>
-        <div class="vehicle-folder-section">
-          <h4>自訂車輛文件</h4>
-          <div class="vehicle-file-list" data-vehicle-file-list>${customFiles.length ? customFiles.map((file, index) => vehicleFileChip(file, index, true)).join("") : `<span class="muted-chip">尚未新增文件</span>`}</div>
-          <div class="attachment-upload-row">
-            <input type="file" data-vehicle-document-upload data-document-label="車輛文件">
-            <span data-attachment-status>可新增行照以外的車輛文件</span>
-          </div>
-        </div>
+        <div class="vehicle-document-grid">${Object.entries(vehicleDocumentLabels).map(section).join("")}</div>
       </section>`;
+  }
+
+  async function loadVehicleFolderPolicies(form, vehicle) {
+    try {
+      const { rows } = await apiRequest("load_fleet_operations", { section: "policy", vehicle_id: vehicle.id });
+      if (!form.isConnected) return;
+      for (const row of rows || []) {
+        const container = [...form.querySelectorAll("[data-imported-vehicle-policy]")]
+          .find(item => item.dataset.importedVehiclePolicy === row.policy_type);
+        if (!container) continue;
+        container.innerHTML = row.has_file
+          ? `<button class="soft-btn" type="button" data-fleet-policy-open="${escapeHtml(row.id)}"
+            data-policy-vehicle="${escapeHtml(vehicle.id)}">開啟已匯入保單</button>`
+          : row.legacy_reference ? fleetDocumentLinks(row) : "";
+      }
+    } catch {
+      if (!form.isConnected) return;
+      for (const container of form.querySelectorAll("[data-imported-vehicle-policy]")) {
+        container.textContent = "暫時無法讀取已匯入的保單。";
+      }
+    }
   }
 
   function vehicleFileChip(file, index = -1, removable = false) {
@@ -5414,6 +7357,37 @@
       ${tableName === "maintenance_notifications" ? maintenanceBatchOverview() : ""}
       ${table(taskHeaders(tableName), state.data[tableName].filter(x=>tableName !== "maintenance_notifications" || !x.batch_id).map((x) => taskRow(tableName, x)))}
     `;
+  }
+
+  function renderFleetNotifications(view) {
+    const notifications = state.data.maintenance_notifications || [];
+    const q = normalizedText(view.noticeQuery || "");
+    const matches = notifications.filter(row => !row.batch_id &&
+      (!view.noticeStatus || row.status === view.noticeStatus) &&
+      (!q || normalizedText([driverName(row.driver_id), vehicleName(row.vehicle_id), row.vendor, row.content].join(" ")).includes(q)))
+      .sort((a, b) => String(b.service_date || "").localeCompare(String(a.service_date || "")));
+    const page = fleetListPage(matches, view.noticePage, 20, "data-notice-page", "筆");
+    const batches = state.data.maintenance_notification_batches || [];
+    const batchPage = fleetListPage([...batches].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))), view.batchPage, 10, "data-batch-page", "批");
+    return `<section class="fleet-surface fleet-notification-panel">
+      <div class="fleet-list-toolbar">
+        <form id="fleetNoticeSearch" class="fleet-ops-search">
+          <input type="search" name="q" aria-label="搜尋保養通知" placeholder="車牌、駕駛、保養廠或內容" value="${escapeHtml(view.noticeQuery || "")}">
+          <select name="status" aria-label="保養通知狀態">
+            ${[["", "全部狀態"], ["pending", "待處理"], ["completed", "已完成"], ["returned", "已退回"]]
+              .map(([key, label]) => `<option value="${key}"${view.noticeStatus === key ? " selected" : ""}>${label}</option>`).join("")}
+          </select><button type="submit" class="ghost-btn">搜尋</button>
+        </form>
+        <div class="actions"><button class="ghost-btn" data-action="refresh-maintenance-batches">重新整理</button>
+          <button class="ghost-btn" data-action="bulk-maintenance-notification">群發通知</button>
+          <button class="primary-btn" data-modal="maintenanceNotification">新增保養通知</button></div>
+      </div>
+      ${page.rows.length ? table(taskHeaders("maintenance_notifications"), page.rows.map(row => taskRow("maintenance_notifications", row)), "fleet-notification-table")
+        : '<p class="empty">沒有符合條件的個別保養通知。</p>'}
+      ${page.controls}
+    </section>
+    <section class="fleet-surface fleet-notification-panel"><h3>群發紀錄 <small>${batches.length} 批</small></h3>
+      ${batches.length ? maintenanceBatchOverview(batchPage.rows) : '<p class="empty">尚無群發紀錄。</p>'}${batchPage.controls}</section>`;
   }
 
   async function sendBulkMaintenanceNotification() {
@@ -5484,8 +7458,7 @@
 
   function maintenanceNoticeLabels() { return { diesel:"柴油精添加", charter:"包車單繳回", receipt:"憑證繳回", other:"其他（自行輸入）" }; }
 
-  function maintenanceBatchOverview() {
-    const batches = [...(state.data.maintenance_notification_batches || [])].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  function maintenanceBatchOverview(batches = [...(state.data.maintenance_notification_batches || [])].sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)))) {
     return `<div class="maintenance-batches">${batches.map(batch=>{
       const records = (state.data.maintenance_notifications || []).filter(item=>item.batch_id===batch.id);
       const completed = records.filter(item=>item.status==="completed").length;
@@ -5501,7 +7474,9 @@
 
   function taskRow(tableName, x) {
     if (tableName === "maintenance_notifications") {
-      return [driverName(x.driver_id), vehicleName(x.vehicle_id), fmtDate(x.service_date), x.service_time || "-", x.content || "", x.vendor || "", statusBadge(x.status), rowActions("maintenanceNotification", tableName, x.id)];
+      return [escapeHtml(driverName(x.driver_id)), escapeHtml(vehicleName(x.vehicle_id)), escapeHtml(fmtDate(x.service_date)),
+        escapeHtml(x.service_time || "-"), escapeHtml(x.content || ""), escapeHtml(x.vendor || ""),
+        statusBadge(x.status), rowActions("maintenanceNotification", tableName, x.id)];
     }
     if (tableName === "payment_notices") {
       return [driverName(x.driver_id), x.fee_type || "", Number(x.amount || 0).toLocaleString(), fmtDate(x.due_date), `${escapeHtml(x.content || "")}${attachmentLink(x)}`, statusBadge(x.status), rowActions("paymentNotice", tableName, x.id)];
@@ -5553,7 +7528,7 @@
       calendarEvent: ["行程", "calendar_events", calendarEventForm],
       bomPart: ["BOM零件", "bom_parts", bomPartForm],
       bomPackage: ["BOM套餐", "bom_packages", bomPackageForm],
-      marqueeMessage: ["跑馬燈通知", "marquee_messages", marqueeMessageForm],
+      marqueeMessage: ["跑馬燈號", "marquee_messages", marqueeMessageForm],
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
       driverLink: ["連結", "driver_links", driverLinkForm],
       mailRecipient: ["地址", "mail_recipients", mailRecipientForm],
@@ -5603,6 +7578,7 @@
     const modalClass = [
       type === "driver" ? "driver-editor-modal" : "",
       type === "vehicle" ? "vehicle-editor-modal" : "",
+      type === "vehicleFolder" ? "vehicle-folder-modal" : "",
       ["staffAnnouncement", "staffCalendarEvent", "adminUser"].includes(type) ? "staff-editor" : ""
     ].filter(Boolean).join(" ");
     modal.innerHTML = `
@@ -5618,10 +7594,25 @@
       </div>
     `;
     document.body.appendChild(modal);
-    modal.querySelector("#modalForm").addEventListener("submit", async (e) => {
+    const modalForm = modal.querySelector("#modalForm");
+    if (type === "insuranceRequest" && !id) modalForm.dataset.insuranceNewQuote = "true";
+    if (type === "vehicleFolder" && item?.id) {
+      modalForm.vehicleInsuranceExtras = vehicleInsuranceFiles(item);
+      void loadVehicleFolderPolicies(modalForm, item);
+    }
+    const initialVehicleFields = type === "vehicle" && id
+      ? normalizeRecord("vehicles", Object.fromEntries(new FormData(modalForm))) : null;
+    const initialDriverHistory = initialVehicleFields
+      ? JSON.stringify(collectVehicleDriverHistory(modalForm)) : null;
+    modalForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       const form = e.currentTarget;
       if (form.dataset.saving === "true") return;
+      if (["vehicleFolder", "vehicle"].includes(type) &&
+          form.querySelector("[data-vehicle-document-upload]:disabled, [data-vehicle-registration-upload]:disabled")) {
+        await showAlert("請等車輛文件上傳完成後再儲存。", "文件上傳中");
+        return;
+      }
       form.dataset.saving = "true";
       const saveButton = form.querySelector('button[type="submit"]');
       const originalSaveText = saveButton?.textContent || "儲存";
@@ -5630,15 +7621,17 @@
       collectServiceParts(e.currentTarget);
       const formData = new FormData(e.currentTarget);
       const record = Object.fromEntries(formData.entries());
-      if (tableName === "vehicles") {
-        const driverHistory = collectVehicleDriverHistory(e.currentTarget);
-        const activeHistory = vehicleActiveDriverRecords({ driver_history: driverHistory });
-        record.driver_history = driverHistory;
-        record.current_driver_id = activeHistory.find((item) => item.driver_id)?.driver_id || null;
-        record.assigned_driver_names = activeHistory
-          .map((item) => item.driver_name || driverName(item.driver_id))
-          .filter(Boolean)
-          .join("/");
+      if (type === "vehicle") {
+        const driverHistory = collectVehicleDriverHistory(form);
+        if (JSON.stringify(driverHistory) !== initialDriverHistory) {
+          const activeHistory = vehicleActiveDriverRecords({ driver_history: driverHistory });
+          record.driver_history = driverHistory;
+          record.current_driver_id = activeHistory.find((item) => item.driver_id)?.driver_id || null;
+          record.assigned_driver_names = activeHistory
+            .map((item) => item.driver_name || driverName(item.driver_id))
+            .filter(Boolean)
+            .join("/");
+        }
         delete record.assigned_driver_ids;
         delete record.driver_history_start_at;
         delete record.driver_history_end_at;
@@ -5650,6 +7643,8 @@
         delete record.attachment_url;
         delete record.attachment_name;
       }
+      if (type === "vehicleFolder") delete record.plate_no;
+      if (type === "vehicleReturn") record.status = "return_pending";
       if (tableName === "vehicle_service_records") {
         record.record_type = formData.getAll("record_types").filter(Boolean).join("+") || record.record_type || "定期保養";
         delete record.record_types;
@@ -5680,9 +7675,28 @@
         const normalizedRecord = type === "driverOnboarding"
           ? normalizeDriverOnboardingRecord(record)
           : normalizeRecord(tableName, record);
-        const saved = id
-          ? await update(tableName, id, normalizedRecord)
-          : await insert(tableName, normalizedRecord);
+        let updateOptions;
+        if (type === "vehicleFolder") updateOptions = { vehicle_files_expected_updated_at: item?.updated_at ?? null };
+        if (initialVehicleFields) {
+          for (const key of Object.keys(normalizedRecord)) {
+            if (Object.is(normalizedRecord[key], initialVehicleFields[key])) delete normalizedRecord[key];
+          }
+          if (!Object.keys(normalizedRecord).length) {
+            modal.remove();
+            return;
+          }
+          updateOptions = { vehicle_expected_updated_at: item.updated_at ?? null };
+        }
+        if (tableName === "insurance_requests") {
+          const message = insuranceFormValidation(type, item, normalizedRecord, form);
+          if (message) throw new Error(message);
+          if (id && normalizedRecord.status && normalizedRecord.status !== item.status) {
+            if (!(await showConfirm(`${item.plate_no} · 確定送出並更新為「${insuranceStatusLabel(normalizedRecord.status)}」？`, "確認更新保險案件"))) return;
+          }
+          updateOptions = { insurance_expected_updated_at: item?.updated_at ?? null, insurance_override: type === "insuranceStatusOverride" };
+        }
+        const saved = id ? await update(tableName, id, normalizedRecord, updateOptions) : await insert(tableName, normalizedRecord);
+        if (tableName === "insurance_requests" && saved?.status === "completed" && saved.request_type === "quote") applyInsuranceExpiry(saved);
         if (tableName === "calendar_events") await syncCalendarNotification(saved);
         const pushMessage = !id && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(tableName)
           ? linePushSummary(state.lastLinePushResult)
@@ -5701,7 +7715,8 @@
         if (keyCodeMessage) await showAlert(keyCodeMessage, "取鑰密碼");
         if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
       } catch (err) {
-        await showAlert(err.message || err, "儲存失敗");
+        const message = err.message || err;
+        await showAlert(message, tableName === "vehicle_service_records" && /里程/.test(message) ? "人工審核 · 里程異常" : "儲存失敗");
       } finally {
         if (document.body.contains(modal)) {
           form.dataset.saving = "false";
@@ -5833,12 +7848,12 @@
       if (record.end_time && (!record.start_time || record.end_time < record.start_time)) throw new Error("結束時間不可早於開始時間");
     }
     if (tableName === "vehicle_loans") {
-      record.vehicle_id = record.vehicle_id || null;
+      if ("vehicle_id" in record) record.vehicle_id = record.vehicle_id || null;
       delete record.requested_by_type;
       if ("borrow_at" in record) record.borrow_at = taipeiLocalDateTimeToIso(record.borrow_at);
       if ("return_at" in record) record.return_at = record.return_at ? taipeiLocalDateTimeToIso(record.return_at) : null;
       if ("actual_return_at" in record) record.actual_return_at = record.actual_return_at ? taipeiLocalDateTimeToIso(record.actual_return_at) : null;
-      record.status = record.status || "pending_approval";
+      if ("status" in record) record.status = record.status || "pending_approval";
     }
     if (tableName === "dispatch_orders") {
       const selectedDriver = (state.data.drivers || []).find((driver) => String(driver.id) === String(record.driver_id || ""));
@@ -5895,9 +7910,10 @@
         price_snapshot_at: part.price_snapshot_at || now()
       })).filter((part) => part.part_no || part.name || part.quantity || part.amount);
       record.parts_replaced = record.parts_replaced || servicePartsToText(record.parts_json);
-      ["odometer", "next_service_odometer", "downtime_hours"].forEach((key) => {
-        record[key] = Number(record[key] || 0) || null;
+      ["odometer", "next_service_odometer"].forEach(key => {
+        record[key] = record[key] === "" || record[key] == null ? null : Number(record[key]);
       });
+      record.downtime_hours = Number(record.downtime_hours || 0) || null;
       ["labor_cost", "parts_cost", "other_cost", "total_cost", "tax_amount"].forEach((key) => record[key] = Number(record[key] || 0));
       if (record.parts_json.length) record.parts_cost = record.parts_json.reduce((sum, part) => sum + Number(part.amount || 0), 0);
       const subtotal = Number(record.labor_cost || 0) + Number(record.parts_cost || 0) + Number(record.other_cost || 0);
@@ -5926,22 +7942,25 @@
       if ("vehicle_id" in record) record.vehicle_id = record.vehicle_id || null;
       if ("dealer_partner_id" in record) record.dealer_partner_id = record.dealer_partner_id || null;
       if ("created_by_partner_type" in record) record.created_by_partner_type = record.created_by_partner_type || (state.partner?.partner_type || (state.admin ? "admin" : ""));
-      const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
-      if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
-      if (!record.request_type && String(record.status || "").startsWith("addition_")) record.request_type = "addition";
-      if (!record.request_type && String(record.status || "").startsWith("amendment_")) record.request_type = "amendment";
-      if (!record.request_type && String(record.status || "").startsWith("document_")) record.request_type = "document";
-      if (!record.request_type && "vehicle_id" in record && !record.vehicle_id) delete record.vehicle_id;
-      if (!record.request_type && "dealer_partner_id" in record && !record.dealer_partner_id) delete record.dealer_partner_id;
-      if (record.request_type === "quote" && record.insurance_type === "批改") record.insurance_type = "";
-      if (!record.insurance_type) {
-        if (record.request_type === "amendment") record.insurance_type = "批改";
-        else if (record.request_type === "addition") record.insurance_type = "批加申請";
-        else if (record.request_type === "document") record.insurance_type = "文件請求";
-        else if (record.request_type === "quote") record.insurance_type = "強制險";
-        else delete record.insurance_type;
+      if ("request_type" in record || "insurance_type" in record) {
+        const quoteStatuses = ["broker_quoting", "vehicle_dept_review", "dealer_review", "quote_confirmed_issue_application", "stamping", "awaiting_policy", "payment_pending", "receipt_pending", "completed"];
+        if (!record.request_type && quoteStatuses.includes(record.status)) record.request_type = "quote";
+        if (!record.request_type && String(record.status || "").startsWith("addition_")) record.request_type = "addition";
+        if (!record.request_type && String(record.status || "").startsWith("amendment_")) record.request_type = "amendment";
+        if (!record.request_type && String(record.status || "").startsWith("document_")) record.request_type = "document";
+        if (!record.request_type && "vehicle_id" in record && !record.vehicle_id) delete record.vehicle_id;
+        if (!record.request_type && "dealer_partner_id" in record && !record.dealer_partner_id) delete record.dealer_partner_id;
+        if (record.request_type === "quote" && record.insurance_type === "批改") record.insurance_type = "";
+        if (!record.insurance_type) {
+          if (record.request_type === "amendment") record.insurance_type = "批改";
+          else if (record.request_type === "addition") record.insurance_type = "批加申請";
+          else if (record.request_type === "document") record.insurance_type = "文件請求";
+          else if (record.request_type === "quote") record.insurance_type = "強制險";
+          else delete record.insurance_type;
+        }
       }
       if ("quote_amount" in record) record.quote_amount = Number(record.quote_amount || 0) || null;
+      blankToNull(record, ["policy_start_on", "policy_end_on"]);
       ["license_files", "amendment_files", "quote_request_files", "quote_files"].forEach((key) => {
         if (typeof record[key] === "string") {
           try { record[key] = JSON.parse(record[key] || "[]"); } catch { record[key] = []; }
@@ -6468,12 +8487,14 @@
     return select("vehicle_id", "指定車輛", value || "", [["", "請選擇"], ...state.data.vehicles.map((v) => [v.id, vehicleName(v.id)])]);
   }
 
+  function repairShopNames() {
+    return [...new Set((state.data.insurance_partners || [])
+      .filter(item => item.partner_type === "repair_shop" && item.active !== false && item.name)
+      .map(item => item.name))].sort((a, b) => a.localeCompare(b, "zh-TW"));
+  }
+
   function repairShopOptions(value, label = "維修／保養廠商") {
-    const shops = (state.data.insurance_partners || [])
-      .filter((item) => item.partner_type === "repair_shop" && item.active !== false)
-      .map((item) => [item.name, item.name]);
-    const options = [["", shops.length ? "請選擇保修廠" : "尚未建立保修廠"], ...shops];
-    return select("vendor", label, value || "", options);
+    return repairShopNameOptions(value, "vendor", label);
   }
 
   function insuranceCompanyOptions(value, label, name = "insurance_company") {
@@ -6485,7 +8506,7 @@
   }
 
   function insuranceCompanyAdminField(value, label, name = "assigned_insurance_company") {
-    if (state.partner?.partner_type === "dealer") return `<input type="hidden" name="${escapeHtml(name)}" value="">`;
+    if (state.partner?.partner_type === "dealer") return `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value || "")}">`;
     return insuranceCompanyOptions(value, label, name);
   }
 
@@ -6911,10 +8932,10 @@
   }
 
   function repairShopNameOptions(value, name = "supplier", label = "供應商／保修廠") {
-    const shops = (state.data.insurance_partners || [])
-      .filter((item) => item.partner_type === "repair_shop" && item.active !== false)
-      .map((item) => [item.name, item.name]);
-    return select(name, label, value || "", [["", shops.length ? "請選擇保修廠" : "尚未建立保修廠"], ...shops]);
+    const shops = repairShopNames();
+    const options = [["", shops.length ? "請選擇保養廠" : "尚未建立保養廠"], ...shops.map(shop => [shop, shop])];
+    if (value && !shops.includes(value)) options.push([value, value + "（舊資料）"]);
+    return select(name, label, value || "", options);
   }
 
   function servicePartsEditor(item = {}) {
@@ -7206,7 +9227,7 @@
   }
 
   function marqueeMessageForm(item) {
-    return text("message", "紅色跑馬燈通知內容", item.message) + checkbox("active", "啟用通知", item.active !== false);
+    return text("message", "紅色跑馬燈號內容", item.message) + checkbox("active", "啟用跑馬燈號", item.active !== false);
   }
 
   function loginSloganForm(item) {
@@ -7228,14 +9249,14 @@
     return `<div class="field full fleet-picker">
       <label>司機前台可見功能</label>
       <div class="fleet-picker-list">
-        ${driverFrontendFeatures.map(([key, label]) => `<label class="check-field"><input type="checkbox" name="frontend_${key}" value="true" ${permissions[key] === false ? "" : "checked"}>${escapeHtml(label)}</label>`).join("")}
+        ${driverFrontendFeatures.map(([key, label]) => `<label class="check-field"><input type="checkbox" name="frontend_${key}" value="true" ${(key === "driverReporting" ? reportingEnabledForDealer(item) : permissions[key] !== false) ? "checked" : ""}>${escapeHtml(label)}</label>`).join("")}
       </div>
     </div>`;
   }
 
   function insurancePartnerForm(item) {
     return input("name", "單位名稱", item.name, "text", true)
-      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"], ["repair_shop", "保修廠"], ["insurance_company", "保險公司"]])
+      + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"], ["repair_shop", "保養廠"], ["insurance_company", "保險公司"]])
       + input("contact_name", "聯絡人", item.contact_name)
       + input("phone", "電話", item.phone, "tel")
       + input("email", "電子信箱", item.email, "email")
@@ -7273,7 +9294,15 @@
 
   function insuranceDealerField(item = {}) {
     if (state.partner?.partner_type === "dealer") return `<input type="hidden" name="dealer_partner_id" value="${escapeHtml(state.partner.id)}">`;
-    return select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", dealerPartnerOptions(item.dealer_partner_id || "", "自動帶入"));
+    const options = dealerPartnerOptions(item.dealer_partner_id || "", "自動帶入")
+      .filter(([id, name]) => id === item.dealer_partner_id || name.trim() !== "鐘仁");
+    return select("dealer_partner_id", "所屬車商", item.dealer_partner_id || "", options);
+  }
+
+  function insuranceRequestNotes(item) {
+    if (state.partner?.partner_type === "dealer") return text("dealer_notes", "車商備註", item.dealer_notes);
+    return text("vehicle_dept_notes", "車輛部備註", item.vehicle_dept_notes || item.insurance_notes)
+      + (item.dealer_notes ? `<p class="field full insurance-note">車商備註：${escapeHtml(item.dealer_notes)}</p>` : "");
   }
 
   function insuranceRequestForm(item) {
@@ -7289,7 +9318,7 @@
       + select("lienholder", "\u62b5\u62bc\u6b0a\u4eba", item.lienholder || "", [["", "\u7121"], ["\u5bcc\u90a6", "\u5bcc\u90a6"], ["\u4e2d\u4fe1", "\u4e2d\u4fe1"], ["\u6c38\u8c50", "\u6c38\u8c50"], ["\u83ef\u5357", "\u83ef\u5357"]])
       + insuranceCompanyAdminField(item.assigned_insurance_company || "", "\u6307\u5b9a\u4fdd\u96aa\u516c\u53f8", "assigned_insurance_company")
       + multiAttachmentField(item, "quote_request_files", "報價需求附件")
-      + text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes);
+      + insuranceRequestNotes(item);
   }
 
   function insuranceAmendmentRequestForm(item) {
@@ -7300,7 +9329,7 @@
       ${select("driver_change_action", "\u6279\u6539\u9805\u76ee", item.driver_change_action || "\u65b0\u589e\u99d5\u99db\u4eba", [["\u65b0\u589e\u99d5\u99db\u4eba", "\u65b0\u589e\u99d5\u99db\u4eba"], ["\u79fb\u9664\u99d5\u99db\u4eba", "\u79fb\u9664\u99d5\u99db\u4eba"]])}
       ${input("driver_change_names", "\u99d5\u99db\u59d3\u540d", item.driver_change_names, "text", true)}
       ${multiAttachmentField(item, "license_files", "\u99d5\u7167\u6b63\u53cd\u9762")}
-      ${text("vehicle_dept_notes", "\u8eca\u8f1b\u90e8\u5099\u8a3b", item.vehicle_dept_notes || item.insurance_notes)}`;
+      ${insuranceRequestNotes(item)}`;
   }
 
   function insuranceAdditionRequestForm(item) {
@@ -7312,7 +9341,7 @@
       ${select("coverage_spec", "批加規格", item.coverage_spec || "", [["", "預留空白"], ["乙式", "乙式"], ["丙式", "丙式"]])}
       ${input("deductible", "自付額(萬)", item.deductible, "number")}
       ${insuranceCompanyAdminField(item.assigned_insurance_company || "", "指定保險公司", "assigned_insurance_company")}
-      ${text("vehicle_dept_notes", "批加備註", item.vehicle_dept_notes || item.insurance_notes)}`;
+      ${insuranceRequestNotes(item)}`;
   }
 
   function insuranceDocumentRequestForm(item) {
@@ -7333,13 +9362,49 @@
   }
 
   function insuranceQuoteForm(item) {
-    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆／補件備註", item.broker_reply) + multiAttachmentField(item, "quote_files", "報價單") + insuranceDocumentField(item, "application", "要保書", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
+    return insuranceRequestSummary(item) + insurancePremiumField(item) + text("broker_reply", "保經回覆／補件備註", item.broker_reply) + multiAttachmentField(item, "quote_files", "報價單") + insuranceDocumentField(item, "application", "要保書", false) + select("status", "處理結果", item.status === "broker_returned" ? "broker_returned" : "vehicle_dept_review", [["vehicle_dept_review", "送車輛部確認"], ["broker_returned", "退回補件"]]);
   }
 
   function insuranceAdditionQuoteForm(item) {
-    return insuranceRequestSummary(item) + text("broker_reply", "保經回覆", item.broker_reply) + insuranceDocumentField(item, "application", "批加要保書", true) + `<input type="hidden" name="status" value="addition_review">`;
+    return insuranceRequestSummary(item) + insurancePremiumField(item) + text("broker_reply", "保經回覆", item.broker_reply) + multiAttachmentField(item, "quote_files", "批加報價單") + insuranceDocumentField(item, "application", "批加要保書", true) + `<input type="hidden" name="status" value="addition_review">`;
   }
 
+
+  function insurancePremiumField(item) {
+    return `<div class="field"><label>保費（新台幣）<input name="quote_amount" type="number" min="0.01" step="0.01" value="${escapeHtml(item.quote_amount ?? "")}" inputmode="decimal"></label></div>`;
+  }
+
+  function insurancePolicyPeriod(item) {
+    return input("issued_insurance_company", "出單保險公司", item.issued_insurance_company || item.assigned_insurance_company, "text", true)
+      + input("policy_start_on", "保險起日", item.policy_start_on, "date", true)
+      + input("policy_end_on", "保險迄日", item.policy_end_on, "date", true);
+  }
+
+  function insuranceFormValidation(type, item, record, form) {
+    if (form.querySelector('[data-attachment-status="uploading"], [data-attachment-upload]:disabled, [data-multi-attachment-upload]:disabled')) return "請等待附件上傳完成。";
+    if (type === "insuranceAmendmentRequest" && record.driver_change_action === "新增駕駛人" && !(Array.isArray(record.license_files) && record.license_files.some(file => file.url))) return "新增駕駛人時請先上傳駕照。";
+    if (["insuranceQuote", "insuranceAdditionQuote"].includes(type)) {
+      if (record.status === "broker_returned") return record.broker_reply?.trim() ? "" : "請填寫退回補件原因。";
+      if (!insurancePremium(record.quote_amount)) return "請填寫有效的保費金額。";
+      if (!record.application_url) return "請先上傳要保書。";
+    }
+    if (["insuranceFinalDocs", "insuranceReceipt", "insuranceAdditionPolicy"].includes(type)) {
+      if (!(record.policy_url || item?.policy_url) || !record.receipt_url) return "請先上傳保單及收據。";
+      if (type !== "insuranceAdditionPolicy" && (!record.policy_start_on || !record.policy_end_on || record.policy_start_on >= record.policy_end_on)) return "保險迄日須晚於起日。";
+    }
+    return "";
+  }
+
+  function applyInsuranceExpiry(item) {
+    const vehicle = state.data.vehicles.find(row => row.id === item.vehicle_id);
+    if (!vehicle || vehicle.dealer_partner_id !== item.dealer_partner_id || !item.policy_end_on) return;
+    for (const [name, prefix] of [["強制險", "compulsory"], ["任意險", "voluntary"]]) {
+      if (String(item.insurance_type).includes(name) && (vehicle[prefix + "_insurance_expiry"] || "") <= item.policy_end_on) {
+        vehicle[prefix + "_insurance_expiry"] = item.policy_end_on;
+        vehicle[prefix + "_insurance_company"] = item.issued_insurance_company;
+      }
+    }
+  }
 
   function insuranceRequestSummary(item) {
     const title = insuranceRequestTypeLabel(item);
@@ -7355,7 +9420,8 @@
 
   function insuranceStatusOverrideForm(item) {
     return insuranceRequestSummary(item)
-      + select("status", "直接調整流程狀態", item.status || "broker_quoting", insuranceStatuses)
+      + select("status", "直接調整流程狀態", item.status || "broker_quoting",
+        insuranceStatuses.filter(([status]) => status === item.status || !legacyInsuranceStatuses.includes(status)))
       + text("vehicle_dept_notes", "車輛部備註", item.vehicle_dept_notes || item.insurance_notes);
   }
 
@@ -7364,10 +9430,10 @@
   function insuranceApplicationForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "application", "\u8981\u4fdd\u66f8", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="stamping">`; }
   function insuranceAdditionStampForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "stamped_application", "批加要保書(已用印)", true) + `<input type="hidden" name="status" value="addition_policy_pending">`; }
   function insurancePolicyForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "\u4fdd\u55ae", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="payment_pending">`; }
-  function insuranceFinalDocsForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "保單", true) + insuranceDocumentField(item, "receipt", "收據", false) + text("broker_reply", "保經回覆", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
-  function insuranceAdditionPolicyForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "批加保單", true) + text("broker_reply", "保經回覆", item.broker_reply) + `<input type="hidden" name="status" value="addition_completed">`; }
+  function insuranceFinalDocsForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "保單", true) + insuranceDocumentField(item, "receipt", "收據", true) + insurancePolicyPeriod(item) + text("broker_reply", "保經回覆", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
+  function insuranceAdditionPolicyForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "批加保單", true) + insuranceDocumentField(item, "receipt", "收據", true) + text("broker_reply", "保經回覆", item.broker_reply) + `<input type="hidden" name="status" value="addition_completed">`; }
   function insurancePaymentForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "payment_slip", "\u5237\u5361\u55ae", false) + `<input type="hidden" name="status" value="receipt_pending">`; }
-  function insuranceReceiptForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "receipt", "\u6536\u64da", true) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
+  function insuranceReceiptForm(item) { return insuranceRequestSummary(item) + insuranceDocumentField(item, "policy", "\u4fdd\u55ae", true) + insuranceDocumentField(item, "receipt", "\u6536\u64da", true) + insurancePolicyPeriod(item) + text("broker_reply", "\u4fdd\u7d93\u56de\u8986", item.broker_reply) + `<input type="hidden" name="status" value="completed">`; }
   function insuranceDocumentReplyForm(item) {
     const needPolicy = String(item.document_request_type || "").includes("\u4fdd\u55ae");
     const needReceipt = String(item.document_request_type || "").includes("\u6536\u64da");
@@ -7566,7 +9632,7 @@
         }
         const saved = await insert("calendar_events", normalizeRecord("calendar_events", record));
         existingSignatures.add(signature);
-        await syncCalendarNotification(saved);
+        if (saved.event_date >= today()) await syncCalendarNotification(saved);
         result.created += 1;
       }
       await loadAll();
@@ -8013,6 +10079,234 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    if (target?.dataset.vehiclePolicy || target?.dataset.vehicleFines) {
+      await openVehicleHistory(target.dataset.vehiclePolicy || target.dataset.vehicleFines, target.dataset.vehiclePolicy ? "policy" : "fines");
+      return;
+    }
+    if (target?.dataset.fleetSettingsPage) {
+      fleetOperationsState().settingsPage = Number(target.dataset.fleetSettingsPage);
+      render();
+      return;
+    }
+    if (target?.dataset.vehiclePage) {
+      state.vehiclePage = Number(target.dataset.vehiclePage);
+      render();
+      return;
+    }
+    if (target?.dataset.noticePage || target?.dataset.batchPage) {
+      const view = fleetOperationsState();
+      if (target.dataset.noticePage) view.noticePage = Number(target.dataset.noticePage);
+      else view.batchPage = Number(target.dataset.batchPage);
+      render();
+      return;
+    }
+    if (target?.dataset.partnerCategory) {
+      state.partnerDirectoryCategory = target.dataset.partnerCategory;
+      render();
+      return;
+    }
+    if (target?.dataset.policyExpiryFilter) {
+      Object.assign(fleetOperationsState(), { policyFilter: target.dataset.policyExpiryFilter, page: 1 });
+      render();
+      return;
+    }
+    if (target?.dataset.fleetIdleEdit) {
+      openFleetIdleEditor(target.dataset.fleetIdleEdit, target.dataset.fleetIdleDate);
+      return;
+    }
+    if (target?.dataset.fleetIdlePeriod || target?.dataset.fleetIdleStep) {
+      const view = fleetOperationsState();
+      const form = target.closest("form");
+      const anchor = form.elements.anchor?.value || view.anchor;
+      view.search = form.elements.q.value.trim();
+      view.latestWeek = false;
+      view.page = 1;
+      if (target.dataset.fleetIdlePeriod === "range") {
+        view.mode = "range";
+        view.weekIndex = 0;
+        render();
+        return;
+      }
+      const next = target.dataset.fleetIdleStep
+        ? fleetShiftDate(anchor, Number(target.dataset.fleetIdleStep) * (view.mode === "week" ? 7 : 1))
+        : anchor;
+      fleetIdlePeriod(view, target.dataset.fleetIdlePeriod || view.mode, next);
+      void loadFleetOperations();
+      render();
+      return;
+    }
+    if (target?.dataset.fleetRangeStep) {
+      const view = fleetOperationsState();
+      view.weekIndex += Number(target.dataset.fleetRangeStep);
+      render();
+      return;
+    }
+    if (target?.dataset.fleetSchedule || target?.hasAttribute("data-fleet-maintenance-new")) {
+      if (!state.admin || !adminCan("calendar")) return;
+      const vehicle = (state.data.vehicles || []).find(item => item.id === target.dataset.fleetSchedule) ||
+        (!target.dataset.fleetSchedule ? fleetScopedVehicle(fleetOperationsState().search) : null);
+      openModal("calendarEvent", null, { event_type: target.dataset.kind || "maintenance",
+        event_date: target.dataset.date || (state.calendarMonth.slice(0, 7) === today().slice(0, 7) ? today() : state.calendarMonth.slice(0, 7) + "-01"),
+        vehicle_id: vehicle?.id, plate_no: vehicle?.plate_no });
+      return;
+    }
+    if (target?.hasAttribute("data-fleet-register")) {
+      if (!state.admin || !adminCan("serviceRecords")) return;
+      const vehicle = (state.data.vehicles || []).find(item => item.id === target.dataset.vehicle);
+      if (!vehicle) return;
+      openModal("serviceRecord", null, { vehicle_id: vehicle.id, plate_no: vehicle.plate_no,
+        record_type: target.dataset.kind === "tires" ? "輪胎" : "定期保養" });
+      return;
+    }
+    if (target?.dataset.fleetGo || target?.dataset.fleetPolicyPlate) {
+      const destination = target.dataset.fleetGo || "policy";
+      if (!fleetWorkspaceTabs().some(([key]) => key === destination)) return;
+      const group = fleetSectionViews[destination];
+      const current = state.admin ? state.adminView : state.partnerView;
+      const source = fleetOpsViews.get(current);
+      if (source?.draft?.saving) return;
+      if (current === group && source?.section === destination && target.dataset.plate === undefined &&
+          target.dataset.fleetPolicyPlate === undefined && !target.dataset.date && !target.hasAttribute("data-recent")) return;
+      const focus = target.dataset.plate ?? target.dataset.fleetPolicyPlate ??
+        (current === group ? (group === "fleetCases" ? fleetFineState().search : source?.search) : "") ?? "";
+      if (state.admin) state.adminView = group;
+      else state.partnerView = group;
+      if (group === "fleetCases") {
+        Object.assign(fleetFineState(), { search: focus, tab: "all", todayOnly: false, page: 1 });
+      } else {
+        const view = fleetOperationsState(group);
+        const previous = view.section;
+        if (group === "fleetPolicies") view.policyFilter = target.dataset.policyExpiry || "all";
+        const sectionChanged = previous !== destination;
+        view.importRequest++;
+        Object.assign(view, { section: destination, search: focus, page: 1, draft: null });
+        if (destination === "calendar" && target.dataset.plate) {
+          Object.assign(view, { calendarKind: "all", calendarVendor: "", showSuggestions: true });
+        }
+        if (destination === "idle" && target.dataset.date) {
+          fleetIdlePeriod(view, "day", target.dataset.date);
+          view.latestWeek = false;
+        }
+        const recent = destination === "idle" && target.hasAttribute("data-recent");
+        if (recent) {
+          const end = today();
+          Object.assign(view, { mode: "range", start: fleetShiftDate(end, -6), end, anchor: end, weekIndex: 0, latestWeek: false });
+        }
+        const sameData = [previous, destination].every(key => ["fuel", "calendar"].includes(key));
+        if ((sectionChanged && !sameData) || target.dataset.date || recent) {
+          view.request++;
+          view.rows = null;
+          view.error = "";
+          view.loading = false;
+        }
+      }
+      if (current !== group || target.dataset.plate !== undefined) target.closest(".modal-backdrop")?.remove();
+      render();
+      return;
+    }
+    if (target?.hasAttribute("data-fleet-ops-refresh")) {
+      void loadFleetOperations();
+      render();
+      return;
+    }
+    if (target?.dataset.fleetForecastLayout || target?.hasAttribute("data-fleet-attention") ||
+        target?.dataset.fleetCalendarLayout || target?.dataset.fleetCalendarKind || target?.hasAttribute("data-fleet-calendar-today")) {
+      const view = fleetOperationsState();
+      if (target.dataset.fleetForecastLayout) view.forecastLayout = target.dataset.fleetForecastLayout;
+      if (target.hasAttribute("data-fleet-attention")) { view.attention = !view.attention; view.page = 1; }
+      if (target.dataset.fleetCalendarLayout) view.calendarLayout = target.dataset.fleetCalendarLayout;
+      if (target.dataset.fleetCalendarKind) view.calendarKind = target.dataset.fleetCalendarKind;
+      if (target.hasAttribute("data-fleet-calendar-today")) state.calendarMonth = today().slice(0, 7) + "-01";
+      render();
+      return;
+    }
+    if (target?.dataset.fleetOpsPage) {
+      fleetOperationsState().page = Math.max(1, Number(target.dataset.fleetOpsPage) || 1);
+      render();
+      return;
+    }
+    if (target?.hasAttribute("data-fleet-import-cancel")) {
+      const view = fleetOperationsState();
+      view.importRequest++;
+      view.draft = null;
+      render();
+      return;
+    }
+    if (target?.hasAttribute("data-fleet-import-save")) {
+      try { await confirmFleetImport(target); }
+      catch (error) { await showAlert(error.message, "匯入失敗"); }
+      return;
+    }
+    if (target?.dataset.fleetExport) {
+      target.disabled = true;
+      try { await exportFleetReport(target.dataset.fleetExport); }
+      catch (error) { await showAlert(error.message, "下載失敗"); }
+      finally { target.disabled = false; }
+      return;
+    }
+    if (target?.dataset.fleetPolicyOpen) {
+      try {
+        const { url, name, type } = await apiRequest("open_fleet_policy", { id: target.dataset.fleetPolicyOpen, vehicle_id: target.dataset.policyVehicle });
+        openFilePreview(url, name || "保單", type);
+      } catch (error) { await showAlert(error.message, "無法開啟保單"); }
+      return;
+    }
+    if (target?.hasAttribute("data-fleet-refresh")) {
+      const loading = loadFleetFines(true);
+      render();
+      await loading;
+      return;
+    }
+    if (target?.dataset.fleetFineCommand) {
+      const command = target.dataset.fleetFineCommand;
+      if (command === "reset") {
+        Object.assign(fleetFineState(), { search: "", dealer: "", status: "", kind: "", deadline: "", selfDeadline: "", todayOnly: false, page: 1, tab: "all" });
+        render();
+      } else if (command === "read-today" && state.partner?.id) {
+        const view = fleetFineState();
+        const ids = (view.rows || []).filter(fleetFineCreatedToday).map(row => row.id);
+        try { localStorage.setItem("afide-fleet-fines-seen:" + state.partner.id, JSON.stringify({ date: today(), ids })); } catch {}
+        Object.assign(view, { newFineCount: 0, todayOnly: true, search: "", tab: "all", page: 1 });
+        render();
+      } else if (state.admin && adminCan("fleetCases")) {
+        if (command === "overview") openFleetFineOverview();
+        if (command === "new" || command === "ocr") openFleetFineEditor({}, command === "ocr");
+        if (command === "daily") openFleetFineDaily();
+        if (command === "batch") openFleetFineBatch();
+      }
+      return;
+    }
+    if (target?.dataset.fleetFineProgress) {
+      const row = fleetFineState().rows?.find(item => item.id === target.dataset.fleetFineProgress);
+      if (row && fleetFineCanReport(row)) openFleetFineProgress(row);
+      return;
+    }
+    if (target?.dataset.fleetFineEdit) {
+      const row = fleetFineState().rows?.find(item => item.id === target.dataset.fleetFineEdit);
+      if (row) openFleetFineEditor(row);
+      return;
+    }
+    if (target?.dataset.fleetFine) {
+      target.closest(".modal-backdrop")?.remove();
+      await openFleetFine(target.dataset.fleetFine);
+      return;
+    }
+    if (target?.dataset.fleetTab) {
+      Object.assign(fleetFineState(), { tab: target.dataset.fleetTab, todayOnly: false, page: 1 });
+      render();
+      return;
+    }
+    if (target?.dataset.fleetPage) {
+      fleetFineState().page = Math.max(1, Number(target.dataset.fleetPage) || 1);
+      render();
+      return;
+    }
+    if (target?.dataset.fleetPlate && state.partner?.partner_type === "dealer") {
+      Object.assign(fleetFineState(), { search: target.dataset.fleetPlate, tab: "all", page: 1 });
+      state.partnerView = "fleetCases";
+      render();
+      return;
+    }
     if (target?.hasAttribute("data-hiring-menu")) {
       const nav = document.getElementById("hiringNav");
       const open = nav.classList.toggle("is-open");
@@ -8229,6 +10523,17 @@
       render();
       return;
     }
+    if (target?.dataset.insuranceRenewVehicle) {
+      const vehicle = insuranceVehiclesForForm().find(row => row.id === target.dataset.insuranceRenewVehicle);
+      if (!vehicle) return;
+      const insuranceType = target.dataset.renewType;
+      openModal("insuranceRequest", null, {
+        ...insuranceCoverageDefaults(vehicle, insuranceType),
+        vehicle_id: vehicle.id, plate_no: vehicle.plate_no, dealer_partner_id: vehicle.dealer_partner_id,
+        insurance_type: insuranceType
+      });
+      return;
+    }
     if (target?.dataset.modal) {
       e.preventDefault();
       if (["staffAnnouncement", "staffCalendarEvent"].includes(target.dataset.modal)) target.closest(".modal-backdrop")?.remove();
@@ -8252,7 +10557,7 @@
       return;
     }
     if (!target && cellDate) {
-      if (state.admin) openModal("calendarEvent", null, { event_date: cellDate });
+      if (state.admin) openModal("calendarEvent", null, { event_date: cellDate, ...(e.target.closest(".fleet-maintenance-calendar") ? { event_type: "maintenance" } : {}) });
       else openCalendarDay(cellDate);
       return;
     }
@@ -8461,6 +10766,7 @@
       return;
     }
     if (target.dataset.vehicleView) {
+      state.vehiclePage = 1;
       state.vehicleViewMode = target.dataset.vehicleView;
       localStorage.setItem("afide-vehicle-view-mode", state.vehicleViewMode);
       render();
@@ -8486,7 +10792,7 @@
       render();
     }
     if (target.dataset.adminView) {
-      if (target.dataset.adminView !== "home" && !adminFullDataReady) {
+      if (!["home", "driverReporting"].includes(target.dataset.adminView) && !adminFullDataReady) {
         try { await withAppLoading("正在載入功能資料", ensureAdminWorkspaceData); }
         catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
       }
@@ -8513,6 +10819,7 @@
       render();
     }
     if (target.dataset.action === "clear-vehicle-search") {
+      state.vehiclePage = 1;
       state.vehicleSearch = "";
       state.vehicleStatusFilter = "";
       state.vehicleRegionFilter = "";
@@ -8646,14 +10953,15 @@
       return;
     }
     if (target.dataset.vehicleFileRemove !== undefined) {
-      const list = target.closest(".vehicle-folder-section")?.querySelector("[data-vehicle-file-list]");
       const form = target.closest("form");
       const hidden = form?.querySelector("[data-vehicle-files-json]");
-      let files = [];
-      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
-      files.splice(Number(target.dataset.vehicleFileRemove), 1);
-      if (hidden) hidden.value = JSON.stringify(files);
-      if (list) list.innerHTML = files.length ? files.map((file, index) => vehicleFileChip(file, index, true)).join("") : `<span class="muted-chip">尚未新增文件</span>`;
+      if (!hidden || form.querySelector("[data-vehicle-document-upload]:disabled")) return;
+      const files = JSON.parse(hidden.value);
+      const index = Number(target.dataset.vehicleFileRemove);
+      if (!Number.isInteger(index) || !files[index]) return;
+      files.splice(index, 1);
+      hidden.value = JSON.stringify(files);
+      refreshVehicleFolderLists(form, files);
       return;
     }
     if (target.dataset.vehiclePickerOption !== undefined) {
@@ -8687,12 +10995,12 @@
       return;
     }
     if (target.dataset.calendarDate) {
-      if (state.admin) openModal("calendarEvent", null, { event_date: target.dataset.calendarDate });
+      if (state.admin) openModal("calendarEvent", null, { event_date: target.dataset.calendarDate, ...(target.hasAttribute("data-fleet-maintenance-day") ? { event_type: "maintenance" } : {}) });
       else openCalendarDay(target.dataset.calendarDate);
       return;
     }
     if (cellDate) {
-      if (state.admin) openModal("calendarEvent", null, { event_date: cellDate });
+      if (state.admin) openModal("calendarEvent", null, { event_date: cellDate, ...(e.target.closest(".fleet-maintenance-calendar") ? { event_type: "maintenance" } : {}) });
       else openCalendarDay(cellDate);
       return;
     }
@@ -8712,8 +11020,37 @@
     if (target.dataset.insuranceStatus) {
       e.preventDefault();
       const [id, status] = target.dataset.insuranceStatus.split(":");
-      await update("insurance_requests", id, { status });
-      render();
+      const item = state.data.insurance_requests.find(row => row.id === id);
+      if (!item || target.disabled) return;
+      const dealer = state.partner?.partner_type === "dealer";
+      const change = dealer && ["vehicle_dept_review", "addition_review"].includes(status);
+      const patch = { status };
+      const title = target.textContent.trim();
+      target.disabled = true;
+      try {
+        if (change) {
+          const reason = await showAppDialog({
+            title: "更改需求", message: "想改什麼？請填寫變更內容，送出後會退回車輛部。",
+            kind: "prompt", input: true, inputRequired: true, confirmText: "送出變更", showCancel: true
+          });
+          if (reason == null) return;
+          patch.dealer_reply = reason.trim();
+          if (!patch.dealer_reply || patch.dealer_reply.length > 1000) throw new Error("請填寫想改的內容（1 到 1,000 字）。");
+        } else {
+          const approving = dealer && ["stamping", "addition_stamping"].includes(status);
+          const premium = insurancePremium(item.quote_amount);
+          if (approving && !premium) throw new Error("此案件缺少保費，請先請車輛部退回保經補報價。");
+          const message = approving ? `${item.plate_no} · 保費 ${premium}。確定同意此報價並送出？` : `${item.plate_no} · 確定執行「${title}」？`;
+          if (!(await showConfirm(message, title))) return;
+        }
+        await update("insurance_requests", id, patch, { insurance_expected_updated_at: item.updated_at ?? null });
+        render();
+      } catch (error) {
+        await showAlert(error.message || error, "無法更新案件");
+      } finally {
+        target.disabled = false;
+      }
+      return;
     }
     if (target.dataset.insuranceFileDelete) {
       e.preventDefault();
@@ -8739,6 +11076,72 @@
   });
 
   document.addEventListener("submit", async (e) => {
+    if (e.target.id === "fleetReportSettingsSearch") {
+      e.preventDefault();
+      const query = new FormData(e.target).get("q");
+      Object.assign(fleetOperationsState(), { settingsSearch: String(query || "").trim(), settingsPage: 1 });
+      render();
+      return;
+    }
+    if (e.target.id === "fleetNoticeSearch") {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      Object.assign(fleetOperationsState(), { noticeQuery: String(form.get("q") || "").trim(), noticeStatus: form.get("status"), noticePage: 1 });
+      render();
+      return;
+    }
+    if (e.target.id === "fleetOpsSearch") {
+      e.preventDefault();
+      const form = new FormData(e.target);
+      const view = fleetOperationsState();
+      const previousStart = view.start;
+      const previousEnd = view.end;
+      Object.assign(view, { search: String(form.get("q") || "").trim(), page: 1, weekIndex: 0 });
+      if (view.section === "idle") {
+        view.latestWeek = false;
+        if (view.mode === "range") {
+          const start = String(form.get("start"));
+          const end = String(form.get("end"));
+          if (end < start || Date.parse(end) - Date.parse(start) >= 31 * 86400000) {
+            await showAlert("請選擇最多 31 天的有效期間", "日期範圍");
+            return;
+          }
+          Object.assign(view, { start, end, anchor: end });
+        } else fleetIdlePeriod(view, view.mode, String(form.get("anchor") || view.anchor));
+        if (view.start !== previousStart || view.end !== previousEnd || view.error) void loadFleetOperations();
+      }
+      render();
+      return;
+    }
+    if (e.target.matches("[data-fleet-file-form]")) {
+      e.preventDefault();
+      const form = e.target;
+      const data = new FormData(form);
+      const file = data.get("file");
+      if (!file?.size || file.size > 5242880) { await showAlert("請選擇 5 MB 以內的 PDF 或照片"); return; }
+      const button = form.querySelector("button[type=submit]");
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        const attachment = await readFleetAttachment(file);
+        await apiRequest("save_fleet_file", { kind: form.dataset.kind, id: form.dataset.id,
+          file_id: form.dataset.fileId, ...attachment, share: data.has("share") });
+        if (form.dataset.kind === "fine") {
+          form.closest(".modal-backdrop")?.remove();
+          await openFleetFine(form.dataset.id);
+        } else await loadFleetOperations();
+      } catch (error) { await showAlert(error.message, "文件上傳失敗"); }
+      finally { button.disabled = false; }
+      return;
+    }
+    if (e.target.id === "fleetFineSearch") {
+      e.preventDefault();
+      const fields = new FormData(e.target);
+      Object.assign(fleetFineState(), Object.fromEntries(["sort", "dealer", "status", "kind", "deadline", "selfDeadline"].map(key => [key, fields.get(key) || ""])),
+        { search: String(fields.get("q") || "").trim(), page: 1 });
+      render();
+      return;
+    }
     if (e.target.id === "adminChatGroupForm") { e.preventDefault(); await submitAdminChatGroup(e.target); return; }
     if (e.target.id === "hiringApplicationForm") {
       e.preventDefault(); await submitHiringApplication(e.target); return;
@@ -8803,6 +11206,7 @@
     }
     if (e.target.id === "vehicleSearchForm") {
       e.preventDefault();
+      state.vehiclePage = 1;
       const data = new FormData(e.target);
       state.vehicleSearch = String(data.get("plate") || "").trim();
       state.vehicleStatusFilter = String(data.get("status") || "");
@@ -9084,7 +11488,57 @@
     renderVehiclePickerSuggestions(search);
   });
 
+  document.addEventListener("change", async event => {
+    const control = event.target.closest("[data-report-visibility]");
+    if (!control || !state.admin || !adminCan("vehicles") || !adminCan("fleetOperations")) return;
+    const key = control.dataset.reportVisibility;
+    if (!["show_idle_report", "show_maintenance_report"].includes(key)) return;
+    const vehicle = state.data.vehicles.find(row => row.id === control.dataset.reportVehicle);
+    if (!vehicle) return;
+    const desired = control.checked;
+    control.disabled = true;
+    try {
+      const { data } = await apiRequest("update", { table: "vehicles", id: vehicle.id, record: { [key]: desired, updated_at: now() } });
+      const current = state.data.vehicles.find(row => row.id === vehicle.id);
+      if (current) {
+        current[key] = data[key];
+        if (String(data.updated_at || "") > String(current.updated_at || "")) current.updated_at = data.updated_at;
+      }
+    } catch (error) {
+      control.checked = vehicle[key] !== false;
+      await showAlert(error.message, "更新報表設定失敗");
+    } finally {
+      control.disabled = false;
+    }
+  });
+
+  document.addEventListener("change", event => {
+    if (event.target.matches(".fleet-fine-filters select, #fleetFineSearch select[name=sort]")) {
+      event.target.form?.requestSubmit();
+    }
+  });
+
   document.addEventListener("change", async (e) => {
+    if (e.target.matches("[data-fleet-calendar-month]")) {
+      if (/^\d{4}-\d{2}$/.test(e.target.value)) {
+        state.calendarMonth = e.target.value + "-01";
+        render();
+      }
+      return;
+    }
+    if (e.target.matches("[data-fleet-calendar-vendor], [data-fleet-show-suggestions]")) {
+      const view = fleetOperationsState();
+      if (e.target.matches("[data-fleet-calendar-vendor]")) view.calendarVendor = e.target.value;
+      else view.showSuggestions = e.target.checked;
+      render();
+      return;
+    }
+    if (e.target.matches("[data-fleet-import]")) {
+      try { await previewFleetImport(e.target.files, e.target.dataset.fleetImport); }
+      catch (error) { await showAlert(error.message, "無法讀取報表"); }
+      finally { e.target.value = ""; }
+      return;
+    }
     if (e.target.matches('[data-staff-avatar-upload]') && e.target.files?.[0]) {
       const file = e.target.files[0];
       const form = e.target.closest("form");
@@ -9224,8 +11678,21 @@
       const option = insuranceVehicle.selectedOptions[0];
       const form = insuranceVehicle.closest("form");
       const root = vehiclePickerRoot(insuranceVehicle);
-      if (option?.dataset.plate) form.querySelector('[name="plate_no"]').value = option.dataset.plate;
-      if (option?.dataset.dealer) form.querySelector('[name="dealer_partner_id"]').value = option.dataset.dealer;
+      form.querySelector('[name="plate_no"]').value = option?.dataset.plate || "";
+      if (state.partner?.partner_type !== "dealer") form.querySelector('[name="dealer_partner_id"]').value = option?.dataset.dealer || "";
+      if (form.dataset.insuranceNewQuote === "true") {
+        const vehicle = insuranceVehiclesForForm().find(row => row.id === insuranceVehicle.value);
+        const selectedCoverage = form.elements.insurance_type.value;
+        const defaults = insuranceCoverageDefaults(vehicle, selectedCoverage.includes("+") ? "" : selectedCoverage);
+        for (const name of insuranceCoverageFields) {
+          const field = form.elements[name];
+          const value = defaults[name] || "";
+          if (value && field.tagName === "SELECT" && ![...field.options].some(option => option.value === value)) {
+            field.add(new Option(value, value));
+          }
+          field.value = value;
+        }
+      }
       const searchInput = vehiclePickerSearch(root);
       if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
       return;
@@ -9290,26 +11757,46 @@
     if (vehicleDocumentInput?.files?.[0]) {
       const file = vehicleDocumentInput.files[0];
       const form = vehicleDocumentInput.closest("form");
-      const field = vehicleDocumentInput.closest(".vehicle-folder-section");
+      const category = vehicleDocumentInput.dataset.vehicleDocumentUpload;
+      const label = vehicleDocumentLabels[category];
       const hidden = form?.querySelector("[data-vehicle-files-json]");
-      const list = form?.querySelector("[data-vehicle-file-list]");
-      const status = field?.querySelector("[data-attachment-status]");
-      let files = [];
-      try { files = JSON.parse(hidden?.value || "[]"); } catch {}
+      if (!hidden || !label || form.dataset.saving === "true" || form.querySelector("[data-vehicle-document-upload]:disabled")) {
+        vehicleDocumentInput.value = "";
+        return;
+      }
+      const inputs = [...form.querySelectorAll("[data-vehicle-document-upload]")];
+      const status = vehicleDocumentInput.closest(".vehicle-folder-section").querySelector("[data-attachment-status]");
+      inputs.forEach(input => { input.disabled = true; });
       try {
-        vehicleDocumentInput.disabled = true;
-        if (status) status.textContent = "車輛文件上傳中...";
-        const plateNo = form?.querySelector('[name="plate_no"]')?.value || "";
-        const uploaded = await uploadVehicleDocument(file, plateNo, vehicleDocumentInput.dataset.documentLabel || "車輛文件");
-        files.push({ url: uploaded.url || uploaded, name: uploaded.name || file.name, type: file.type, group: "車輛文件" });
-        if (hidden) hidden.value = JSON.stringify(files);
-        if (status) status.textContent = `已新增 ${files.length} 個車輛文件`;
-        if (list) list.innerHTML = files.map((item, index) => vehicleFileChip(item, index, true)).join("");
+        const customName = category === "other"
+          ? String(await showPrompt("請輸入要顯示的文件名稱", file.name.replace(/\.[^.]+$/, ""), "命名其他文件") || "").trim().slice(0, 120)
+          : "";
+        if ((category === "other" && !customName) || !form.isConnected) return;
+        status.textContent = "正在上傳…";
+        const plate = form.elements.plate_no.value;
+        const uploaded = await uploadVehicleDocument(file, plate, customName || label);
+        if (!uploaded?.url) throw new Error("上傳服務未回傳檔案網址。");
+        if (!form.isConnected) return;
+        const name = customName || uploaded.name || file.name;
+        if (category === "registration") {
+          form.elements.registration_doc_url.disabled = false;
+          form.elements.registration_doc_name.disabled = false;
+          form.elements.registration_doc_url.value = uploaded.url;
+          form.elements.registration_doc_name.value = name;
+          form.querySelector("[data-folder-registration]").innerHTML = vehicleRegistrationLink(uploaded.url, name);
+        } else {
+          const files = JSON.parse(hidden.value);
+          files.push({ url: uploaded.url, name, type: file.type, category });
+          hidden.value = JSON.stringify(files);
+          refreshVehicleFolderLists(form, files);
+        }
+        status.textContent = "已上傳，請按儲存套用。";
       } catch (error) {
-        if (status) status.textContent = "上傳失敗";
+        status.textContent = "上傳失敗";
         await showAlert(error.message || error, "上傳失敗");
       } finally {
-        vehicleDocumentInput.disabled = false;
+        inputs.forEach(input => { input.disabled = false; });
+        vehicleDocumentInput.value = "";
       }
       return;
     }

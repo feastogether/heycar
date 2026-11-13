@@ -9,7 +9,7 @@ const root = path.resolve(__dirname, ".."),
       path.join(root, "supabase/functions/data-api/index.ts"),
       "utf8",
     ),
-  ).replace(/^import .*\r?\n/, "");
+  ).replace(/^import .*\r?\n/gm, "");
 const app = fs.readFileSync(path.join(root, "app.js"), "utf8");
 function fn(code, name) {
   const start = code.indexOf(`function ${name}(`);

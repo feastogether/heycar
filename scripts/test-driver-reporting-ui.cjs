@@ -1,0 +1,94 @@
+const { chromium }=require('playwright');
+const { spawn }=require('node:child_process');
+const path=require('node:path'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'..');
+const base='http://127.0.0.1:4191';
+async function run(){
+  const child=spawn(process.execPath,['.fleet-preview/server.cjs'],{cwd:root,env:{...process.env,FLEET_PREVIEW_PORT:'4191',REPORTING_PREVIEW_DB:'memory'},stdio:['ignore','pipe','pipe']});
+  let browser;
+  try{
+    await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Preview startup timed out')),15000);child.once('exit',code=>{clearTimeout(timer);reject(Error('Preview exited '+code));});child.stdout.on('data',chunk=>{if(String(chunk).includes('Local fleet preview:')){clearTimeout(timer);resolve();}});child.stderr.on('data',chunk=>{if(!String(chunk).includes('ExperimentalWarning'))process.stderr.write(chunk);});});
+    browser=await chromium.launch({channel:'msedge',headless:true});
+    const context=await browser.newContext({viewport:{width:1440,height:1000}});
+    context.setDefaultTimeout(10000);
+    await context.route('**/*',route=>route.request().url().startsWith(base)?route.continue():route.abort());
+    const admin=await context.newPage(),errors=[];
+    admin.on('pageerror',error=>errors.push(error.message));
+    await admin.goto(base+'/?review=admin');
+    await admin.locator('.admin-topbar [data-action="toggle-admin-sidebar"]').click();
+    await admin.locator('[data-admin-view="driverReporting"]').click();
+    await admin.locator('[data-dr-settings]').waitFor();
+    await admin.locator('[name="is_open"]').check();
+    await admin.locator('[data-dr-block]').nth(8).click();
+    await admin.locator('[data-dr-settings] [type="submit"]').click();
+    await admin.locator('[data-dialog-confirm]').click();
+    await admin.waitForFunction(()=>document.querySelector('.dr-stats b')?.textContent==='2');
+    await admin.locator('[data-dr-settings]').waitFor({state:'hidden'});
+    const driverContext=await browser.newContext({viewport:{width:390,height:844}});
+    driverContext.setDefaultTimeout(10000);
+    await driverContext.route('**/*',route=>route.request().url().startsWith(base)?route.continue():route.abort());
+    const driver=await driverContext.newPage();driver.on('pageerror',error=>errors.push(error.message));
+    await driver.goto(base+'/?review=driver');
+    await driver.locator('[data-view="driverReporting"]').click();
+    await driver.locator('[data-dr-day]').first().waitFor();
+    assert.equal(await driver.locator('.dr-heading').count(),0,'driver introduction is removed');
+    assert.equal(await driver.getByText('每月休假規劃',{exact:true}).count(),0);
+    assert.equal(await driver.locator('[data-dr-day]').nth(8).isDisabled(),true);
+    for(let day=0;day<5;day++)await driver.locator('[data-dr-day]').nth(day).click();
+    await driver.getByText('已超過排定天數待督導審核',{exact:true}).waitFor();
+    for(const width of [320,390,768,1440]){
+      await driver.setViewportSize({width,height:900});
+      assert.equal(await driver.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'driver viewport '+width);
+      const controls=await driver.locator('.dr-driver-toolbar>button,.dr-driver-toolbar select').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().top));
+      assert(Math.max(...controls)-Math.min(...controls)<2,'month controls and refresh stay on one row at '+width);
+      if(width===390)await driver.screenshot({path:path.join(root,'.fleet-preview/reporting-driver-mobile.png'),fullPage:true});
+    }
+    await driver.locator('[data-dr-ack]').check();
+    await driver.locator('[data-dr="submit"]').click();
+    await driver.locator('[data-dialog-confirm]').click();
+    await driver.getByText('已送出・不可修改',{exact:true}).waitFor();
+    assert.equal(await driver.locator('.dr-day.pending').count(),5);
+    assert.equal(await driver.locator('[data-dr="submit"]').count(),0);
+    await driver.locator('[data-dr="refresh"]').click();
+    await driver.getByText('已送出・不可修改',{exact:true}).waitFor();
+    await admin.locator('[data-dr="refresh"]').click();
+    await admin.locator('[data-dr-approve]').waitFor();
+    assert.equal(await admin.locator('.dr-date-chips .pending').count(),5);
+    await admin.screenshot({path:path.join(root,'.fleet-preview/reporting-admin-pending.png'),fullPage:true});
+    await admin.locator('[data-dr-approve]').click();
+    await admin.locator('[data-dialog-confirm]').click();
+    await admin.locator('.dr-table .dr-badge.approved').waitFor();
+    assert.equal(await admin.locator('.dr-date-chips .approved').count(),5);
+    await driver.locator('[data-dr="refresh"]').click();
+    await driver.locator('.dr-locked .dr-badge.approved').waitFor();
+    assert.equal(await driver.locator('.dr-day.approved').count(),5);
+    await driver.setViewportSize({width:390,height:844});
+    await driver.screenshot({path:path.join(root,'.fleet-preview/reporting-driver-approved.png'),fullPage:true});
+    const other=await driverContext.newPage();await other.goto(base+'/?review=otherdriver');
+    await other.locator('[data-view="dispatchCenter"]').waitFor();
+    assert.equal(await other.locator('[data-view="driverReporting"]').count(),0,'other dealer default denied');
+    await admin.evaluate(()=>document.querySelector('[data-admin-view="insurancePartners"]').click());
+    const company=admin.locator('.partner-card').filter({hasText:'亞菲得股份有限公司'});
+    await company.getByRole('button',{name:'編輯',exact:true}).click();
+    const permission=admin.locator('[name="frontend_driverReporting"]');
+    assert.equal(await permission.isChecked(),true,'default switch is enabled for 亞菲得');
+    await permission.uncheck();
+    await admin.locator('#modalForm [type="submit"]').click();
+    await admin.locator('#modalForm').waitFor({state:'hidden'});
+    await driver.goto(base+'/?review=driver');
+    await driver.locator('[data-view="dispatchCenter"]').waitFor();
+    assert.equal(await driver.locator('[data-view="driverReporting"]').count(),0,'saved opt-out hides driver entry');
+    await company.getByRole('button',{name:'編輯',exact:true}).click();
+    assert.equal(await permission.isChecked(),false,'saved switch is retained on edit');
+    await admin.locator('[data-close-modal]').first().click();
+    for(const width of [320,390,768,1440]){
+      await admin.setViewportSize({width,height:900});
+      await admin.evaluate(()=>document.querySelector('[data-admin-view="driverReporting"]')?.click());
+      await admin.locator('.dr-stats').waitFor();
+      assert.equal(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'admin viewport '+width);
+    }
+    assert.deepEqual(errors,[]);
+    console.log('PASS: actual admin/driver entry points, blocked dates, over-quota warning, submit locking, reload, approval colors, dealer opt-out, and 320/390/768/1440px layouts.');
+  }finally{if(browser)await browser.close();child.kill();}
+}
+run().catch(error=>{console.error(error);process.exitCode=1;});

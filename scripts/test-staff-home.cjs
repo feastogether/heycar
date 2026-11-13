@@ -6,7 +6,7 @@ const { stripTypeScriptTypes } = require('node:module');
 const { chromium } = require('playwright');
 const root = path.resolve(__dirname, '..');
 const app = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-const backend = stripTypeScriptTypes(fs.readFileSync(path.join(root, 'supabase/functions/data-api/index.ts'), 'utf8')).replace(/^import .*$/m, '');
+const backend = stripTypeScriptTypes(fs.readFileSync(path.join(root, 'supabase/functions/data-api/index.ts'), 'utf8')).replace(/^import .*$/gm, '');
 const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j9F0AAAAASUVORK5CYII=';
 const today = new Intl.DateTimeFormat('sv-SE', { timeZone:'Asia/Taipei' }).format(new Date());
 const users = [{id:'me',name:'王小明',active:true,extension:'123',avatar_url:'',permissions:{}}, {id:'amy',name:'陳美麗',active:true,extension:'456',avatar_url:pixel,permissions:{}}];

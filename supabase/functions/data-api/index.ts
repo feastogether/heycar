@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { dealerInsuranceHistory, insuranceWrite } from "./insurance-workflow.mjs";
+import { createDriverReportingHandler } from "./driver-reporting.mjs";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
@@ -382,12 +384,22 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all") {
       return;
     }
     if (permission && !(await adminCan(session, permission))) {
-      if (["vehicles", "drivers", "insurance_partners"].includes(table) && await adminCan(session, "maintenanceNotifications")) {
-        const columns = table === "vehicles" ? "id,plate_no,dealer_partner_id,fleet_name,fuel_type" : table === "drivers" ? "id,name" : "id,name,partner_type,active";
+      if (["vehicles", "drivers", "insurance_partners"].includes(table) &&
+          ((await adminCan(session, "maintenanceNotifications")) || (await adminCan(session, "calendar")))) {
+        const columns = table === "vehicles" ? "id,plate_no,dealer_partner_id,fleet_name,fuel_type,show_maintenance_report,show_idle_report" : table === "drivers" ? "id,name" : "id,name,partner_type,active";
         result[table] = await dispatchRows(table, columns);
         return;
       }
-      if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "serviceRecords")))) {
+      if (table === "vehicles" && ((await adminCan(session, "fleetOperations")) || (await adminCan(session, "fleetCases")))) {
+        const columns = "id,plate_no,brand,model,dealer_partner_id,fleet_name,compulsory_insurance_company,compulsory_insurance_expiry,voluntary_insurance_company,voluntary_insurance_expiry,show_maintenance_report,show_idle_report";
+        result[table] = await dispatchRows(table, columns);
+        return;
+      }
+      if (table === "vehicle_service_records" && await adminCan(session, "fleetOperations")) {
+        result[table] = await dispatchRows(table, "id,vehicle_id,plate_no,record_type,service_date,odometer,next_service_odometer");
+        return;
+      }
+      if (table === "insurance_partners" && ((await adminCan(session, "vehicles")) || (await adminCan(session, "serviceRecords")) || (await adminCan(session, "calendar")) || (await adminCan(session, "fleetOperations")) || (await adminCan(session, "fleetCases")))) {
         const { data, error } = await db
           .from("insurance_partners")
           .select("id,name,partner_type,contact_name,phone,email,active,notes,logo_url,logo_name");
@@ -636,6 +648,7 @@ const tablePermission: Record<string, string> = {
   maintenance_records: "serviceRecords",
   maintenance_notifications: "maintenanceNotifications",
   maintenance_notification_batches: "maintenanceNotifications",
+  calendar_events: "calendar",
   announcements: "announcements",
   announcement_reads: "announcements",
   personal_messages: "personalMessages",
@@ -731,10 +744,10 @@ function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
   const output: Record<string, unknown> = { ...item };
   const requestType = compactText(output.request_type);
   const status = compactText(output.status);
-  const dealerCanSeeQuote = requestType === "quote" && [
+  const dealerCanSeeQuote = (requestType === "addition" && ["addition_dealer_review", "addition_stamping", "addition_policy_pending", "addition_completed"].includes(status)) || (requestType === "quote" && [
     "dealer_review", "stamping", "quote_confirmed_issue_application",
     "awaiting_policy", "payment_pending", "receipt_pending", "completed"
-  ].includes(status);
+  ].includes(status));
   const dealerCanSeePolicy = (
     (requestType === "quote" && ["payment_pending", "receipt_pending", "completed"].includes(status)) ||
     (requestType === "addition" && status === "addition_completed") ||
@@ -742,6 +755,7 @@ function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
   );
   const dealerCanSeeReceipt = (
     (requestType === "quote" && ["receipt_pending", "completed"].includes(status)) ||
+    (requestType === "addition" && status === "addition_completed") ||
     (requestType === "document" && ["document_received", "completed"].includes(status))
   );
 
@@ -754,21 +768,11 @@ function sanitizeDealerInsuranceRequest(item: Record<string, unknown>) {
     "payment_slip_url", "payment_slip_name",
     "license_files", "amendment_files", "quote_request_files"
   );
-  if (!dealerCanSeeQuote) hide("quote_url", "quote_name", "quote_files");
+  if (!dealerCanSeeQuote) hide("quote_url", "quote_name", "quote_files", "quote_amount");
+  output.status_history = dealerInsuranceHistory(item.status_history);
   if (!dealerCanSeePolicy) hide("policy_url", "policy_name", "document_policy_url", "document_policy_name");
   if (!dealerCanSeeReceipt) hide("receipt_url", "receipt_name", "document_receipt_url", "document_receipt_name");
   return output;
-}
-
-async function partnerTypeForSession(session: Record<string, unknown>) {
-  if (session.session_type !== "partner" || !session.partner_id) return "";
-  const { data, error } = await db
-    .from("insurance_partners")
-    .select("partner_type")
-    .eq("id", session.partner_id)
-    .maybeSingle();
-  if (error) throw error;
-  return compactText(data?.partner_type);
 }
 
 // Resolve only a unique dealer name; assigned_vendor takes precedence over vendor_name.
@@ -794,6 +798,388 @@ async function dispatchRows(table: string, columns: string, filterKey = "", filt
     if (!page.data?.length) return rows;
     offset += page.data.length;
   }
+}
+
+const fleetFineListColumns = "id,vehicle_id,dealer_partner_id,original_dealer,plate_no,ticket_number,fine_type,fine_date,due_date,self_pay_deadline,paid_date,amount,status,review_state,violation,violation_location,driver_name,plate_owner_company,created_at,updated_at";
+const fleetFineStatuses = ["待處理", "處理中", "已繳待核對", "有異議", "公司已代繳待代扣", "已代扣", "已繳", "已處理", "完成", "結案", "撤銷", "免罰"];
+const fleetFineDealerStatuses = ["待處理", "已繳待核對", "有異議"];
+const fleetFineActions = ["load_fleet_fines", "load_fleet_fine", "write_fleet_fines", "archive_fleet_fine", "report_fleet_fine"];
+
+function fleetLegacyDriveUrl(value: unknown) {
+  try {
+    const url = new URL(String(value || ""));
+    return url.protocol === "https:" && url.hostname === "drive.google.com" ? url.href : "";
+  } catch {
+    return "";
+  }
+}
+
+async function fleetFineAccess(session: Record<string, unknown>, permission = "fleetCases") {
+  if (session.session_type === "admin" && await adminCan(session, permission)) {
+    return { admin: true, dealerId: "" };
+  }
+  if (session.session_type !== "partner" || !session.partner_id) return null;
+  const { data, error } = await db.from("insurance_partners").select("id")
+    .eq("id", session.partner_id).eq("partner_type", "dealer").eq("active", true).maybeSingle();
+  if (error) throw error;
+  return data ? { admin: false, dealerId: String(data.id) } : null;
+}
+
+async function handleFleetFines(body: Record<string, any>, session: Record<string, unknown>) {
+  const access = await fleetFineAccess(session);
+  if (!access) return json({ error: "無權查看罰單" }, 403);
+  const scope = (query: any) => access.admin ? query
+    : query.is("archived_at", null).eq("dealer_partner_id", access.dealerId).eq("review_state", "verified").not("vehicle_id", "is", null);
+  const columns = fleetFineListColumns + (access.admin ? ",archived_at" : "");
+
+  if (body.action === "write_fleet_fines") {
+    if (!access.admin) return json({ error: "僅管理員可新增或編輯罰單" }, 403);
+    return await writeFleetFines(body);
+  }
+  if (body.action === "archive_fleet_fine") {
+    if (!access.admin) return json({ error: "僅管理員可刪除或還原罰單" }, 403);
+    if (!fleetUuid(body.id) || !body.version || typeof body.archive !== "boolean") return json({ error: "無效的罰單資料" }, 400);
+    const stamp = new Date().toISOString();
+    const { data, error } = await db.from("fleet_fines").update({ archived_at: body.archive ? stamp : null, updated_at: stamp })
+      .eq("id", body.id).eq("updated_at", body.version).select("id").maybeSingle();
+    if (error) throw error;
+    return data ? json({ ok: true }) : json({ error: "罰單已變更，請重新載入" }, 409);
+  }
+  if (body.action === "report_fleet_fine") {
+    const statuses = access.admin ? fleetFineStatuses : fleetFineDealerStatuses;
+    const paidDate = body.paid_date ? fleetIsoDate(body.paid_date) : null;
+    if (!fleetUuid(body.id) || !body.version || !statuses.includes(body.status) || (body.paid_date && !paidDate)) {
+      return json({ error: "請檢查處理進度與繳款日期" }, 400);
+    }
+    const { data, error } = await db.rpc("report_fleet_fine_progress", {
+      p_id: body.id, p_dealer_id: access.dealerId || null, p_version: body.version,
+      p_status: body.status, p_paid_date: paidDate, p_note: compactText(body.note).slice(0, 2000),
+      p_visible: !access.admin || body.share === true
+    });
+    if (error) throw error;
+    return data ? json({ ok: true }) : json({ error: "這筆罰單已變更或無法回報，請重新載入" }, 409);
+  }
+
+  if (body.action === "load_fleet_fines") {
+    const vehicleId = body.vehicle_id;
+    if (vehicleId !== undefined && !fleetUuid(vehicleId)) return json({ error: "無效的車輛" }, 400);
+    const load = async (vehicleField?: string, value?: string) => {
+      const fines = [];
+      for (let offset = 0; ;) {
+        let query = scope(db.from("fleet_fines").select(columns));
+        if (vehicleField && value) query = query.eq(vehicleField, value);
+        if (vehicleField === "plate_no") query = query.is("vehicle_id", null);
+        const { data, error } = await query.order("id").range(offset, offset + 199);
+        if (error) throw error;
+        if (!data?.length) break;
+        fines.push(...data);
+        offset += data.length;
+      }
+      return fines;
+    };
+    if (!vehicleId) return json({ fines: await load() });
+
+    let vehicleQuery = db.from("vehicles").select("plate_no").eq("id", vehicleId);
+    if (!access.admin) vehicleQuery = vehicleQuery.eq("dealer_partner_id", access.dealerId);
+    const { data: vehicle, error } = await vehicleQuery.maybeSingle();
+    if (error) throw error;
+    if (!vehicle) return json({ error: "找不到車輛" }, 404);
+    const linked = await load("vehicle_id", vehicleId);
+    // Staff can also review old unlinked cases that use the same recorded plate.
+    const unlinked = access.admin && vehicle.plate_no ? await load("plate_no", vehicle.plate_no) : [];
+    return json({ fines: [...linked, ...unlinked] });
+  }
+
+  const id = String(body.id || "");
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) {
+    return json({ error: "找不到罰單" }, 404);
+  }
+  const { data: fine, error } = await scope(db.from("fleet_fines")
+    .select(columns)).eq("id", id).maybeSingle();
+  if (error) throw error;
+  if (!fine) return json({ error: "找不到罰單" }, 404);
+
+  let updates = db.from("fleet_fine_updates").select("id,status,note,paid_date,created_at,visible_to_dealer").eq("fine_id", id);
+  let files = db.from("fleet_fine_files").select("id,name,storage_path" + (access.admin ? ",legacy_url" : "")).eq("fine_id", id);
+  if (!access.admin) {
+    updates = updates.eq("visible_to_dealer", true);
+    files = files.eq("visible_to_dealer", true).eq("shared_dealer_id", access.dealerId).not("storage_path", "is", null);
+  }
+  const [history, attachments] = await Promise.all([updates.order("created_at").order("id"), files.order("id")]);
+  if (history.error) throw history.error;
+  if (attachments.error) throw attachments.error;
+  const attachmentLinks = await Promise.all((attachments.data || []).map(async (file: any) => {
+    let url = "";
+    if (file.storage_path) {
+      const { data } = await db.storage.from("fleet-private").createSignedUrl(file.storage_path, 600);
+      url = data?.signedUrl || "";
+    }
+    return { id: file.id, name: file.name, url, legacy_reference: Boolean(file.legacy_url),
+      legacy_url: access.admin ? fleetLegacyDriveUrl(file.legacy_url) : "" };
+  }));
+  return json({ fine, updates: history.data || [], files: attachmentLinks });
+}
+
+async function writeFleetFines(body: Record<string, any>) {
+  if (!Array.isArray(body.records) || !body.records.length || body.records.length > 200) {
+    return json({ error: "每次請提供 1 至 200 筆罰單" }, 400);
+  }
+  const [vehicles, dealers] = await Promise.all([
+    dispatchRows("vehicles", "id,plate_no,dealer_partner_id"), dispatchDealers()
+  ]);
+  const records = [];
+  const ids = new Set<string>();
+  for (const row of body.records) {
+    const plate = compactText(row?.plate_no).normalize("NFKC").toUpperCase().slice(0, 24);
+    const plateKey = fleetPlateKey(plate);
+    const dealer = dealers.find(item => item.id === row?.dealer_partner_id && item.active !== false);
+    const matches = vehicles.filter(vehicle => fleetPlateKey(vehicle.plate_no) === plateKey);
+    const vehicle = matches.length === 1 ? matches[0] : null;
+    const textFields = ["driver_name", "plate_owner_company", "violation", "violation_location"];
+    const dates = Object.fromEntries(["fine_date", "due_date", "self_pay_deadline", "paid_date"].map(key =>
+      [key, row?.[key] ? fleetIsoDate(row[key]) : null]));
+    if (!fleetUuid(row?.id) || ids.has(row.id) || !plateKey ||
+      !["罰單", "停車催繳"].includes(row.fine_type) || !fleetFineStatuses.includes(row.status) ||
+      (row.dealer_partner_id && !dealer) || Object.entries(dates).some(([key, date]) => row[key] && !date) ||
+      !Number.isFinite(row.amount) || row.amount < 0 || row.amount >= 10000000000 ||
+      (row.expected_version && body.records.length !== 1)) {
+      return json({ error: "第 " + (records.length + 1) + " 筆罰單的車牌、車商、日期、狀態或金額有誤" }, 400);
+    }
+    if ((row.share === true || body.assign_same_plate === true) && (!dealer || vehicle?.dealer_partner_id !== dealer.id)) {
+      return json({ error: "第 " + (records.length + 1) + " 筆車牌未與所選車商唯一對應，請核對車輛管理後再開放" }, 409);
+    }
+    ids.add(row.id);
+    records.push({
+      id: row.id, plate_no: vehicle?.plate_no || plate, vehicle_id: vehicle?.id || null,
+      dealer_partner_id: dealer?.id || null, original_dealer: dealer?.name || compactText(row.original_dealer).slice(0, 120),
+      ticket_number: compactText(row.ticket_number).normalize("NFKC").toUpperCase().slice(0, 100),
+      fine_type: row.fine_type, amount: row.amount, status: row.status,
+      review_state: !dealer ? "unclaimed" : row.share === true ? "verified" : "review",
+      ...dates, ...Object.fromEntries(textFields.map(key => [key, compactText(row[key]).slice(0, 1000)])),
+      ...(row.expected_version ? { expected_version: row.expected_version } : {})
+    });
+  }
+  const { data, error } = await db.rpc("write_fleet_fines", { p_records: records, p_assign_same_plate: body.assign_same_plate === true });
+  if (error?.code === "23505" || error?.code === "40001") return json({ error: error.message }, 409);
+  if (error?.code === "23514") return json({ error: error.message }, 400);
+  if (error) throw error;
+  return json({ ids: data });
+}
+
+function fleetUuid(value: unknown) {
+  return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(value || ""));
+}
+
+function fleetPlateKey(value: unknown) {
+  return String(value || "").normalize("NFKC").toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+function fleetIsoDate(value: unknown) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  const date = new Date(value + "T00:00:00Z");
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : "";
+}
+
+async function handleFleetOperations(body: Record<string, any>, session: Record<string, unknown>) {
+  const scopeVehicle = body.vehicle_id;
+  const policyRead = body.action === "open_fleet_policy" || (body.action === "load_fleet_operations" && body.section === "policy");
+  if (policyRead && scopeVehicle !== undefined && !fleetUuid(scopeVehicle)) return json({ error: "無效的車輛" }, 400);
+  let access = await fleetFineAccess(session, "fleetOperations");
+  if (!access && policyRead && scopeVehicle && session.session_type === "admin" && await adminCan(session, "vehicles")) {
+    access = { admin: true, dealerId: "" };
+  }
+  if (!access) return json({ error: "無權使用車務資料" }, 403);
+  if (body.action === "load_fleet_operations") {
+    if (body.section === "idle") {
+      const start = fleetIsoDate(body.start);
+      const end = fleetIsoDate(body.end);
+      if (!start || !end || end < start || Date.parse(end) - Date.parse(start) > 31 * 86400000) {
+        return json({ error: "請選擇最多 31 天的有效期間" }, 400);
+      }
+      const rows = [];
+      for (let offset = 0; ;) {
+        let query = db.from("fleet_idle_daily").select("vehicle_id,record_date,drive_mins,idle_mins,mileage,driver_name")
+          .gte("record_date", start).lte("record_date", end)
+          .order("record_date").order("vehicle_id").range(offset, offset + 399);
+        if (!access.admin) query = query.eq("dealer_partner_id", access.dealerId);
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data?.length) break;
+        rows.push(...data);
+        offset += data.length;
+      }
+      return json({ rows });
+    }
+    if (body.section === "fuel") {
+      if (!access.admin) return json({ error: "僅管理員可查看加油統計" }, 403);
+      const { data, error } = await db.from("fleet_fuel_stats")
+        .select("vehicle_id,last_fill_date,last_fill_mileage,avg_daily_km,record_count,span_days");
+      if (error) throw error;
+      return json({ rows: data || [] });
+    }
+    if (body.section === "policy") {
+      const policyColumns = "id,vehicle_id,policy_type,company,policy_number,start_date,expiry_date,name,storage_path";
+      const rows = [];
+      if (scopeVehicle && !access.admin) {
+        const { data, error } = await db.from("vehicles").select("id").eq("id", scopeVehicle).eq("dealer_partner_id", access.dealerId).maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "找不到車輛" }, 404);
+      }
+      const currentVehicles = access.admin || scopeVehicle ? null : new Set(
+        (await dispatchRows("vehicles", "id", "dealer_partner_id", access.dealerId)).map(row => row.id)
+      );
+      for (let offset = 0; ;) {
+        let query = db.from("fleet_policy_documents").select(policyColumns + (access.admin ? ",legacy_url" : ""))
+          .order("id").range(offset, offset + 399);
+        if (!access.admin) query = query.eq("dealer_partner_id", access.dealerId);
+        if (scopeVehicle) query = query.eq("vehicle_id", scopeVehicle);
+        const { data, error } = await query;
+        if (error) throw error;
+        if (!data?.length) break;
+        rows.push(...data.filter(row => !currentVehicles || currentVehicles.has(row.vehicle_id)));
+        offset += data.length;
+      }
+      return json({ rows: rows.map(({ storage_path, legacy_url, ...row }) => ({
+        ...row, has_file: Boolean(storage_path), legacy_reference: Boolean(legacy_url),
+        legacy_url: access.admin ? fleetLegacyDriveUrl(legacy_url) : ""
+      })) });
+    }
+    return json({ error: "無法識別車務分類" }, 400);
+  }
+
+  if (body.action === "open_fleet_policy") {
+    const id = String(body.id || "");
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) return json({ error: "找不到保單" }, 404);
+    let query = db.from("fleet_policy_documents").select("vehicle_id,name,storage_path").eq("id", id);
+    if (scopeVehicle) query = query.eq("vehicle_id", scopeVehicle);
+    if (!access.admin) query = query.eq("dealer_partner_id", access.dealerId);
+    const { data: policy, error } = await query.maybeSingle();
+    if (error) throw error;
+    if (!policy?.storage_path) return json({ error: "保單原檔尚未就緒" }, 404);
+    if (!access.admin) {
+      const { data, error: vehicleError } = await db.from("vehicles").select("id")
+        .eq("id", policy.vehicle_id).eq("dealer_partner_id", access.dealerId).maybeSingle();
+      if (vehicleError) throw vehicleError;
+      if (!data) return json({ error: "找不到保單" }, 404);
+    }
+    const { data, error: storageError } = await db.storage.from("fleet-private").createSignedUrl(policy.storage_path, 600);
+    if (storageError) throw storageError;
+    const extension = String(policy.storage_path || "").split(".").at(-1)?.toLowerCase();
+    const type = extension === "pdf" ? "application/pdf" : extension === "png" ? "image/png" : extension === "jpg" || extension === "jpeg" ? "image/jpeg" : "";
+    return json({ url: data.signedUrl, name: policy.name, type });
+  }
+
+  if (body.action === "edit_fleet_idle") {
+    if (!access.admin) return json({ error: "僅管理員可編輯怠速紀錄" }, 403);
+    const date = fleetIsoDate(body.record_date);
+    const fields = ["drive_mins", "idle_mins", "mileage"];
+    const valid = (row: any) => row && fields.every(field => Number.isFinite(row[field]) && row[field] >= 0 &&
+      (field === "mileage" || (Number.isInteger(row[field]) && row[field] <= 1440)));
+    if (!date || !fleetUuid(body.vehicle_id) || !valid(body.values) || !valid(body.before)) {
+      return json({ error: "請檢查日期、分鐘數與里程" }, 400);
+    }
+    let query = db.from("fleet_idle_daily").update(Object.fromEntries(fields.map(field => [field, body.values[field]])))
+      .eq("vehicle_id", body.vehicle_id).eq("record_date", date);
+    for (const field of fields) query = query.eq(field, body.before[field]);
+    const { data, error } = await query.select("vehicle_id").maybeSingle();
+    if (error) throw error;
+    return data ? json({ ok: true }) : json({ error: "這筆日報已變更，請關閉視窗並重新整理後再編輯" }, 409);
+  }
+
+  if (!access.admin) return json({ error: "僅管理員可匯入資料" }, 403);
+  if (!["idle", "fuel"].includes(body.section) || !Array.isArray(body.rows) || !body.rows.length || body.rows.length > 2000) {
+    return json({ error: "每次請提供 1 至 2000 筆有效資料" }, 400);
+  }
+  const idle = body.section === "idle";
+  const vehicles = await dispatchRows("vehicles", "id,plate_no,dealer_partner_id");
+  const byPlate = new Map<string, Record<string, any> | null>();
+  for (const vehicle of vehicles) {
+    const key = fleetPlateKey(vehicle.plate_no);
+    if (key) byPlate.set(key, byPlate.has(key) ? null : vehicle);
+  }
+  const records = [];
+  const keys = new Set<string>();
+  for (const row of body.rows) {
+    const vehicle = byPlate.get(fleetPlateKey(row?.plate));
+    const date = fleetIsoDate(idle ? row?.record_date : row?.last_fill_date);
+    const key = vehicle ? vehicle.id + (idle ? "/" + date : "") : "";
+    if (!vehicle || !date || keys.has(key)) return json({ error: "匯入資料包含未知車牌、無效日期或重複項目" }, 400);
+    keys.add(key);
+    if (idle) {
+      const { drive_mins, idle_mins, mileage } = row;
+      if (![drive_mins, idle_mins].every(n => Number.isInteger(n) && n >= 0 && n <= 1440) || !Number.isFinite(mileage) || mileage < 0) {
+        return json({ error: "怠速報表含無效的時間或里程" }, 400);
+      }
+      records.push({ vehicle_id: vehicle.id, dealer_partner_id: body.share === true ? vehicle.dealer_partner_id : null, record_date: date, drive_mins, idle_mins, mileage,
+        driver_name: compactText(row.driver_name).slice(0, 120) || null });
+    } else {
+      const { last_fill_mileage, avg_daily_km, record_count, span_days } = row;
+      if (!Number.isFinite(last_fill_mileage) || last_fill_mileage <= 0 ||
+          !Number.isInteger(record_count) || record_count < 1 || !Number.isFinite(span_days) || span_days < 0 ||
+          (avg_daily_km !== null && (!Number.isFinite(avg_daily_km) || avg_daily_km < 0 || record_count < 3 || span_days < 7))) {
+        return json({ error: "加油報表含無效的里程或樣本數" }, 400);
+      }
+      records.push({ vehicle_id: vehicle.id, last_fill_date: date, last_fill_mileage, avg_daily_km, record_count, span_days });
+    }
+  }
+  const { error } = await db.from(idle ? "fleet_idle_daily" : "fleet_fuel_stats")
+    .upsert(records, { onConflict: idle ? "vehicle_id,record_date" : "vehicle_id" });
+  if (error) throw error;
+  return json({ count: records.length });
+}
+
+async function saveFleetFile(body: Record<string, any>, session: Record<string, unknown>) {
+  const policy = body.kind === "policy";
+  if (session.session_type !== "admin" || !(await adminCan(session, policy ? "fleetOperations" : "fleetCases"))) {
+    return json({ error: "僅授權員工可上傳文件" }, 403);
+  }
+  const id = String(body.id || "");
+  const uuid = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+  if (!["policy", "fine"].includes(body.kind) || !uuid.test(id) || (body.file_id && !uuid.test(body.file_id))) {
+    return json({ error: "文件所屬紀錄無效" }, 400);
+  }
+  const encoded = body.base64;
+  if (typeof encoded !== "string" || encoded.length > 6990508) return json({ error: "檔案需在 5 MB 以內" }, 400);
+  let bytes: Uint8Array;
+  try { bytes = Uint8Array.from(atob(encoded), char => char.charCodeAt(0)); }
+  catch { return json({ error: "檔案內容無法讀取" }, 400); }
+  const prefix = [...bytes.subarray(0, 8)];
+  const isPdf = prefix.slice(0, 5).join(",") === "37,80,68,70,45";
+  const isPng = prefix.join(",") === "137,80,78,71,13,10,26,10";
+  const isJpeg = prefix.slice(0, 3).join(",") === "255,216,255";
+  const mime = isPdf ? "application/pdf" : isPng ? "image/png" : isJpeg ? "image/jpeg" : "";
+  if (!mime || bytes.length > 5242880) return json({ error: "請使用 5 MB 以內的 PDF、PNG 或 JPG" }, 400);
+  const name = String(body.name || "附件").replace(/[\x00-\x1f/\\]/g, "").trim().slice(0, 160) || "附件";
+  const parent = await db.from(policy ? "fleet_policy_documents" : "fleet_fines")
+    .select(policy ? "id" : "id,review_state,dealer_partner_id,archived_at").eq("id", id).maybeSingle();
+  if (parent.error) throw parent.error;
+  if (!parent.data || parent.data.archived_at) return json({ error: "找不到文件所屬紀錄" }, 404);
+  if (!policy && body.file_id) {
+    const existing = await db.from("fleet_fine_files").select("id").eq("id", body.file_id).eq("fine_id", id).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (!existing.data) return json({ error: "附件不屬於這張罰單" }, 404);
+  }
+  const suffix = isPdf ? "pdf" : isPng ? "png" : "jpg";
+  const path = `${body.kind}/${id}/${crypto.randomUUID()}.${suffix}`;
+  const bucket = db.storage.from("fleet-private");
+  const uploaded = await bucket.upload(path, bytes, { contentType: mime, upsert: false });
+  if (uploaded.error) throw uploaded.error;
+  try {
+    const values = { name, storage_path: path };
+    const sharedDealerId = body.share === true && parent.data.review_state === "verified" ? parent.data.dealer_partner_id : null;
+    const fineValues = { ...values, visible_to_dealer: Boolean(sharedDealerId), shared_dealer_id: sharedDealerId };
+    const write = policy
+      ? db.from("fleet_policy_documents").update(values).eq("id", id)
+      : body.file_id
+        ? db.from("fleet_fine_files").update(fineValues).eq("id", body.file_id).eq("fine_id", id)
+        : db.from("fleet_fine_files").insert({ ...fineValues, fine_id: id });
+    const { error } = await write.select("id").single();
+    if (error) throw error;
+  } catch (error) {
+    await bucket.remove([path]);
+    throw error;
+  }
+  return json({ ok: true });
 }
 
 function dispatchImportDriver(record: Record<string, unknown>, dealers: Record<string, unknown>[], drivers: Record<string, any>[]) {
@@ -854,8 +1240,10 @@ async function loadPartnerData(partnerId: string) {
     if (maintenanceNotifications.error) throw maintenanceNotifications.error;
     if (vehicles.error) throw vehicles.error;
     if (vehicleTypes.error) throw vehicleTypes.error;
-    result.calendar_events = (calendarEvents.data || []).filter((item) => normalizedText(item.vendor) === partnerName);
-    result.maintenance_notifications = (maintenanceNotifications.data || []).filter((item) => normalizedText(item.vendor) === partnerName);
+    const assignedToShop = (item: Record<string, unknown>) => item.vendor_partner_id
+      ? item.vendor_partner_id === partnerId : normalizedText(item.vendor) === partnerName;
+    result.calendar_events = (calendarEvents.data || []).filter(assignedToShop);
+    result.maintenance_notifications = (maintenanceNotifications.data || []).filter(assignedToShop);
     const calendarRows = result.calendar_events as Record<string, unknown>[];
     const notificationRows = result.maintenance_notifications as Record<string, unknown>[];
     const vehicleIds = new Set([
@@ -879,9 +1267,7 @@ async function loadPartnerData(partnerId: string) {
   if (vehicles.error) throw vehicles.error;
   if (vehicleTypes.error) throw vehicleTypes.error;
   result.insurance_requests = partner.partner_type === "dealer"
-    ? (requests.data || [])
-      .filter((item) => item.request_type !== "amendment" || item.status === "completed")
-      .map((item) => sanitizeDealerInsuranceRequest(item))
+    ? (requests.data || []).map((item) => sanitizeDealerInsuranceRequest(item))
     : requests.data || [];
   result.vehicles = vehicles.data || [];
   result.vehicle_types = vehicleTypes.data || [];
@@ -1186,6 +1572,15 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting"].includes(body.action)) {
+      const response = await createDriverReportingHandler({ db, adminCan })(body, session);
+      return json(response.body, response.status);
+    }
+    if (fleetFineActions.includes(body.action)) return await handleFleetFines(body, session);
+    if (["load_fleet_operations", "save_fleet_operations", "open_fleet_policy", "edit_fleet_idle"].includes(body.action)) {
+      return await handleFleetOperations(body, session);
+    }
+    if (body.action === "save_fleet_file") return await saveFleetFile(body, session);
     if (body.action==="load_login_history") return await loadLoginAuditHistory(body,session);
     if (body.action === "load_maintenance_notifications") {
       if (session.session_type !== "admin" || !(await adminCan(session,"maintenanceNotifications"))) return json({error:"ADMIN_PERMISSION_DENIED"},403);
@@ -1549,100 +1944,55 @@ Deno.serve(async (req) => {
         }
       }
     }
-    if (session.session_type === "partner") {
-      if (body.table !== "insurance_requests" || !["insert", "update"].includes(body.action)) {
+    if (body.table === "insurance_requests" && ["insert", "update"].includes(body.action)) {
+      let role = "admin";
+      let actorId = session.admin_user_id || null;
+      let actorName = compactText(session.admin_name, "最高管理員");
+      if (session.session_type === "partner") {
+        const { data: partner, error } = await db.from("insurance_partners").select("id,name,partner_type").eq("id", session.partner_id).maybeSingle();
+        if (error) throw error;
+        if (!partner || !["dealer", "broker"].includes(partner.partner_type)) return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+        role = partner.partner_type;
+        actorId = partner.id;
+        actorName = partner.name;
+      } else if (session.session_type !== "admin") {
         return json({ error: "ACTION_NOT_ALLOWED" }, 403);
       }
-
-      const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();
-      if (!partner) return json({ error: "PARTNER_NOT_FOUND" }, 403);
-
-      if (body.action === "insert") {
-        if (partner.partner_type !== "dealer") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
-        const allowedInsert = [
-          "id", "created_at", "vehicle_id", "plate_no", "dealer_partner_id", "request_type", "status",
-          "insurance_type", "passenger_limit", "coverage_spec", "vehicle_body_limit",
-          "deductible", "requested_driver", "driver_change_names", "lienholder",
-          "assigned_insurance_company", "vehicle_dept_notes", "insurance_notes",
-          "document_request_type", "license_files", "quote_request_files", "created_by_partner_type", "updated_at"
-        ];
-        body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowedInsert.includes(key)));
-        body.record.dealer_partner_id = session.partner_id;
-        body.record.created_by_partner_type = "dealer";
-        const requestType = String(body.record.request_type || "");
-        if (requestType === "document") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
-        const initialStatus: Record<string, string> = {
-          quote: "broker_quoting",
-          amendment: "amendment_requested",
-          addition: "addition_quoting"
-        };
-        body.record.status = initialStatus[requestType] || "broker_quoting";
-        if (body.record.vehicle_id) {
-          const { data: vehicle } = await db
-            .from("vehicles")
-            .select("dealer_partner_id,plate_no")
-            .eq("id", body.record.vehicle_id)
-            .single();
-          if (!vehicle || vehicle.dealer_partner_id !== session.partner_id) {
-            return json({ error: "VEHICLE_NOT_ALLOWED" }, 403);
-          }
-          body.record.plate_no = vehicle.plate_no || body.record.plate_no || "";
+      const editing = body.action === "update";
+      let current = null;
+      if (editing) {
+        let query = db.from("insurance_requests").select("*").eq("id", body.id);
+        if (role === "dealer") query = query.eq("dealer_partner_id", actorId);
+        const { data, error } = await query.maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "找不到保險案件。" }, 404);
+        if (body.insurance_expected_updated_at !== data.updated_at) {
+          return json({ error: "案件已更新，請重新整理後再操作。" }, 409);
         }
+        current = data;
       }
-
-      if (body.action === "update") {
-        const { data: current } = await db
-          .from("insurance_requests")
-          .select("status,request_type,dealer_partner_id")
-          .eq("id", body.id)
-          .single();
-        if (!current) return json({ error: "INSURANCE_REQUEST_NOT_FOUND" }, 404);
-
-        if (partner.partner_type === "dealer") {
-          if (current.dealer_partner_id !== session.partner_id) return json({ error: "ACTION_NOT_ALLOWED" }, 403);
-          const allowed = ["status", "dealer_reply", "updated_at"];
-          body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
-          const allowedTransitions: Record<string, string[]> = {
-            dealer_review: ["stamping", "vehicle_dept_review"],
-            addition_dealer_review: ["addition_stamping"]
-          };
-          if (!body.record.status || !allowedTransitions[current.status]?.includes(body.record.status)) {
-            return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
-          }
-        } else if (partner.partner_type === "broker") {
-          const allowed = [
-            "status", "quote_amount", "broker_notes", "broker_reply",
-            "quote_url", "quote_name", "quote_files",
-            "application_url", "application_name",
-            "amendment_stamped_url", "amendment_stamped_name",
-            "stamped_application_url", "stamped_application_name",
-            "policy_url", "policy_name",
-            "receipt_url", "receipt_name",
-            "document_policy_url", "document_policy_name",
-            "document_receipt_url", "document_receipt_name",
-            "amendment_files",
-            "updated_at"
-          ];
-          body.record = Object.fromEntries(Object.entries(body.record || {}).filter(([key]) => allowed.includes(key)));
-          const allowedTransitions: Record<string, string[]> = {
-            broker_quoting: ["vehicle_dept_review", "broker_returned"],
-            quote_confirmed_issue_application: ["stamping"],
-            awaiting_policy: ["completed", "payment_pending"],
-            receipt_pending: ["completed"],
-            amendment_requested: ["amendment_stamping"],
-            amendment_stamped: ["amendment_return_required", "amendment_return_not_required"],
-            addition_quoting: ["addition_review"],
-            addition_policy_pending: ["addition_completed"],
-            document_requested: ["document_received"]
-          };
-          if (body.record.status && !allowedTransitions[current.status]?.includes(body.record.status)) {
-            return json({ error: "INVALID_INSURANCE_TRANSITION" }, 403);
-          }
-        } else {
-          return json({ error: "ACTION_NOT_ALLOWED" }, 403);
+      const stamp = new Date(Math.max(Date.now(), (Date.parse(current?.updated_at || "") || 0) + 1)).toISOString();
+      const result = insuranceWrite(body.record || {}, { role, id: actorId, name: actorName }, current, stamp, body.insurance_override === true);
+      if ("error" in result) return json({ error: result.error }, result.status);
+      const record = result.record;
+      if (!editing || (record.vehicle_id && record.vehicle_id !== current?.vehicle_id) || Object.hasOwn(record, "dealer_partner_id")) {
+        const { data: vehicle, error } = await db.from("vehicles").select("plate_no,dealer_partner_id").eq("id", record.vehicle_id || current?.vehicle_id).maybeSingle();
+        if (error) throw error;
+        if (!vehicle || (role === "dealer" && vehicle.dealer_partner_id !== actorId)) return json({ error: "請選擇所屬車輛。" }, 403);
+        if (record.dealer_partner_id && record.dealer_partner_id !== vehicle.dealer_partner_id) {
+          return json({ error: "案件車商須與車輛管理的所屬車商一致。" }, 400);
         }
+        record.plate_no = vehicle.plate_no;
+        record.dealer_partner_id = vehicle.dealer_partner_id;
       }
+      let query = editing ? db.from("insurance_requests").update(record).eq("id", body.id) : db.from("insurance_requests").insert(record);
+      if (editing) query = current?.updated_at == null ? query.is("updated_at", null) : query.eq("updated_at", current.updated_at);
+      const { data, error } = await query.select().maybeSingle();
+      if (error) throw error;
+      if (!data) return json({ error: "案件已更新，請重新整理後再操作。" }, 409);
+      return json(await signStorageUrls({ data: role === "dealer" ? sanitizeDealerInsuranceRequest(data) : data }));
     }
+    if (session.session_type === "partner") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
 
     if (body.action === "insert") {
       body.record = body.record || {};
@@ -1681,10 +2031,7 @@ Deno.serve(async (req) => {
       }
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      const responseData = session.session_type === "partner" && body.table === "insurance_requests" && (await partnerTypeForSession(session)) === "dealer"
-        ? sanitizeDealerInsuranceRequest(data)
-        : data;
-      return json(await signStorageUrls({ data: responseData, line_push }));
+      return json(await signStorageUrls({ data, line_push }));
     }
     if (body.action === "update") {
       if (body.table === "key_access_codes") {
@@ -1707,6 +2054,33 @@ Deno.serve(async (req) => {
         }
         delete body.record.login_code;
       }
+      if (body.table === "vehicles") {
+        const { updated_at: ignoredUpdatedAt, ...fields } = body.record || {};
+        const keys = Object.keys(fields);
+        const visibilityOnly = keys.length > 0 && keys.every(key =>
+          ["show_maintenance_report", "show_idle_report"].includes(key) && typeof fields[key] === "boolean");
+        const savingFiles = Array.isArray(fields.vehicle_files);
+        const expected = savingFiles ? body.vehicle_files_expected_updated_at : body.vehicle_expected_updated_at;
+        const expectedMs = typeof expected === "string" ? Date.parse(expected) : NaN;
+        if (!visibilityOnly && expected !== null && !Number.isFinite(expectedMs)) {
+          return json({ error: "請重新整理頁面後，再重新開啟車輛資料並儲存。" }, 409);
+        }
+        const registration = fields.registration_doc_url;
+        const registrationName = fields.registration_doc_name;
+        const hasRegistration = typeof registration === "string" && registration && typeof registrationName === "string";
+        const patch = savingFiles ? {
+          vehicle_files: fields.vehicle_files,
+          ...(hasRegistration ? { registration_doc_url: registration, registration_doc_name: registrationName } : {})
+        } : fields;
+        const updatedAt = new Date(Math.max(Date.now(), Number.isFinite(expectedMs) ? expectedMs + 1 : 0)).toISOString();
+        const updateVehicle = db.from("vehicles").update({ ...patch, updated_at: updatedAt }).eq("id", body.id);
+        const checkedUpdate = visibilityOnly ? updateVehicle
+          : expected === null ? updateVehicle.is("updated_at", null) : updateVehicle.eq("updated_at", expected);
+        const { data, error } = await checkedUpdate.select().maybeSingle();
+        if (error) throw error;
+        if (!data) return json({ error: "這台車的資料已更新。請重新整理頁面後，再重新開啟車輛資料並儲存。" }, 409);
+        return json(await signStorageUrls({ data }));
+      }
       let query = db.from(body.table).update(body.record).eq("id", body.id);
       if (session.session_type === "driver") query = query.eq("driver_id", session.driver_id);
       if (session.session_type === "partner") {
@@ -1717,10 +2091,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       if (body.table === "insurance_partners") delete data.login_code_hash;
       if (body.table === "admin_users") delete data.login_code_hash;
-      const responseData = session.session_type === "partner" && body.table === "insurance_requests" && (await partnerTypeForSession(session)) === "dealer"
-        ? sanitizeDealerInsuranceRequest(data)
-        : data;
-      return json(await signStorageUrls({ data: responseData }));
+      return json(await signStorageUrls({ data }));
     }
     if (body.action === "delete" && session.session_type === "admin") {
       const { error } = await db.from(body.table).delete().eq("id", body.id);

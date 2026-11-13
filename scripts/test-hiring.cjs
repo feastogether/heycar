@@ -263,7 +263,7 @@ async function backend() {
       path.join(root, "supabase/functions/data-api/index.ts"),
       "utf8",
     ),
-  ).replace(/^import .*\r?\n/, "");
+  ).replace(/^import .*\r?\n/gm, "");
   vm.runInNewContext(code, {
     Deno: { env: { get: () => "" }, serve: (fn) => (handler = fn) },
     createClient: () => db,

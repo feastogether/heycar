@@ -3483,7 +3483,9 @@ button.calendar-pill:hover { filter: brightness(.96); }
   display: block;
 }
 .vehicle-art .vehicle-type-photo {
-  height: 132px;
+  position: absolute;
+  inset: 0;
+  object-fit: contain;
 }
 .vehicle-type-photo-box svg {
   width: 92%;
@@ -3590,6 +3592,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-row-actions,
 .vehicle-card-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
   align-items: center;
   gap: 8px;
@@ -3597,7 +3600,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .vehicle-row-actions .actions,
 .vehicle-card-actions .actions {
   justify-content: flex-start;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 .salary-locked-card {
   display: grid;
@@ -3613,11 +3616,13 @@ button.calendar-pill:hover { filter: brightness(.96); }
 .salary-locked-card .primary-btn { justify-self: start; }
 .vehicle-visual-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr));
   gap: 14px;
 }
 .vehicle-visual-card {
   display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-width: 0;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -3627,6 +3632,7 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .vehicle-visual-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -3647,7 +3653,10 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .vehicle-art {
   position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
   min-height: 116px;
+  max-height: 210px;
   display: grid;
   place-items: center;
   padding: 8px;
@@ -3723,7 +3732,9 @@ button.calendar-pill:hover { filter: brightness(.96); }
   font-size: 12px;
   font-weight: 800;
 }
-.vehicle-card-actions { margin-top: 4px; }
+.vehicle-card-actions { margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--line); }
+.vehicle-card-actions button { white-space: nowrap; }
+.vehicle-visual-info small { overflow-wrap: anywhere; }
 .partner-portal-layout {
   width: 100%;
   min-height: calc(100vh - 65px);
@@ -4261,11 +4272,20 @@ button.calendar-pill:hover { filter: brightness(.96); }
 }
 .dealer-vehicle-grid strong { font-size: 13px; white-space: nowrap; }
 .dealer-vehicle-grid span:not(.insurance-status) { color: var(--muted); font-size: 11px; }
-.dealer-insurance-row { display: flex; align-items: center; gap: 10px; overflow-x: auto; }
-.dealer-insurance-row .insurance-row-main { display: flex; flex: 0 0 auto; align-items: center; min-width: 440px; }
-.dealer-insurance-row .insurance-row-details { flex: 1 0 auto; margin: 0; white-space: nowrap; }
-.dealer-insurance-row .insurance-note { display: none; }
-.dealer-insurance-row .insurance-card-actions { flex: 0 0 auto; margin: 0 0 0 auto; }
+.dealer-insurance-row { display: grid; gap: 8px; min-width: 0; }
+.dealer-insurance-row .insurance-row-main { grid-template-columns: auto minmax(0, 1fr) auto; min-width: 0; }
+.dealer-insurance-row .insurance-row-details { margin: 0; flex-wrap: wrap; }
+.dealer-insurance-row .insurance-note { margin: 0; overflow-wrap: anywhere; }
+.dealer-insurance-row .insurance-card-actions { margin: 0; flex-wrap: wrap; }
+.dealer-insurance-row .insurance-status.dealer-stage-confirm { background: #fff1d0; color: #784900; }
+.dealer-insurance-row .insurance-status.dealer-stage-done { background: #e4f6ed; color: #1a624c; }
+.dealer-insurance-row .insurance-status.dealer-stage-active { background: #edf2f9; color: #31476b; }
+.insurance-filter-strip.is-dealer { flex-wrap: wrap; }
+@media (max-width: 480px) {
+  .dealer-insurance-row .insurance-row-main { grid-template-columns: minmax(0, 1fr) auto; }
+  .dealer-insurance-row .insurance-row-identity { grid-row: 2; grid-column: 1 / -1; }
+  .dealer-insurance-row .insurance-status { grid-row: 1; grid-column: 2; }
+}
 .storage-usage { margin-bottom: 14px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .storage-usage > div:first-child { display: flex; align-items: baseline; gap: 9px; }
 .storage-usage strong { font-size: 24px; }
@@ -7107,3 +7127,639 @@ body {
 .service-parts-summary span:nth-child(1)>b{background:#e8f6ef;color:#176447}.service-parts-summary span:nth-child(2)>b{background:#fff1d6;color:#a05b00}.service-parts-summary span:nth-child(3)>b{background:#e9efff;color:#315ca8}.service-parts-summary span:nth-child(4)>b{background:#fbe8f0;color:#a33b69}.service-parts-summary span:nth-child(5)>b{background:#eee8fb;color:#6945a3}.service-parts-summary span:nth-child(6)>b{background:#e5f5f5;color:#237477}.modal:has(.service-parts-editor){width:min(1100px,96vw);max-height:94vh}.field:has([name="tax_mode"]) .checkbox-grid label:has(input:checked){background:#dff4e9;border-color:#2e966b;color:#176447;font-weight:900}
 .service-parts-summary span>b.service-type-maintenance{background:#dff4e9;color:#176447}.service-parts-summary span>b.service-type-repair{background:#ffe1e1;color:#a12626}.service-parts-summary span>b.service-type-inspection{background:#e5edff;color:#315ca8}.service-parts-summary span>b.service-type-tire{background:#fff0d2;color:#9b6100}.service-parts-summary span>b.service-type-other{background:#eee8fb;color:#6945a3}
 .save-spinner{display:inline-block;width:14px;height:14px;margin-right:8px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:save-spin .7s linear infinite}@keyframes save-spin{to{transform:rotate(360deg)}}button:disabled{opacity:.65;cursor:wait}
+.fleet-case-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.fleet-case-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: clamp(20px, 4vw, 34px);
+  border: 1px solid #e6d8bd;
+  border-radius: 18px;
+  background: linear-gradient(125deg, #fffaf0, #f7ecd6);
+  color: #30261b;
+}
+.fleet-case-kicker { color: #765b2e; font-size: 12px; font-weight: 800; letter-spacing: .12em; }
+.fleet-case-banner h2 { margin: 6px 0; font-size: clamp(24px, 3.4vw, 36px); }
+.fleet-case-banner p { margin: 0; color: #5e5548; }
+.fleet-case-metrics, .fleet-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.fleet-case-metrics > div, .fleet-policy-grid > div {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  padding: 12px 14px;
+  background: #fff;
+  border: 1px solid #e3e8ef;
+  border-radius: 12px;
+}
+.fleet-case-metrics small, .fleet-policy-grid small { display: block; color: #566174; }
+.fleet-case-metrics strong { font-size: clamp(16px, 2.2vw, 25px); overflow-wrap: anywhere; }
+.fleet-policy-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-block: 12px; }
+.fleet-policy-grid strong { font-size: 14px; overflow-wrap: anywhere; }
+.fleet-case-tools, .fleet-case-tabs, .fleet-case-tools form, .fleet-case-pager {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.fleet-case-tools { justify-content: space-between; }
+.fleet-case-tabs button[aria-pressed="true"] { background: #243044; color: white; border-color: #243044; }
+.fleet-case-tabs small { margin-inline-start: 3px; font-weight: 600; }
+.fleet-case-tools input { min-width: 0; max-width: 100%; }
+.fleet-case-list { display: grid; gap: 8px; min-width: 0; }
+.fleet-case-action { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.fleet-case-badge { color: #334155; background: #edf2f7; border-radius: 24px; padding: 5px 9px; font-size: 12px; white-space: nowrap; }
+.fleet-case-badge[data-review="unclaimed"] { color: #991b1b; background: #fee2e2; }
+.fleet-case-badge[data-review="review"] { color: #854d0e; background: #fef3c7; }
+.fleet-case-pager { justify-content: center; font-size: 13px; }
+.fleet-case-modal { width: min(680px, calc(100vw - 24px)); }
+.fleet-case-modal .modal-form-body { overflow-y: auto; padding: 18px; }
+.fleet-case-detail-title { display: flex; justify-content: space-between; gap: 10px; font-size: 21px; font-weight: 800; }
+.fleet-case-detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fleet-case-detail-grid div { background: #f4f6f9; border-radius: 9px; padding: 8px 10px; }
+.fleet-case-detail-grid dt, .fleet-case-history time { font-size: 12px; color: #566174; }
+.fleet-case-detail-grid dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.fleet-case-history { list-style: none; padding: 0; }
+.fleet-case-history li { padding: 9px 0; border-bottom: 1px solid #e3e8ef; }
+.fleet-case-history time { margin-inline-start: 10px; }
+.fleet-case-history p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fleet-ops-upload { cursor: pointer; position: relative; overflow: hidden; }
+.fleet-ops-upload input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.fleet-ops-upload:focus-within { outline: 2px solid #234276; outline-offset: 3px; }
+.fleet-ops-search label { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.fleet-case-tools .fleet-ops-search { flex-wrap: wrap; }
+.fleet-ops-preview { background: #fffaf0; border: 1px solid #e6d8bd; border-radius: 14px; padding: 16px; }
+.fleet-ops-preview h3 { margin: 0 0 8px; }
+.fleet-ops-preview .actions { margin-top: 12px; }
+.fleet-idle-alert { color: #991b1b; }
+.fleet-file-row { display: grid; gap: 6px; padding-block: 7px; }
+.fleet-file-upload { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; grid-column: 1 / -1; }
+.fleet-file-upload input[type="file"] { min-width: 0; max-width: 100%; }
+.fleet-file-upload label { font-size: 12px; color: #566174; }
+@media (max-width: 700px) {
+  .fleet-case-tools form { width: 100%; flex-wrap: nowrap; }
+  .fleet-case-tools input { flex: 1; }
+  .fleet-case-metrics > div { padding: 9px; }
+}
+
+.fleet-idle-modes, .fleet-idle-date-controls { display: flex; align-items: center; gap: 6px; }
+.fleet-idle-modes button[aria-pressed="true"] { background: #f5ead5; border-color: #d4b581; color: #563d18; }
+.fleet-idle-date-controls button { min-width: 40px; padding-inline: 8px; font-size: 20px; line-height: 1; }
+.fleet-idle-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.fleet-idle-metrics strong { font-variant-numeric: tabular-nums; overflow-wrap: normal; }
+.fleet-idle-report, .fleet-forecast-card {
+  background: #fff; border: 1px solid var(--line); border-radius: 14px; min-width: 0; overflow: hidden;
+}
+.fleet-idle-report > header, .fleet-report-export > header { padding: 14px 16px; background: #faf5eb; }
+.fleet-idle-report h3, .fleet-report-export h2 { margin: 2px 0 4px; }
+.fleet-idle-report p, .fleet-report-export header p, .fleet-forecast-note { margin: 0; color: var(--muted); font-size: 13px; }
+.fleet-idle-scroll { overflow-x: auto; }
+.fleet-idle-table {
+  width: 100%; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums;
+  text-align: center; font-size: 13px; color: #243044;
+}
+.fleet-idle-table th, .fleet-idle-table td { padding: 8px 6px; border: solid #e4e8ee; border-width: 0 1px 1px 0; white-space: nowrap; }
+.fleet-idle-table thead th { background: #f2f5f9; color: #344159; }
+.fleet-idle-table th.fleet-idle-date { background: #f7eddc; padding: 4px 3px; min-width: 124px; }
+.fleet-idle-table th.fleet-idle-date time { display: block; color: #634819; font-weight: 800; }
+.fleet-idle-table tbody tr { background: #fff; }
+.fleet-idle-table tbody tr:nth-child(even) { background: #f7f9fc; }
+.fleet-idle-table .fleet-frozen-column { min-width: 100px; }
+.fleet-idle-table tbody th.fleet-frozen-column { color: #172438; }
+.fleet-idle-table td:last-child { border-right: 0; }
+.fleet-idle-table .fleet-idle-alert, .fleet-idle-card .fleet-idle-alert { color: #991b1b; font-weight: 800; }
+.fleet-idle-cards { display: none; }
+.fleet-idle-card { padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.fleet-idle-card dl, .fleet-forecast-services dl { display: grid; gap: 6px; margin: 8px 0; }
+.fleet-idle-card dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.fleet-idle-card dl div, .fleet-forecast-services dl div { background: #f5f7fa; border-radius: 8px; padding: 6px 8px; min-width: 0; }
+.fleet-idle-card dt, .fleet-forecast-services dt { color: var(--muted); font-size: 12px; }
+.fleet-idle-card dd, .fleet-forecast-services dd { margin: 2px 0 0; font-weight: 750; font-size: 13px; }
+.fleet-idle-card summary { color: #5f471f; font-size: 13px; font-weight: 750; cursor: pointer; }
+.fleet-idle-card-days { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding-top: 8px; font-size: 13px; }
+.fleet-idle-card-days > :nth-child(-n+3) { font-weight: 750; color: var(--muted); }
+.fleet-forecast-card header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 12px 16px; background: #f7f9fc; }
+.fleet-forecast-card header small, .fleet-calendar-agenda small { display: block; color: var(--muted); font-size: 12px; }
+.fleet-forecast-services { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fleet-forecast-services > section { padding: 12px 16px; }
+.fleet-forecast-services > section + section { border-left: 1px solid var(--line); }
+.fleet-forecast-kind { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.fleet-forecast-services dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.fleet-forecast-urgent { background: #fff0de; color: #8b410d; }
+.fleet-forecast-booked { margin: 4px 0 0; color: #1f5a54; font-size: 13px; }
+.fleet-maintenance-calendar .calendar-legend { flex-wrap: wrap; }
+.admin-workspace .fleet-calendar-heading .fleet-forecast-note { display: block !important; margin-top: 4px; }
+@media (min-width: 701px) {
+  .fleet-calendar-heading .calendar-admin-actions { flex: 1; }
+  .fleet-calendar-heading .calendar-admin-actions input[type="month"] { width: auto; min-width: 0; }
+}
+.calendar-pill.fleet-calendar-proposed { background: #fff; border: 1px dashed currentColor; }
+.calendar-legend .fleet-calendar-proposed::before { border: 1px dashed currentColor; }
+.fleet-calendar-agenda { display: none; }
+.fleet-calendar-agenda h3 { margin: 0 0 8px; font-size: 16px; }
+.fleet-calendar-agenda article, .fleet-calendar-suggestion-day { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 0; border-top: 1px solid var(--line); }
+.fleet-calendar-suggestion-day > div { display: flex; gap: 6px; flex-wrap: wrap; }
+.fleet-calendar-suggestion-day > strong { font-size: 13px; white-space: nowrap; }
+.fleet-report-export {
+  visibility: hidden; position: fixed; inset: 0 auto auto 0; z-index: -1; width: 1440px;
+  max-width: none; box-sizing: border-box; background: #fff; color: #172438; padding: 22px;
+}
+.fleet-report-export .fleet-idle-metrics { margin: 12px 0; }
+.fleet-report-export .fleet-idle-table th { position: static; }
+.fleet-report-export .calendar-cell { min-height: 65px; }
+@media (max-width: 700px) {
+  .fleet-case-tools .fleet-ops-search { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  .fleet-ops-search .fleet-idle-modes, .fleet-ops-search .fleet-idle-date-controls, .fleet-ops-search > label { grid-column: 1 / -1; }
+  .fleet-idle-date-controls label { flex: 1; min-width: 0; }
+  .fleet-idle-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-idle-report .fleet-idle-scroll { display: none; }
+  .fleet-idle-cards { display: grid; gap: 8px; padding: 8px; }
+  .fleet-forecast-services { grid-template-columns: minmax(0, 1fr); }
+  .fleet-forecast-services > section + section { border-left: 0; border-top: 1px solid var(--line); }
+  .fleet-calendar-agenda { display: block; padding: 12px; background: #fff; border: 1px solid var(--line); border-radius: 12px; }
+  .fleet-calendar-desktop-table { display: none; }
+  .fleet-calendar-suggestion-day { align-items: flex-start; flex-direction: column; }
+}
+
+/* Fleet workspace */
+.fleet-workspace { --fleet-ink: #172337; --fleet-muted: #5b6b81; --fleet-line: #e0e7ef; gap: 16px; }
+.fleet-kpi-icon svg, .fleet-dropzone svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.fleet-workspace-nav { display: flex; gap: 5px; flex-wrap: wrap; padding: 0 0 7px; border-bottom: 1px solid #e0e7ef; }
+.fleet-workspace-nav button, .fleet-vehicle-links button, .fleet-import-dates button {
+  background: #eef2f7; color: #34445c; border-radius: 8px; padding: 8px 11px; font-size: 13px; font-weight: 750;
+}
+.fleet-workspace-nav button[aria-pressed="true"] { background: #172337; color: #fff; }
+.fleet-workspace-nav button:hover:not([aria-pressed="true"]), .fleet-vehicle-links button:hover, .fleet-import-dates button:hover { background: #e1e9f3; }
+.fleet-vehicle-context {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+  padding: 10px 13px; border-radius: 12px; background: #f5f8fd; border: 1px solid #dce6f5;
+}
+.fleet-vehicle-context > div, .fleet-vehicle-links { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.fleet-vehicle-context small, .fleet-vehicle-context span, .fleet-muted { color: #556780; font-size: 12px; }
+.fleet-clear-link, .fleet-plate-link, .fleet-forecast-card footer button { background: transparent; color: #234f88; padding: 0; font-weight: 800; text-align: left; }
+.fleet-clear-link { font-size: 12px; text-decoration: underline; }
+.fleet-plate-link:hover, .fleet-forecast-card footer button:hover { text-decoration: underline; }
+.fleet-kpis { display: grid; grid-template-columns: repeat(var(--fleet-kpi-count), minmax(0, 1fr)); gap: 10px; }
+.fleet-kpi {
+  display: flex; align-items: center; gap: 10px; min-width: 0; padding: 11px;
+  border: 1px solid #e0e7ef; border-radius: 13px; background: #fff; box-shadow: 0 2px 5px #17233708;
+}
+.fleet-kpi > div { min-width: 0; }
+.fleet-kpi small, .fleet-kpi strong { display: block; }
+.fleet-kpi small { color: #5b6b81; font-size: 12px; font-weight: 700; }
+.fleet-kpi strong { margin-top: 3px; color: #172337; font-size: clamp(16px, 2vw, 24px); font-variant-numeric: tabular-nums; }
+.fleet-kpi-icon { display: grid; flex: 0 0 34px; height: 34px; place-items: center; border-radius: 9px; color: var(--fleet-tone, #36465e); background: var(--fleet-tint, #edf2f8); }
+.fleet-kpi[data-tone="rose"], .fleet-status[data-tone="rose"] { --fleet-tone: #aa153f; --fleet-tint: #fce6ec; }
+.fleet-kpi[data-tone="amber"], .fleet-status[data-tone="amber"] { --fleet-tone: #895100; --fleet-tint: #fff1ca; }
+.fleet-kpi[data-tone="blue"], .fleet-status[data-tone="blue"] { --fleet-tone: #225aaa; --fleet-tint: #e5eeff; }
+.fleet-kpi[data-tone="green"], .fleet-status[data-tone="green"] { --fleet-tone: #067253; --fleet-tint: #e1f5ec; }
+.fleet-kpi[data-tone="violet"] { --fleet-tone: #6f36a8; --fleet-tint: #f0e7fb; }
+.fleet-kpi[data-tone="green"] strong { color: #067253; }
+.fleet-surface { background: #fff; border: 1px solid #e0e7ef; border-radius: 14px; box-shadow: 0 2px 5px #17233708; min-width: 0; }
+.fleet-list-toolbar, .fleet-report-controls, .fleet-calendar-filters {
+  display: flex; align-items: center; justify-content: space-between; gap: 9px; flex-wrap: wrap; padding: 11px;
+}
+.fleet-list-toolbar form, .fleet-calendar-filters label, .fleet-calendar-filters select { display: flex; align-items: center; gap: 6px; }
+.fleet-list-toolbar form { flex-wrap: wrap; min-width: 0; }
+.fleet-list-toolbar input, .fleet-list-toolbar select, .fleet-calendar-filters select { width: auto; max-width: 100%; }
+.fleet-calendar-filters .fleet-check input { width: auto; }
+.fleet-list-toolbar + .fleet-table-scroll { border-top: 1px solid #e0e7ef; }
+.fleet-table-scroll { overflow: auto; border-radius: 12px; background: #fff; }
+.fleet-data-table { width: 100%; border-collapse: collapse; font-size: 13px; color: #172337; }
+.fleet-data-table th, .fleet-data-table td { padding: 10px 9px; text-align: left; border-bottom: 1px solid #e1e8f0; vertical-align: middle; }
+.fleet-data-table thead th { background: #f1f5fa; color: #4b5e78; white-space: nowrap; }
+.fleet-data-table tbody tr:nth-child(even) { background: #f9fbfe; }
+.fleet-data-table tbody tr:hover { background: #f4f7fd; }
+.fleet-data-table small { display: block; color: #526780; font-weight: 500; margin-top: 3px; }
+.fleet-data-table td:last-child button { white-space: nowrap; }
+.fleet-workspace .fleet-case-pager { padding: 9px 4px; }
+.fleet-overdue { color: #aa153f; font-weight: 800; }
+.fleet-idle-report > header, .fleet-report-export > header { background: #f5f8fc; }
+.fleet-idle-table th.fleet-idle-date { background: #ffedb8; }
+.fleet-idle-table th.fleet-idle-date time { color: #644710; }
+.fleet-idle-table td.fleet-drive-total { background: #eef5ff; color: #1d4b8d; font-weight: 750; }
+.fleet-idle-table td.fleet-idle-total { background: #f6effa; color: #653390; font-weight: 750; }
+.fleet-idle-table td.fleet-mileage-total { background: #eaf7f1; color: #096046; font-weight: 750; }
+.fleet-idle-table td.fleet-idle-total.fleet-idle-alert { color: #aa153f; }
+.fleet-idle-card .fleet-muted { display: block; margin-top: 3px; }
+.fleet-report-export > .fleet-kpis { margin: 12px 0; }
+.fleet-forecast-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 11px; }
+.fleet-forecast-card header { align-items: center; padding: 10px 12px 8px; }
+.fleet-forecast-card .fleet-plate-link { font-size: 18px; }
+.fleet-average { text-align: right; color: #265ea6; }
+.fleet-forecast-services { display: grid; grid-template-columns: 1fr; gap: 7px; padding: 0 8px 8px; background: #f7f9fc; }
+.fleet-forecast-services > section, .fleet-forecast-services > section + section {
+  border: 0; border-radius: 9px; padding: 9px 10px; color: #28364b;
+}
+.fleet-forecast-services section[data-kind="maintenance"], .fleet-forecast-table td[data-kind="maintenance"], .fleet-forecast-table th[data-kind="maintenance"] { background: #fff2f5; --fleet-progress: #d6295a; }
+.fleet-forecast-services section[data-kind="tires"], .fleet-forecast-table td[data-kind="tires"], .fleet-forecast-table th[data-kind="tires"] { background: #fff8e8; --fleet-progress: #d89021; }
+.fleet-forecast-services small { display: block; margin-top: 3px; font-size: 12px; color: #526780; }
+.fleet-forecast-kind { justify-content: space-between; }
+.fleet-status { display: inline-block; font-size: 11px; font-weight: 800; border-radius: 20px; padding: 3px 7px; color: var(--fleet-tone, #36465e); background: var(--fleet-tint, #e9eef7); white-space: nowrap; }
+.fleet-forecast-services progress { display: block; appearance: none; border: 0; border-radius: 10px; width: 100%; height: 5px; margin: 8px 0 4px; background: #fff; color: var(--fleet-progress); }
+.fleet-forecast-services progress::-webkit-progress-bar { border-radius: 10px; background: #fff; }
+.fleet-forecast-services progress::-webkit-progress-value { border-radius: 10px; background: var(--fleet-progress); }
+.fleet-forecast-services progress::-moz-progress-bar { border-radius: 10px; background: var(--fleet-progress); }
+.fleet-distance { display: flex; justify-content: space-between; gap: 4px; margin-top: 5px; font-size: 13px; }
+.fleet-service-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; margin-top: 6px; }
+.fleet-service-actions button { min-height: 30px; padding: 4px 7px; font-size: 12px; border-radius: 7px; }
+.fleet-register-btn { background: #a91845; color: #fff; }
+[data-kind="tires"] .fleet-register-btn { background: #935506; }
+.fleet-forecast-card footer { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 9px; padding: 8px 11px; color: #526780; font-size: 11px; }
+.fleet-forecast-card footer button { margin-left: auto; }
+.fleet-calendar-controls .fleet-list-toolbar { padding-bottom: 0; }
+.fleet-calendar-filters { justify-content: flex-start; }
+.fleet-calendar-queue h3 { margin: 0; padding: 9px 12px; font-size: 15px; color: #a91845; background: #fff1f4; border-radius: 13px 13px 0 0; }
+.fleet-calendar-queue > div { display: flex; flex-wrap: wrap; gap: 7px; padding: 9px 12px; }
+.fleet-calendar-queue button {
+  display: grid; text-align: left; gap: 3px; color: #263650; background: #fff5f5; border: 1px solid #f2c8d1;
+  border-radius: 9px; padding: 7px 10px; font-size: 13px;
+}
+.fleet-calendar-queue button[data-tone="amber"] { background: #fffae9; border-color: #ebd590; }
+.fleet-calendar-queue button span { font-size: 11px; }
+.fleet-calendar-queue button small { color: #526780; }
+.fleet-calendar-counts { display: flex; gap: 12px; font-size: 13px; color: #4e607a; }
+.fleet-maintenance-calendar .calendar-pill.maintenance:not(.fleet-calendar-proposed) { background: #b12351; color: #fff; }
+.fleet-maintenance-calendar .calendar-pill.tires:not(.fleet-calendar-proposed) { background: #995801; color: #fff; }
+.fleet-maintenance-calendar .calendar-pill.tires.fleet-calendar-proposed { color: #995801; }
+.fleet-maintenance-calendar .calendar-legend .tires::before { background: #b87516; }
+[data-calendar-layout="list"] .fleet-maintenance-calendar :is(.calendar-grid,.calendar-weekdays,.calendar-legend) { display: none; }
+[data-calendar-layout="list"] .fleet-calendar-suggestions { display: block; }
+.fleet-import-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fleet-import-card, .fleet-import-dates { padding: 14px; }
+.fleet-import-card h3, .fleet-import-dates h3 { margin: 0 0 6px; font-size: 16px; }
+.fleet-import-card p, .fleet-import-dates p { margin: 0 0 10px; font-size: 13px; color: #536682; }
+.fleet-dropzone {
+  display: grid; justify-items: center; align-content: center; position: relative; gap: 6px; min-height: 102px;
+  border: 2px dashed #bbc9da; border-radius: 10px; background: #f9fbff; cursor: pointer; color: #365677;
+}
+.fleet-dropzone input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+.fleet-dropzone:focus-within { outline: 2px solid #305d95; outline-offset: 2px; }
+.fleet-import-dates > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.fleet-import-dates button { font-size: 12px; padding: 5px 9px; }
+@media (max-width: 1200px) { .fleet-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+@media (max-width: 700px) {
+  .fleet-workspace { gap: 10px; }
+  .fleet-workspace-nav button { padding: 6px 8px; font-size: 12px; }
+  .fleet-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .fleet-kpi { padding: 8px; gap: 5px; }
+  .fleet-kpi-icon { flex-basis: 25px; height: 25px; }
+  .fleet-kpi-icon svg { width: 15px; height: 15px; }
+  .fleet-forecast-grid, .fleet-import-grid { grid-template-columns: minmax(0, 1fr); }
+  .fleet-data-table, .fleet-data-table tbody { display: block; min-width: 0; }
+  .fleet-data-table colgroup { display: none; }
+  .fleet-data-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .fleet-data-table tr { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); padding: 4px; }
+  .fleet-data-table tr > th { grid-column: 1 / -1; }
+  .fleet-data-table td { min-width: 0; overflow-wrap: anywhere; }
+  .fleet-data-table td[data-label]::before { content: attr(data-label); display: block; color: #526780; font-size: 11px; margin-bottom: 2px; }
+  .fleet-table-scroll { overflow: hidden; }
+  .fleet-list-toolbar form { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; }
+  #fleetFineSearch > select { grid-row: 2; }
+}
+
+.fleet-report-export .fleet-kpi-icon { display: none; }
+@media (min-width: 701px) {
+  .fleet-report-controls .fleet-ops-search input[type="search"] { width: 215px; }
+  .fleet-list-toolbar form input[type="search"] { width: 205px; }
+}
+
+.fleet-workspace { gap: 12px; }
+.fleet-idle-table, .fleet-data-table { font-variant-numeric: tabular-nums; }
+.fleet-idle-table th, .fleet-idle-table td { padding: 9px 9px; font-size: 13px; }
+.fleet-idle-table tbody .fleet-day-drive, .fleet-idle-table tbody .fleet-day-idle,
+.fleet-idle-table tbody :is(.fleet-drive-total,.fleet-idle-total,.fleet-mileage-total) { text-align: right; }
+.fleet-idle-table :is(.fleet-day-drive,.fleet-day-idle) { min-width: 70px; }
+.fleet-idle-table th.fleet-idle-date { min-width: 0; }
+.fleet-idle-table th.fleet-day-drive { background: #fffaeb; }
+.fleet-idle-table th.fleet-day-idle { background: #f6eefb; color: #5c3983; }
+.fleet-idle-table .fleet-day-idle { border-right-color: #cbd6e3; }
+.fleet-idle-table .fleet-group-summary { background: #e6eef7; }
+.fleet-idle-table .fleet-idle-driver { text-align: left; min-width: 110px; max-width: 170px; white-space: normal; overflow-wrap: anywhere; }
+.fleet-idle-table .fleet-no-reading { color: #78899e; }
+.fleet-data-table { border-collapse: separate; border-spacing: 0; }
+.fleet-data-table :is(th,td) { border-right: 1px solid #e1e8f0; padding: 10px 10px; }
+.fleet-data-table :is(th,td):last-child { border-right: 0; }
+.fleet-data-table th small, .fleet-data-table td small { font-size: 12px; line-height: 1.45; }
+.fleet-data-table th[scope="colgroup"] { text-align: center; }
+.fleet-data-table .fleet-fine-amount { text-align: right; white-space: nowrap; }
+.fleet-fines-table .fleet-fine-plate { color: #172337; font-size: 16px; font-weight: 850; }
+.fleet-fines-table .fleet-fine-ticket { font-weight: 500; overflow-wrap: anywhere; }
+.fleet-forecast-table td { vertical-align: top; min-width: 98px; }
+.fleet-forecast-table :is(td,th)[data-kind="maintenance"] { background: #fff5f7; }
+.fleet-forecast-table :is(td,th)[data-kind="tires"] { background: #fff9ed; }
+.fleet-forecast-table th[data-kind="maintenance"] { color: #912342; background: #fce8ee; }
+.fleet-forecast-table th[data-kind="tires"] { color: #75450b; background: #fbefce; }
+.fleet-forecast-table .fleet-forecast-actions-cell { min-width: 146px; }
+.fleet-forecast-table .fleet-service-actions { justify-content: flex-start; }
+.fleet-forecast-table .fleet-table-distance { display: block; margin-top: 4px; white-space: nowrap; }
+.fleet-forecast-table .fleet-cell-pair { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin: 2px 0; }
+.fleet-forecast-table .fleet-cell-pair > span { color: #4d617c; font-size: 12px; white-space: nowrap; }
+.fleet-forecast-table .fleet-cell-pair > strong { white-space: nowrap; text-align: right; }
+.fleet-forecast-table td > .fleet-plate-link { display: block; margin-top: 5px; }
+.fleet-forecast-table td > small:first-child { margin-top: 0; }
+.fleet-calendar-desktop-table th, .fleet-calendar-desktop-table td { padding: 10px; }
+.fleet-calendar-desktop-table :is(th,td):nth-child(-n+3) { white-space: nowrap; }
+@media (min-width: 701px) {
+  .fleet-idle-scroll, .fleet-table-scroll { overflow: auto; max-height: min(61vh, 630px); }
+  :is(.fleet-idle-scroll,.fleet-table-scroll):focus-visible { outline: 2px solid #4874a7; outline-offset: -2px; }
+  .fleet-two-tier thead tr:first-child th { height: 40px; }
+  :is(.fleet-idle-scroll,.fleet-table-scroll) thead th { position: sticky; top: 0; z-index: 2; }
+  :is(.fleet-idle-scroll,.fleet-table-scroll) .fleet-two-tier thead tr:nth-child(2) th { top: 40px; }
+  :is(.fleet-idle-scroll,.fleet-table-scroll) .fleet-frozen-column {
+    position: sticky; left: 0; z-index: 1; min-width: 104px; box-shadow: 2px 0 3px #17233714;
+  }
+  :is(.fleet-idle-scroll,.fleet-table-scroll) thead .fleet-frozen-column { z-index: 3; }
+  :is(.fleet-idle-table,.fleet-data-table) tbody .fleet-frozen-column { background: #fff; }
+  :is(.fleet-idle-table,.fleet-data-table) tbody tr:nth-child(even) .fleet-frozen-column { background: #f4f7fb; }
+  .fleet-forecast-table { min-width: 1190px; }
+  .fleet-fines-table { min-width: 740px; }
+}
+@media (max-width: 700px) {
+  .fleet-data-table .fleet-fine-amount { text-align: left; }
+  .fleet-data-table tr { row-gap: 4px; border-bottom: 1px solid #ccd9e7; padding-block: 7px; }
+  .fleet-forecast-table td[data-kind] { grid-column: auto; }
+  .fleet-forecast-table td.fleet-forecast-actions-cell { grid-column: 1 / -1; }
+  .fleet-forecast-table td[data-kind] { border: 1px solid #e0e7ef; border-radius: 7px; }
+  .fleet-forecast-table .fleet-cell-pair { justify-content: flex-start; }
+}
+
+.fleet-policy-card {
+  background: #fff;
+  border: 1px solid var(--fleet-line);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 2px 6px #17233709;
+}
+.fleet-policy-vehicle {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  margin: 0 2px 10px;
+}
+.fleet-policy-vehicle h3 { margin: 0; color: var(--fleet-ink); font-size: 18px; }
+.fleet-policy-vehicle span { color: var(--fleet-muted); font-size: 13px; overflow-wrap: anywhere; }
+.fleet-policy-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fleet-policy-section {
+  --policy-accent: #244d79;
+  --policy-label: #e0ebf9;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid #dbe6f2;
+  border-radius: 10px;
+  background: #f6f9fd;
+  overflow-wrap: anywhere;
+}
+.fleet-policy-section[data-policy-type="voluntary"] {
+  --policy-accent: #704b18;
+  --policy-label: #f5e7c8;
+  background: #fdfaf3;
+  border-color: #efe4cd;
+}
+.fleet-policy-section h4 {
+  margin: 0;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: var(--policy-label);
+  color: var(--policy-accent);
+  font-size: 13px;
+}
+.fleet-policy-section dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px 12px;
+  width: 100%;
+  margin: 0;
+}
+.fleet-policy-section dt, .fleet-policy-section small { color: var(--fleet-muted); font-size: 12px; }
+.fleet-policy-section dd { margin: 2px 0 0; color: var(--fleet-ink); font-weight: 750; }
+.fleet-policy-section .expiry-badge { max-width: 100%; }
+.fleet-policy-history { display: flex; flex-wrap: wrap; gap: 2px 12px; }
+.fleet-policy-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  width: 100%;
+  margin-top: auto;
+}
+.fleet-policy-actions .ghost-btn, .fleet-policy-upload summary {
+  min-height: 36px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+.fleet-policy-upload { min-width: 0; max-width: 100%; }
+.fleet-policy-upload[open] { flex: 0 0 100%; }
+.fleet-policy-upload summary { width: fit-content; color: var(--policy-accent); font-weight: 700; cursor: pointer; }
+.fleet-policy-upload .fleet-file-upload { margin-top: 4px; }
+.fleet-policy-upload input[type="file"] { width: min(100%, 290px); }
+@media (max-width: 700px) {
+  .fleet-policy-card { padding: 10px; }
+  .fleet-policy-sections { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+}
+
+.partner-directory-tabs { margin-bottom: 14px; }
+.fleet-idle-report {
+  border: 1px solid #dbe4ef;
+  box-shadow: 0 3px 12px #2339560a;
+}
+.fleet-idle-report > header { padding: 12px 15px; }
+.fleet-idle-table :is(td,th) { padding: 8px 7px; }
+.fleet-idle-table th.fleet-idle-date { background: #f2e8d3; border-right-color: #ddcaa7; }
+.fleet-idle-table td.fleet-day-idle { background: #f8f5fc; }
+.fleet-idle-table tbody tr:nth-child(even) td.fleet-day-idle { background: #f2edf9; }
+.fleet-idle-table tbody tr:hover td { box-shadow: inset 0 0 0 100px #41689c0b; }
+.fleet-idle-table [data-fleet-idle-cell] { cursor: cell; }
+.fleet-idle-table [data-fleet-idle-cell]:hover,
+.fleet-idle-table [data-fleet-idle-cell]:focus-visible { outline: 2px solid #6587b5; outline-offset: -2px; }
+.fleet-idle-table :is(.fleet-day-drive,.fleet-day-idle) { min-width: 60px; }
+.fleet-idle-table td.fleet-idle-alert { color: #a41e3a; font-weight: 850; }
+.fleet-edit-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.fleet-edit-fields > .full { grid-column: 1 / -1; }
+.fleet-edit-fields input, .fleet-edit-fields textarea, .fleet-edit-fields select { min-width: 0; max-width: 100%; }
+.fleet-fine-primary, .fleet-fine-row-actions, .fleet-fine-filters {
+  display: flex; flex-wrap: wrap; gap: 7px; align-items: center;
+}
+.fleet-fine-primary { padding: 9px 12px; border-bottom: 1px solid #e0e7ef; }
+.fleet-case-modal .fleet-fine-primary { padding: 12px 0 0; border-bottom: 0; }
+.fleet-fine-filter-bar { padding: 0 12px 10px; }
+.fleet-fine-filters select { width: auto; max-width: 100%; min-height: 36px; }
+.fleet-fine-filters input { min-width: 0; }
+.fleet-fine-row-actions button { min-height: 35px; padding: 5px 8px; white-space: nowrap; }
+.fleet-fine-daily-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; }
+.fleet-fine-ocr { padding: 10px 12px; background: #f1f6fc; border-radius: 10px; }
+.fleet-fine-ocr p { margin: 3px 0; }
+.fleet-fine-batch-scroll { overflow: auto; max-height: 45vh; }
+.fleet-fine-batch-scroll table { min-width: 650px; }
+.fleet-fine-batch-scroll td :is(select,input) { min-width: 0; }
+.fleet-fine-batch-scroll input[type="checkbox"] { width: 18px; min-height: 18px; }
+.fleet-case-modal:has(#fleetFineBatchForm) { width: min(940px, calc(100vw - 24px)); }
+@media (max-width: 700px) {
+  .fleet-edit-fields { grid-template-columns: minmax(0, 1fr); }
+  .fleet-fine-row-actions { justify-content: flex-start; }
+}
+
+.fleet-policy-dealer { margin-inline-start: auto; }
+.fleet-fine-notice { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 10px 14px; background: #fff6db; border: 1px solid #ebd6a3; border-radius: 10px; }
+.fleet-fine-overview-row { display: flex; width: 100%; justify-content: space-between; gap: 8px; }
+
+.fleet-fine-batch-edit { display: grid; gap: 6px; padding: 6px 0; }
+.fleet-fine-batch-edit label { display: grid; gap: 3px; text-align: left; }
+.fleet-fine-batch-edit input { width: 100%; }
+
+.fleet-module-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; border-bottom: 1px solid var(--fleet-line); padding: 3px 0 9px; }
+.fleet-module-head h2 { margin: 0; color: var(--fleet-ink); font-size: clamp(19px, 2vw, 24px); line-height: 1.25; }
+.fleet-module-head .fleet-workspace-nav { padding: 0; border: 0; }
+.fleet-notification-panel { padding: 12px; }
+.fleet-notification-panel > h3 { margin: 0 0 8px; font-size: 16px; }
+.fleet-notification-panel > h3 small { margin-inline-start: 6px; color: var(--fleet-muted); font-weight: 600; }
+.fleet-notification-panel .fleet-list-toolbar { padding: 0 0 10px; }
+.fleet-notification-panel .fleet-list-toolbar > form { flex-wrap: wrap; }
+.fleet-notification-panel .empty { padding: 12px; }
+.fleet-fine-filter-bar summary { cursor: pointer; color: var(--fleet-ink); font-size: 13px; font-weight: 700; }
+.fleet-fine-filter-bar[open] summary { margin-bottom: 8px; }
+.vehicle-folder-section-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; justify-content: space-between; }
+.vehicle-folder-section-head h4 { margin: 0; }
+.vehicle-visual-expiries { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 6px 0 0; }
+.vehicle-visual-expiries dt { color: var(--muted); font-size: 12px; }
+.vehicle-visual-expiries dd { margin: 2px 0 0; }
+.vehicle-history-modal { width: min(760px, calc(100vw - 24px)); --fleet-ink: #172337; --fleet-muted: #5b6b81; --fleet-line: #e0e7ef; }
+.vehicle-history-modal .modal-title small { color: var(--fleet-muted); font-weight: 750; }
+.vehicle-history-modal .fleet-policy-vehicle h3 { font-size: 17px; }
+.vehicle-history-rows { display: grid; gap: 7px; }
+.vehicle-history-rows article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 9px 10px; border: 1px solid var(--fleet-line); border-radius: 9px; background: #f7f9fc; overflow-wrap: anywhere; }
+.vehicle-history-rows small { display: block; color: var(--fleet-muted); margin-top: 2px; }
+@media (max-width: 700px) {
+  .fleet-module-head { display: grid; gap: 7px; }
+  .fleet-notification-panel .fleet-list-toolbar > form { width: 100%; }
+  .fleet-notification-panel .fleet-list-toolbar .actions { flex-wrap: wrap; }
+  .vehicle-history-modal .modal-form-body { padding: 10px; }
+  .vehicle-history-rows article { grid-template-columns: minmax(0, 1fr) auto; }
+  .vehicle-history-rows article > div { grid-row: span 2; }
+}
+
+.fleet-fine-more { position: relative; }
+.fleet-fine-more > summary { display: list-item; cursor: pointer; }
+.fleet-fine-more > div {
+  position: absolute; top: calc(100% + 5px); inset-inline-start: 0; z-index: 12;
+  display: grid; gap: 4px; min-width: 154px; padding: 6px;
+  background: #fff; border: 1px solid var(--fleet-line); border-radius: 9px; box-shadow: 0 8px 24px #16263c22;
+}
+.fleet-fine-more > div button { text-align: left; white-space: nowrap; }
+.fleet-fine-urgency {
+  display: inline-block; margin-inline-start: 3px; padding: 2px 6px; border-radius: 5px;
+  font-size: 11px; font-weight: 800; white-space: nowrap;
+}
+.fleet-fine-urgency[data-tone="rose"] { color: #9f1239; background: #ffe4e6; }
+.fleet-fine-urgency[data-tone="amber"] { color: #783a08; background: #fef1c7; }
+.fleet-fine-data-issue, .fleet-fines-table .fleet-fine-data-issue {
+  color: #854d0e; max-width: 220px; white-space: normal;
+}
+.fleet-fine-date { white-space: nowrap; }
+.fleet-fine-issue-icon {
+  display: inline-grid; place-items: center; vertical-align: middle; margin-inline-start: 3px;
+  width: 15px; height: 15px; border: 1px solid #d3b47a; border-radius: 50%; color: #795216;
+  font-size: 10px; font-weight: 850;
+}
+.fleet-fine-mobile-list { display: none; }
+.fleet-idle-driver-name {
+  display: block; margin-top: 3px; max-width: 135px; color: #546681;
+  font-size: 11px; font-weight: 600; white-space: normal; overflow-wrap: anywhere;
+}
+.calendar-pill.fleet-schedule-overdue { color: #9f1239; background: #ffe4e6; border-color: #fda4af; }
+.app-dialog-body > p { white-space: pre-line; }
+@media (max-width: 700px) {
+  .dealer-shell .compact-brand { flex: 1; min-width: 0; gap: 6px; }
+  .dealer-shell .compact-brand > img { flex-shrink: 0; width: auto; height: 23px; }
+  .dealer-shell .compact-brand .partner-brand-logo { display: none; }
+  .dealer-shell .brand-title {
+    white-space: normal; overflow: visible; overflow-wrap: anywhere; text-overflow: clip; font-size: 13px; line-height: 1.3;
+  }
+  .dealer-shell .userbox { margin-inline-start: 0; }
+  .dealer-shell .userbox .ghost-btn { padding-inline: 8px; }
+  .fleet-fines-page .fleet-fines-desktop,
+  .fleet-fines-page .fleet-kpi:not(.fleet-kpi-primary) { display: none; }
+  .fleet-fines-page .fleet-kpis { grid-template-columns: 1fr; gap: 0; }
+  .fleet-fines-page .fleet-kpi { padding: 6px 8px; gap: 7px; }
+  .fleet-fines-page .fleet-kpi > div { display: flex; align-items: baseline; gap: 8px; }
+  .fleet-fines-page .fleet-kpi strong { margin: 0; }
+  .fleet-fines-page .fleet-list-toolbar { padding: 6px 8px; gap: 5px; }
+  .fleet-fines-page .fleet-case-tabs { flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 2px; }
+  .fleet-fines-page .fleet-case-tabs button { flex: none; white-space: nowrap; }
+  .fleet-fines-page #fleetFineSearch { grid-template-columns: minmax(0, 1fr) minmax(0, 112px) auto; gap: 4px; }
+  .fleet-fines-page #fleetFineSearch > :is(input,select) { width: 100%; min-width: 0; }
+  .fleet-fines-page #fleetFineSearch > select { grid-row: 1; }
+  .fleet-fines-page .fleet-fine-primary { padding: 5px 8px; }
+  .fleet-fines-page .fleet-fine-filter-bar { padding: 0 8px 5px; }
+  .fleet-fine-mobile-main .fleet-fine-plate { font-size: 16px; font-weight: 850; }
+  .fleet-fine-mobile-list { display: grid; gap: 6px; padding: 5px 8px 8px; }
+  .fleet-fine-mobile-card {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center;
+    gap: 5px; padding: 4px 6px 4px 9px; border: 1px solid var(--fleet-line); border-radius: 8px; background: #f8fafc;
+  }
+  .fleet-fine-mobile-main {
+    min-width: 0; display: grid; gap: 2px; padding: 5px 0; border: 0; background: transparent; text-align: left; color: var(--fleet-ink);
+  }
+  .fleet-fine-mobile-main > span { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+  .fleet-fine-mobile-main strong { font-size: 13px; }
+  .fleet-fine-mobile-main small { color: var(--fleet-muted); font-size: 11px; overflow-wrap: anywhere; }
+  .fleet-fine-mobile-card > .soft-btn { min-height: 34px; padding: 4px 6px; white-space: nowrap; font-size: 11px; }
+}
+
+.fleet-report-settings { padding: 12px; }
+.fleet-report-settings .fleet-list-toolbar { padding-inline: 0; justify-content: flex-start; align-items: end; }
+.fleet-report-settings form label { display: grid; gap: 4px; min-width: 0; }
+.fleet-report-settings-list { display: grid; gap: 6px; }
+.fleet-report-settings-list article { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 8px 16px; padding: 9px 12px; border: 1px solid var(--fleet-line); border-radius: 8px; }
+.fleet-report-settings-list small { display: block; color: var(--fleet-muted); overflow-wrap: anywhere; }
+.fleet-report-toggle { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.fleet-report-toggle input { width: 18px; min-height: 18px; accent-color: #274b79; }
+.fleet-idle-duration { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.fleet-idle-duration label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.fleet-idle-duration input { width: 100%; }
+.vehicle-folder-modal { width: min(780px, calc(100vw - 24px)); }
+.vehicle-document-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.vehicle-document-grid .vehicle-folder-section { display: grid; align-content: start; gap: 7px; padding: 10px; border: 1px solid var(--line); border-radius: 9px; min-width: 0; margin: 0; }
+.vehicle-document-grid .vehicle-folder-section h4 { margin: 0; }
+.vehicle-document-grid .vehicle-file-chip { max-width: 100%; }
+.vehicle-document-grid .vehicle-file-chip button:first-child { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.vehicle-document-grid .vehicle-file-list:empty, .vehicle-document-grid [data-attachment-status]:empty { display: none; }
+.vehicle-document-pick { display: grid; gap: 4px; min-width: 0; }
+.vehicle-document-pick input { width: 100%; min-width: 0; }
+@media (max-width: 700px) {
+  .fleet-report-settings-list article { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .fleet-report-settings-list article > div { grid-column: 1 / -1; }
+  .vehicle-document-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 400px) {
+  .admin-shell .admin-topbar .airport-weather { display: none; }
+}
+
+.insurance-premium b { color: #1a624c; font-size: 1.1rem; }
+.insurance-history { margin: 8px 0; border-top: 1px solid #e2e8f0; padding-top: 8px; }
+.insurance-history summary, .insurance-renewal-list summary { cursor: pointer; font-weight: 700; }
+.insurance-history ol { margin: 8px 0; padding-inline-start: 20px; }
+.insurance-history li { padding: 4px 0; }
+.insurance-history li span { margin-inline-start: 8px; color: #52627a; font-size: .86rem; }
+.insurance-history li p { margin: 4px 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.insurance-renewal-list { background: #fffbef; border: 1px solid #ead8ad; border-radius: 12px; margin: 12px 0; padding: 12px 14px; }
+.insurance-renewal-list > div { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 8px; margin-top: 12px; max-height: 320px; overflow: auto; }
+.insurance-renewal-list article { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px; }
+.insurance-renewal-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.insurance-renewal-actions:empty { display: none; }
+.insurance-renewal { text-align: start; }
+.insurance-renewal small { display: block; color: #78531d; }
