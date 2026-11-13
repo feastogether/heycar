@@ -5,3 +5,4 @@ scripts/import-data.json
 .vercel
 cloudflare-public/
 .fleet-preview/
+.wrangler/

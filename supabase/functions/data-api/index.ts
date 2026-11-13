@@ -980,6 +980,16 @@ function fleetIsoDate(value: unknown) {
   return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value ? value : "";
 }
 
+function fleetPolicyStoredFiles(policy: Record<string, any>) {
+  const candidates = [{ name: policy.name || "保險文件", storage_path: policy.storage_path },
+    ...(Array.isArray(policy.files) ? policy.files : [])];
+  const seen = new Set<string>();
+  return candidates.filter(file => {
+    if (!file || typeof file.storage_path !== "string" || !file.storage_path || seen.has(file.storage_path)) return false;
+    seen.add(file.storage_path); return true;
+  });
+}
+
 async function handleFleetOperations(body: Record<string, any>, session: Record<string, unknown>) {
   const scopeVehicle = body.vehicle_id;
   const policyRead = body.action === "open_fleet_policy" || (body.action === "load_fleet_operations" && body.section === "policy");
@@ -1015,10 +1025,13 @@ async function handleFleetOperations(body: Record<string, any>, session: Record<
       const { data, error } = await db.from("fleet_fuel_stats")
         .select("vehicle_id,last_fill_date,last_fill_mileage,avg_daily_km,record_count,span_days");
       if (error) throw error;
-      return json({ rows: data || [] });
+      const reviews = await db.from("fleet_migration_reviews").select("id,plate_no,reason,source_data,existing_data,status")
+        .eq("status", "pending").order("plate_no").limit(500);
+      if (reviews.error) throw reviews.error;
+      return json({ rows: data || [], review_cases: reviews.data || [] });
     }
     if (body.section === "policy") {
-      const policyColumns = "id,vehicle_id,policy_type,company,policy_number,start_date,expiry_date,name,storage_path";
+      const policyColumns = "id,vehicle_id,policy_type,company,policy_number,start_date,expiry_date,name,storage_path,files";
       const rows = [];
       if (scopeVehicle && !access.admin) {
         const { data, error } = await db.from("vehicles").select("id").eq("id", scopeVehicle).eq("dealer_partner_id", access.dealerId).maybeSingle();
@@ -1039,10 +1052,11 @@ async function handleFleetOperations(body: Record<string, any>, session: Record<
         rows.push(...data.filter(row => !currentVehicles || currentVehicles.has(row.vehicle_id)));
         offset += data.length;
       }
-      return json({ rows: rows.map(({ storage_path, legacy_url, ...row }) => ({
-        ...row, has_file: Boolean(storage_path), legacy_reference: Boolean(legacy_url),
-        legacy_url: access.admin ? fleetLegacyDriveUrl(legacy_url) : ""
-      })) });
+      return json({ rows: rows.map(({ storage_path, legacy_url, files, ...row }) => {
+        const documents = fleetPolicyStoredFiles({ ...row, storage_path, files }).map((file, index) => ({ index, name: file.name || "保險文件" }));
+        return { ...row, documents, has_file: documents.length > 0, legacy_reference: Boolean(legacy_url),
+          legacy_url: access.admin ? fleetLegacyDriveUrl(legacy_url) : "" };
+      }) });
     }
     return json({ error: "無法識別車務分類" }, 400);
   }
@@ -1050,23 +1064,25 @@ async function handleFleetOperations(body: Record<string, any>, session: Record<
   if (body.action === "open_fleet_policy") {
     const id = String(body.id || "");
     if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(id)) return json({ error: "找不到保單" }, 404);
-    let query = db.from("fleet_policy_documents").select("vehicle_id,name,storage_path").eq("id", id);
+    let query = db.from("fleet_policy_documents").select("vehicle_id,name,storage_path,files").eq("id", id);
     if (scopeVehicle) query = query.eq("vehicle_id", scopeVehicle);
     if (!access.admin) query = query.eq("dealer_partner_id", access.dealerId);
     const { data: policy, error } = await query.maybeSingle();
     if (error) throw error;
-    if (!policy?.storage_path) return json({ error: "保單原檔尚未就緒" }, 404);
+    const index = body.file_index ?? 0;
+    const file = policy && Number.isInteger(index) && index >= 0 ? fleetPolicyStoredFiles(policy)[index] : null;
+    if (!file) return json({ error: "保險原檔尚未就緒" }, 404);
     if (!access.admin) {
       const { data, error: vehicleError } = await db.from("vehicles").select("id")
         .eq("id", policy.vehicle_id).eq("dealer_partner_id", access.dealerId).maybeSingle();
       if (vehicleError) throw vehicleError;
       if (!data) return json({ error: "找不到保單" }, 404);
     }
-    const { data, error: storageError } = await db.storage.from("fleet-private").createSignedUrl(policy.storage_path, 600);
+    const { data, error: storageError } = await db.storage.from("fleet-private").createSignedUrl(file.storage_path, 600);
     if (storageError) throw storageError;
-    const extension = String(policy.storage_path || "").split(".").at(-1)?.toLowerCase();
+    const extension = String(file.storage_path || "").split(".").at(-1)?.toLowerCase();
     const type = extension === "pdf" ? "application/pdf" : extension === "png" ? "image/png" : extension === "jpg" || extension === "jpeg" ? "image/jpeg" : "";
-    return json({ url: data.signedUrl, name: policy.name, type });
+    return json({ url: data.signedUrl, name: file.name, type });
   }
 
   if (body.action === "edit_fleet_idle") {
@@ -1572,6 +1588,15 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action === "review_fleet_migration") {
+      if (session.session_type !== "admin" || !await adminCan(session, "fleetOperations")) return json({ error: "沒有核對權限" }, 403);
+      if (!fleetUuid(body.id) || !compactText(body.note) || body.confirmed !== true) return json({ error: "請確認並填寫核對說明" }, 400);
+      const { data, error } = await db.from("fleet_migration_reviews").update({ status: "reviewed", reviewed_at: new Date().toISOString(),
+        reviewer_name: compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者"), review_note: compactText(body.note).slice(0, 1000) })
+        .eq("id", body.id).eq("status", "pending").select("id").maybeSingle();
+      if (error) throw error;
+      return data ? json({ ok: true }) : json({ error: "此資料已核對，請重新整理" }, 409);
+    }
     if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting"].includes(body.action)) {
       const response = await createDriverReportingHandler({ db, adminCan })(body, session);
       return json(response.body, response.status);

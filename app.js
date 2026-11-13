@@ -3833,6 +3833,7 @@
       }
       if (request === view.request) {
         view.rows = data.rows || [];
+        view.migrationReviews = data.review_cases || [];
         if (section === "fuel") view.telemetry = related?.rows || null;
         if (section === "importIdle") view.importedDates = [...new Set(view.rows.map(row => row.record_date))].sort().reverse();
       }
@@ -3955,6 +3956,11 @@
     };
   }
 
+  function fleetPolicyButtons(row, vehicleId, className = "ghost-btn") {
+    const documents = row.documents?.length ? row.documents : [{ index: 0, name: "開啟保險文件" }];
+    return documents.map(file => `<button class="${className}" type="button" data-fleet-policy-open="${escapeHtml(row.id)}" data-policy-vehicle="${escapeHtml(vehicleId)}" data-policy-file-index="${Number(file.index)}">${escapeHtml(file.name)}</button>`).join("");
+  }
+
   function fleetPolicyCard(vehicle, inVehicleHistory = false) {
     return `<article class="fleet-policy-card">
       <header class="fleet-policy-vehicle">
@@ -3966,7 +3972,7 @@
         const type = row.policy_type === "compulsory" ? "強制險" : "任意險";
         const expiry = row.current_expiry || row.expiry_date;
         const attachment = row.has_file
-          ? `<button class="ghost-btn" type="button" data-fleet-policy-open="${escapeHtml(row.id)}" data-policy-vehicle="${escapeHtml(vehicle.id)}">開啟保單</button>`
+          ? fleetPolicyButtons(row, vehicle.id)
           : state.admin && row.legacy_reference ? fleetDocumentLinks(row) : "<small>尚未上傳保單</small>";
         return `<section class="fleet-policy-section" data-policy-type="${row.policy_type}" aria-label="${type}">
           <h4>${type}</h4>
@@ -4506,6 +4512,8 @@
         ? allRows.filter(row => row.policies.some(item => fleetPolicyExpiryMatches(item, view.policyFilter))) : allRows;
     const idle = view.section === "idle";
     const policy = view.section === "policy";
+    const migrationReviews = state.admin && view.section === "fuel" && view.migrationReviews?.length
+      ? `<details class="fleet-surface" style="margin:12px 0;padding:14px"><summary>移轉資料待核對 · ${view.migrationReviews.length} 筆（保留正式履歷，未覆蓋）</summary><div class="table-wrap"><table><thead><tr><th>車牌</th><th>日期</th><th>舊系統里程</th><th>正式紀錄里程</th><th>差異說明</th><th>核對</th></tr></thead><tbody>${view.migrationReviews.map(row => `<tr><td>${escapeHtml(row.plate_no)}</td><td>${escapeHtml(row.source_data.service_date)}</td><td>${fleetKm(row.source_data.mileage)}</td><td>${fleetKm(row.existing_data.odometer)}</td><td>${escapeHtml(row.reason)}</td><td><button class="ghost-btn" data-fleet-migration-review="${escapeHtml(row.id)}">標示已核對</button></td></tr>`).join("")}</tbody></table></div></details>` : "";
     const { rows: visible, controls: pager } = policy
       ? fleetListPage(rows, view.page, 12, "data-fleet-ops-page")
       : { rows, controls: "" };
@@ -4560,6 +4568,7 @@
       <button class="ghost-btn" data-fleet-forecast-layout="table" aria-pressed="${view.forecastLayout === "table"}">完整表格</button>
     </div>` : "";
     return '<section class="fleet-case-page fleet-workspace">' + navigation + context +
+      migrationReviews +
       (projections.length && !view.loading && !view.error ? fleetForecastMetrics(projections) : "") +
       '<div class="fleet-case-tools fleet-surface fleet-report-controls"><form id="fleetOpsSearch" class="fleet-ops-search">' + idleTools +
       '<input type="search" name="q" aria-label="搜尋車輛" placeholder="' + (state.admin && !policy ? '車牌、目前駕駛或車款' : '搜尋車牌') + '" value="' + escapeHtml(view.search) +
@@ -7287,8 +7296,7 @@
           .find(item => item.dataset.importedVehiclePolicy === row.policy_type);
         if (!container) continue;
         container.innerHTML = row.has_file
-          ? `<button class="soft-btn" type="button" data-fleet-policy-open="${escapeHtml(row.id)}"
-            data-policy-vehicle="${escapeHtml(vehicle.id)}">開啟已匯入保單</button>`
+          ? fleetPolicyButtons(row, vehicle.id, "soft-btn")
           : row.legacy_reference ? fleetDocumentLinks(row) : "";
       }
     } catch {
@@ -10246,9 +10254,19 @@
     }
     if (target?.dataset.fleetPolicyOpen) {
       try {
-        const { url, name, type } = await apiRequest("open_fleet_policy", { id: target.dataset.fleetPolicyOpen, vehicle_id: target.dataset.policyVehicle });
+        const { url, name, type } = await apiRequest("open_fleet_policy", { id: target.dataset.fleetPolicyOpen, vehicle_id: target.dataset.policyVehicle, file_index: Number(target.dataset.policyFileIndex || 0) });
         openFilePreview(url, name || "保單", type);
       } catch (error) { await showAlert(error.message, "無法開啟保單"); }
+      return;
+    }
+    if (target?.dataset.fleetMigrationReview) {
+      const note = await showPrompt("請填寫核對結果。此操作只標示已核對，不會修改正式車輛履歷。", "", "移轉資料核對");
+      if (!note?.trim()) return;
+      if (!await showConfirm("確定保留現有正式履歷，並將此筆移轉差異標示已核對？", "確認核對")) return;
+      target.disabled = true;
+      try { await apiRequest("review_fleet_migration", { id: target.dataset.fleetMigrationReview, note, confirmed: true }); await loadFleetOperations(); }
+      catch (error) { await showAlert(error.message, "核對失敗"); }
+      finally { if (target.isConnected) target.disabled = false; }
       return;
     }
     if (target?.hasAttribute("data-fleet-refresh")) {
