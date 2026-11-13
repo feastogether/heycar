@@ -52,27 +52,46 @@ const storagePathFromUrl = (value: unknown) => {
   }
 };
 
-async function signStorageUrl(value: unknown) {
-  const path = storagePathFromUrl(value);
-  if (!path) return value;
-  const { data, error } = await db.storage.from(storageBucket).createSignedUrl(path, signedStorageUrlTtlSeconds);
-  if (error) return value;
-  return data.signedUrl;
-}
-
 async function signStorageUrls(value: unknown): Promise<unknown> {
   if (!value || typeof value !== "object") return value;
-  if (Array.isArray(value)) return await Promise.all(value.map((item) => signStorageUrls(item)));
-  const output: Record<string, unknown> = {};
-  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-    if ((key === "url" || key.endsWith("_url")) && typeof item === "string") {
-      output[key] = await signStorageUrl(item);
-    } else if (item && typeof item === "object") {
-      output[key] = await signStorageUrls(item);
-    } else {
-      output[key] = item;
+  const references: { target: Record<string, unknown>; key: string; path: string }[] = [];
+  const clone = (input: unknown): unknown => {
+    if (!input || typeof input !== "object") return input;
+    if (Array.isArray(input)) return input.map(clone);
+    const output: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(input as Record<string, unknown>)) {
+      output[key] = clone(item);
+      if ((key === "url" || key.endsWith("_url")) && typeof item === "string") {
+        const path = storagePathFromUrl(item);
+        if (path) references.push({ target: output, key, path });
+      }
     }
-  }
+    return output;
+  };
+  const output = clone(value);
+  const paths = [...new Set(references.map(item => item.path))];
+  if (!paths.length) return output;
+  const signed = new Map<string, string>();
+  const bucket = db.storage.from(storageBucket);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(4, Math.ceil(paths.length / 100)) }, async () => {
+    while (next < paths.length) {
+      const start = next; next += 100;
+      const batch = paths.slice(start, start + 100);
+      try {
+        if (typeof bucket.createSignedUrls === "function") {
+          const { data, error } = await bucket.createSignedUrls(batch, signedStorageUrlTtlSeconds);
+          if (!error) for (const item of data || []) if (item.signedUrl) signed.set(item.path, item.signedUrl);
+        } else {
+          for (const path of batch) {
+            const { data, error } = await bucket.createSignedUrl(path, signedStorageUrlTtlSeconds);
+            if (!error && data?.signedUrl) signed.set(path, data.signedUrl);
+          }
+        }
+      } catch { /* Retain the recorded URL when signing is temporarily unavailable. */ }
+    }
+  }));
+  for (const item of references) if (signed.has(item.path)) item.target[item.key] = signed.get(item.path);
   return output;
 }
 
