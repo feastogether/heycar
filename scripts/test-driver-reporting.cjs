@@ -11,9 +11,9 @@ async function makeDatabase() {
   const db=new PGlite();
   await db.exec(`create role anon; create role authenticated; create role service_role;
     create table public.insurance_partners(id uuid primary key,name text,partner_type text,active boolean,frontend_permissions jsonb default '{}');
-    create table public.drivers(id uuid primary key,name text,dealer_partner_id uuid,fleet_name text);
+    create table public.drivers(id uuid primary key,name text,dealer_partner_id uuid,fleet_name text,driver_status text default '待上線');
     insert into insurance_partners values('${ids.dealer}','亞菲得股份有限公司','dealer',true,'{}'),('${ids.other}','其他車商','dealer',true,'{}');
-    insert into drivers values('${ids.driver}','測試司機一','${ids.dealer}',null),('${ids.second}','測試司機二','${ids.dealer}',null),('${ids.third}','未開放司機','${ids.other}',null);`);
+    insert into drivers(id,name,dealer_partner_id,fleet_name) values('${ids.driver}','測試司機一','${ids.dealer}',null),('${ids.second}','測試司機二','${ids.dealer}',null),('${ids.third}','未開放司機','${ids.other}',null);`);
   await db.exec(migration);
   return db;
 }
@@ -28,7 +28,7 @@ async function run() {
   assert.equal(enabled({...a,frontend_permissions:{driverReporting:'true'}}),false);
   assert.equal(enabled({...a,frontend_permissions:{driverReporting:null}}),false);
   assert.equal(enabled({...a,name:'其他車商'}),false);
-  assert.equal(enabled({...a,name:'其他車商',frontend_permissions:{driverReporting:true}}),true);
+  assert.equal(enabled({...a,name:'其他車商',frontend_permissions:{driverReporting:true}}),false);
   assert.equal(enabled({...a,partner_type:'broker'}),false);
   console.log('PASS: supplier frontend switch defaults and explicit permission values.');
   const db=await makeDatabase();
@@ -42,6 +42,10 @@ async function run() {
     const config={is_open:true,opens_on:now,closes_on:now,allowed_days:4,blocked_dates:[month+'-09']};
     await assert.rejects(load(ids.third),/尚未開放/);
     assert.equal((await load(null)).rows.length,2,'only eligible drivers are listed before submissions');
+    await db.query("update drivers set driver_status='已離職' where id=$1",[ids.second]);
+    await assert.rejects(load(ids.second),/尚未開放/);
+    assert.equal((await load(null)).rows.length,1);
+    await db.query("update drivers set driver_status='待上線' where id=$1",[ids.second]);
     await save(config);
     await assert.rejects(save(config),/已更新/);
     await assert.rejects(submit(ids.driver,[month+'-09']),/禁休日/);
@@ -72,14 +76,14 @@ async function run() {
     await save({...config,is_open:false},1);
     await assert.rejects(submit(ids.third,[] ,2),/開放期間/);
     await db.exec(`update insurance_partners set frontend_permissions='{"driverReporting":true}' where id='${ids.other}'`);
-    assert.equal((await load(ids.third)).rows.length,1,'explicit opt-in works for other dealers');
+    await assert.rejects(load(ids.third),/尚未開放/,'other dealers stay ineligible even after opt-in');
     await save({...config,opens_on:'2099-01-01',closes_on:'2099-01-31'},2);
     await assert.rejects(submit(ids.third,[],3),/開放期間/);
     await db.exec('set role authenticated');
     await assert.rejects(load(null),/permission denied/);
     await assert.rejects(db.query('select * from driver_reporting_submissions'),/permission denied/);
     await db.exec('reset role; set role service_role');
-    assert.equal((await load(null)).rows.length,3);
+    assert.equal((await load(null)).rows.length,2);
     await assert.rejects(db.query('delete from driver_reporting_submissions'),/permission denied/);
     await db.exec('reset role');
     console.log('PASS: database migration, default dealer access, opt-in/out, blocked dates, month boundaries, stale settings, duplicate submits, over-quota review, locked submissions, immutable history, audit and role isolation.');

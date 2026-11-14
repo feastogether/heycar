@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dealerInsuranceHistory, insuranceWrite } from "./insurance-workflow.mjs";
 import { createDriverReportingHandler } from "./driver-reporting.mjs";
+import { createEmployeeWorkflowHandler } from "./employee-workflow.mjs";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
@@ -1607,6 +1608,10 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (["save_service_schedule", "sync_service_schedule", "complete_service_schedule", "load_avatar_profiles", "save_own_avatar"].includes(body.action)) {
+      const result = await createEmployeeWorkflowHandler({db,adminCan})(body,session);
+      return json(result.body,result.status);
+    }
     if (body.action === "review_fleet_migration") {
       if (session.session_type !== "admin" || !await adminCan(session, "fleetOperations")) return json({ error: "沒有核對權限" }, 403);
       if (!fleetUuid(body.id) || !compactText(body.note) || body.confirmed !== true) return json({ error: "請確認並填寫核對說明" }, 400);
@@ -1899,6 +1904,11 @@ Deno.serve(async (req) => {
         body.action === "update" &&
         ["maintenance_notifications", "personal_messages", "payment_notices"].includes(body.table)
       ) {
+        if (body.table === "maintenance_notifications" && body.record.status === "completed") {
+          const { data: scheduled, error: scheduleError } = await db.from("calendar_events").select("id").eq("maintenance_notification_id",body.id).limit(1);
+          if (scheduleError) throw scheduleError;
+          if (scheduled?.length) return json({error:"請使用保養完成回報並填寫完成里程"},400);
+        }
         body.record = { status: body.record.status, updated_at: new Date().toISOString() };
       } else if (body.action === "update" && body.table === "dispatch_orders") {
         body.record = {

@@ -1575,6 +1575,7 @@
       renderLogin();
       return;
     }
+    void ensureOwnAvatar();
     saveViewState();
     ensureDispatchAutoRefresh();
     ensureDispatchFlightRefresh();
@@ -1729,7 +1730,7 @@
             </div>
             <div class="userbox">
               <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
-              <button class="ghost-btn" data-action="logout">登出</button>
+              ${ownAvatarButton()}<button class="ghost-btn" data-action="logout">登出</button>
             </div>
           </header>
           <main class="main admin-main">${content}</main>
@@ -1758,7 +1759,7 @@
             </div>
             <div class="userbox">
               ${!isDealerPartner ? `<div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>` : ""}
-              <button class="ghost-btn" data-action="logout">登出</button>
+              ${ownAvatarButton()}<button class="ghost-btn" data-action="logout">登出</button>
             </div>
           </header>
           <main class="main admin-main">${content}</main>
@@ -1779,7 +1780,7 @@
           </div>
           <div class="userbox">
             <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
-            <button class="ghost-btn" data-action="logout">登出</button>
+            ${ownAvatarButton()}<button class="ghost-btn" data-action="logout">登出</button>
           </div>
         </header>
         ${renderMarquee()}
@@ -2029,7 +2030,7 @@
   }
 
   function canShowDriverFeature(view) {
-    if (view === "driverReporting") return reportingEnabledForDealer(driverDealer());
+    if (view === "driverReporting") return reportingEnabledForDealer(driverDealer()) && ["跑趟中", "待上線"].includes(state.user?.driver_status);
     const permissions = driverFrontendPermissions();
     return !permissions || permissions[view] !== false;
   }
@@ -2038,6 +2039,7 @@
     if (!dealer || dealer.partner_type !== "dealer" || dealer.active === false) return false;
     let permissions = dealer.frontend_permissions;
     if (typeof permissions === "string") { try { permissions = JSON.parse(permissions); } catch { permissions = {}; } }
+    if (dealer.name !== "亞菲得股份有限公司") return false;
     return Object.prototype.hasOwnProperty.call(permissions || {}, "driverReporting")
       ? permissions.driverReporting === true : dealer.name === "亞菲得股份有限公司";
   }
@@ -2508,7 +2510,7 @@
             ${item.status === "pending" && canShowTaskDetail(table, item) ? `
               <div class="lux-item-actions">
                 <button class="danger-btn" data-task-status="${table}:${item.id}:returned">退回</button>
-                <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : "已完成"}</button>
+                <button class="primary-btn" data-task-status="${table}:${item.id}:${table === "payment_notices" ? "paid" : "completed"}">${table === "payment_notices" ? "確認" : isMaint ? "保養完成" : "已完成"}</button>
               </div>
             ` : ""}
           </article>
@@ -3816,7 +3818,7 @@
       const latest = today();
       const fetchIdle = days => apiRequest("load_fleet_operations", { section: "idle", start: fleetShiftDate(latest, -(days - 1)), end: latest });
       const [first, related] = await Promise.all([
-        section === "importIdle" ? fetchIdle(31) : apiRequest("load_fleet_operations", { section, start: view.start, end: view.end }),
+        section === "importIdle" || (section === "idle" && view.latestWeek) ? fetchIdle(31) : apiRequest("load_fleet_operations", { section, start: view.start, end: view.end }),
         section === "fuel" ? fetchIdle(7).catch(() => null) : null
       ]);
       let data = first;
@@ -4193,7 +4195,8 @@
     const asOf = today();
     const serviceHistory = new Map();
     const completedDates = fleetCompletedServiceDates();
-    for (const record of state.data.vehicle_service_records || []) {
+    const projectionHistory = [...(state.data.vehicle_service_records || []), ...(state.data.calendar_events || []).filter(event => event.completed_at && !event.service_record_id).map(event => ({vehicle_id:event.vehicle_id,service_schedule_id:event.id,service_date:serviceCompletionDate(event.completed_at),odometer:event.completed_odometer,record_type:event.event_type === "tires" ? "輪胎" : event.event_type === "repair" ? "維修" : "定期保養",completion_only:true}))];
+    for (const record of projectionHistory) {
       if (!record.service_date || record.service_date > asOf) continue;
       if (!serviceHistory.has(record.vehicle_id)) serviceHistory.set(record.vehicle_id, []);
       serviceHistory.get(record.vehicle_id).push(record);
@@ -4256,6 +4259,7 @@
   }
 
   function fleetServiceStatus(service) {
+    if (service.last?.completion_only) return ["已完成・待工單", "green"];
     if (fleetServiceScheduleExpired(service)) return ["逾期未完成", "rose"];
     if (service.suspect) return ["里程可疑", "amber"];
     if (service.scheduled) return ["已排程", "slate"];
@@ -4282,7 +4286,7 @@
         : `<button class="ghost-btn" data-fleet-schedule="${escapeHtml(row.vehicle_id)}" data-kind="${kind}" data-date="${forecast?.date || today()}">安排${label}</button>`) : ""}
       ${adminCan("serviceRecords") ? service.baselineSuspect && service.last?.id
         ? `<button class="fleet-register-btn" data-modal="serviceRecord" data-id="${escapeHtml(service.last.id)}">核對里程</button>`
-        : `<button class="fleet-register-btn" ${attrs} data-fleet-register>登記${label}</button>` : ""}
+        : service.last?.completion_only ? `<button class="fleet-register-btn" data-workorder-schedule="${escapeHtml(service.last.service_schedule_id)}">登打工單</button>` : "" : ""}
     </div>`;
   }
 
@@ -4543,8 +4547,7 @@
     const body = view.error ? '<div class="empty" role="alert">' + escapeHtml(view.error) + ' <button class="ghost-btn" data-fleet-ops-refresh>重試</button></div>'
       : view.loading ? '<div class="empty" role="status">正在載入車務資料…</div>'
       : idle ? idleRange + (matrix.vehicles.length ? fleetIdleMetrics(matrix) +
-        '<div class="fleet-idle-report"><header><h3>車輛怠速' + (matrix.start === matrix.end ? "日報" : "週報") +
-        '</h3><p>' + fleetIdleTitle(matrix) + ' · 單日怠速超過 60 分鐘以紅字標記。' + (state.admin ? " 點兩下數字可編輯該車日報。" : "") + '</p></header>' +
+        '<div class="fleet-idle-report">' +
         '<div class="fleet-idle-scroll" tabindex="0" role="region" aria-label="怠速報表明細">' + fleetIdleTable(matrix) + '</div>' +
         fleetIdleCards(matrix) + '</div>' : '<div class="empty">這段期間沒有符合條件的怠速紀錄</div>')
       : visible.length ? (policy ? '<div class="fleet-case-list">' + visible.map(vehicle => fleetPolicyCard(vehicle)).join("") + '</div>'
@@ -5889,9 +5892,50 @@
     </div>`;
   }
 
+  let avatarSession = "", avatarProfiles = [];
+  function ownProfileKey() {
+    return state.admin ? (state.adminProfile?.is_super_admin ? "super-admin" : state.adminProfile?.id) : state.user?.id || state.partner?.id;
+  }
+  function ownAvatarButton() {
+    const id = ownProfileKey(), profile = avatarProfiles.find(row=>row.actor_id === id);
+    return '<button type="button" class="own-avatar-button" data-own-avatar aria-label="編輯我的頭像" title="編輯我的頭像">'+staffAvatar({id,name:state.adminProfile?.name || state.user?.name || state.partner?.name,avatar_url:profile?.avatar_url})+'</button>';
+  }
+  async function ensureOwnAvatar() {
+    if (!state.apiSession || avatarSession === state.apiSession || !hasApi) return;
+    const token = state.apiSession; avatarSession = token; avatarProfiles = [];
+    try {
+      const result = await apiRequest("load_avatar_profiles");
+      if (state.apiSession !== token) return;
+      avatarProfiles = result.profiles || []; render();
+    } catch(error) { console.warn("Avatar loading deferred:", error.message); }
+  }
+  function openOwnAvatar() {
+    const modal = document.createElement("div"); modal.className="modal-backdrop";
+    modal.innerHTML='<section class="modal own-avatar-editor"><div class="modal-title"><h3>我的頭像</h3></div><div class="own-avatar-body">'+ownAvatarButton()+'<label>選擇照片<input data-own-avatar-file type="file" accept="image/png,image/jpeg,image/webp"></label><p>照片會自動裁成正方形並壓縮，顯示為圓形頭像。</p><p role="status" data-own-avatar-status></p></div><div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button><button class="primary-btn" data-own-avatar-save disabled>儲存頭像</button></div></section>';
+    document.body.appendChild(modal);
+    let image = "";
+    const status = modal.querySelector('[data-own-avatar-status]'), save=modal.querySelector('[data-own-avatar-save]'), file=modal.querySelector('[data-own-avatar-file]');
+    file.addEventListener("change",async()=>{
+      save.disabled=true; file.disabled=true;
+      try {
+        const selected=file.files?.[0];
+        if (!selected || !["image/png","image/jpeg","image/webp"].includes(selected.type) || selected.size>10*1024*1024) throw new Error("請選擇 10 MB 內的 JPG、PNG、WebP 照片");
+        status.textContent="正在壓縮照片…";image=await compressStaffAvatar(selected);
+        modal.querySelector('.own-avatar-button').innerHTML=staffAvatar({name:"我",avatar_url:image});
+        status.textContent="預覽已就緒，按儲存後生效";save.disabled=false;
+      } catch(error) {status.textContent=error.message;} finally {file.disabled=false;}
+    });
+    save.addEventListener("click",async()=>{
+      if(save.disabled)return;save.disabled=true;file.disabled=true;status.textContent="正在儲存…";
+      try {const result=await apiRequest("save_own_avatar",{avatar_url:image});avatarProfiles=result.profiles||[];modal.remove();render();}
+      catch(error){status.textContent=error.message;save.disabled=false;file.disabled=false;}
+    });
+  }
+
   function staffAvatar(user = {}) {
     const isSuper = user.id === "super-admin";
-    const url = isSuper ? "./assets/heycar-afide-logo.png" : String(user.avatar_url || "");
+    const profile = avatarProfiles.find(row=>row.actor_id === user.id);
+    const url = String(profile?.avatar_url || user.avatar_url || (isSuper ? "./assets/heycar-afide-logo.png" : ""));
     const safeUrl = isSuper || /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
     return `<span class="staff-avatar">${safeUrl ? `<img ${isSuper ? 'class="staff-super-avatar"' : ""} src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="lazy">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
   }
@@ -6001,6 +6045,8 @@
   }
 
   function renderAdmin() {
+    const sidebarScroll = document.querySelector(".side-nav")?.scrollTop || 0;
+    const sidebarOuterScroll = document.querySelector(".admin-sidebar")?.scrollTop || 0;
     const nav = [
       ["home", "首頁", "🏠", ""],
       ["adminUsers", "權限管理", "🔐", "super"],
@@ -6096,6 +6142,9 @@
         <section class="admin-workspace">${body}</section>
       </div>
     `);
+    const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
+    if (sidebar) sidebar.scrollTop = sidebarScroll;
+    if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
     if (state.adminView === "driverReporting") mountDriverReporting(false);
     if (state.adminView === "home" && !adminFullDataReady && !adminWarmupScheduled && state.apiSession) {
       adminWarmupScheduled = true;
@@ -6568,6 +6617,13 @@
     document.body.appendChild(modal);
   }
 
+  function serviceCompletionDate(value) { return new Intl.DateTimeFormat("sv-SE",{timeZone:"Asia/Taipei"}).format(new Date(value)); }
+
+  function serviceWorkOrderReminders() {
+    const pending = (state.data.calendar_events || []).filter(event => event.completed_at && !event.service_record_id && !["cancelled","canceled"].includes(event.status));
+    return pending.length ? '<section class="service-workorder-reminders"><strong>已完成・待登打工單 '+pending.length+' 台次</strong><div>'+pending.map(event => '<button class="ghost-btn" data-workorder-schedule="'+escapeHtml(event.id)+'"><b>'+escapeHtml(event.plate_no)+'</b> '+escapeHtml(calendarTypeName(event.event_type))+' '+(event.completed_odometer?Number(event.completed_odometer).toLocaleString()+' km':'')+' · 登打工單</button>').join('')+'</div></section>' : '';
+  }
+
   function adminServiceRecords() {
     const items = filteredServiceRecords();
     const totalCost = items.reduce((sum, item) => sum + Number(item.total_cost || 0), 0);
@@ -6589,10 +6645,11 @@
         <article><small>定期保養</small><strong>${maintenanceCount}</strong></article>
         <article><small>維修案件</small><strong>${repairCount}</strong></article>
       </div>
+      ${serviceWorkOrderReminders()}
       <div class="service-record-list">
         ${items.length ? items.map((item) => `<article class="service-record-row">
           <div class="service-record-head"><span class="plate-chip">${escapeHtml(item.plate_no)}</span><span class="record-type">${escapeHtml(item.record_type)}</span><strong>${fmtDate(item.service_date)}</strong>${item.odometer ? `<small>${Number(item.odometer).toLocaleString()} km</small>` : ""}</div>
-          <div class="service-record-main"><div><small>處置／保養內容</small><p>${escapeHtml(item.work_performed || "-")}</p></div><div><small>實際維修／保養內容</small><p>${escapeHtml(item.actual_work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
+          <div class="service-record-main"><div><small>送修原因</small><p>${escapeHtml(item.complaint || "-")}</p></div><div><small>實際維修</small><p>${escapeHtml(item.actual_work_performed || item.work_performed || "-")}</p></div><div><small>更換零組件</small>${servicePartsSummary(item)}</div></div>
           <div class="service-record-meta"><span>廠商：${escapeHtml(item.vendor || "-")}</span><span>含稅總計：$${serviceTaxBreakdown(item).gross.toLocaleString()}</span><span>未稅金額：$${serviceTaxBreakdown(item).net.toLocaleString()}</span><span>稅額：$${serviceTaxBreakdown(item).tax.toLocaleString()}</span><span>下次日期：${fmtDate(item.next_service_date)}</span><span>下次里程：${item.next_service_odometer ? `${Number(item.next_service_odometer).toLocaleString()} km` : "-"}</span></div>
           <div class="service-record-actions">${attachmentLink(item)}${rowActions("serviceRecord", "vehicle_service_records", item.id)}</div>
         </article>`).join("") : `<div class="empty">找不到符合條件的車輛履歷</div>`}
@@ -6685,8 +6742,6 @@
         <div><small>其他費用</small><strong>$${Number(item.other_cost || 0).toLocaleString()}</strong></div>
         <div><small>停駛時數</small><strong>${item.downtime_hours || "-"}</strong></div>
       </div>
-      <div class="service-detail-section"><small>送修原因／駕駛反映</small><p>${escapeHtml(item.complaint || "-")}</p></div>
-      <div class="service-detail-section"><small>檢查與故障診斷</small><p>${escapeHtml(item.diagnosis || "-")}</p></div>
       <div class="service-detail-section"><small>送修原因</small><p>${escapeHtml(item.complaint || "-")}</p></div>
       <div class="service-detail-section"><small>實際維修</small><p>${escapeHtml(item.actual_work_performed || item.work_performed || "-")}</p></div>
       <div class="service-detail-section"><small>更換零組件</small>${servicePartsSummary(item)}</div>
@@ -6971,12 +7026,16 @@
 
   function vehicleHistoryButtons(vehicle) {
     return `<button type="button" class="soft-btn" data-vehicle-policy="${escapeHtml(vehicle.id)}">保單</button>
-      ${adminCan("fleetCases") ? `<button type="button" class="soft-btn" data-vehicle-fines="${escapeHtml(vehicle.id)}">歷史罰單</button>` : ""}`;
+      ${adminCan("fleetCases") ? `<button type="button" class="soft-btn" data-vehicle-fines="${escapeHtml(vehicle.id)}">罰單</button>` : ""}`;
   }
 
   function vehicleInsuranceDates(vehicle) {
     return ["compulsory", "voluntary"].map(type => `<div><dt>${type === "compulsory" ? "強制險到期" : "任意險到期"}</dt>
       <dd>${expiryDateBadge(vehicle[type + "_insurance_expiry"], 30)}</dd></div>`).join("");
+  }
+
+  function vehicleCompactActions(vehicle) {
+    return '<button class="soft-btn" data-modal="vehicleFolder" data-id="'+vehicle.id+'">資料</button>'+vehicleHistoryButtons(vehicle)+'<button class="soft-btn" data-modal="vehicle" data-id="'+vehicle.id+'">編輯</button>';
   }
 
   function vehicleManagementRows(vehicles) {
@@ -7000,7 +7059,7 @@
           <div><dt>保險公司</dt><dd>${escapeHtml(vehicle.insurance_company || "-")}</dd></div>
           <div><dt>道路救援</dt><dd>${escapeHtml(vehicle.roadside_assistance_phone || "-")}</dd></div>
         </dl>
-        <div class="vehicle-row-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${vehicleHistoryButtons(vehicle)}${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-row-actions">${vehicleCompactActions(vehicle)}</div>
       </article>
     `).join("")}</div>`;
   }
@@ -7034,7 +7093,7 @@
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
           <dl class="vehicle-visual-expiries">${vehicleInsuranceDates(vehicle)}</dl>
         </div>
-        <div class="vehicle-card-actions"><button class="soft-btn" data-modal="vehicleFolder" data-id="${vehicle.id}">資料夾</button>${vehicleHistoryButtons(vehicle)}${rowActions("vehicle", "vehicles", vehicle.id)}</div>
+        <div class="vehicle-card-actions">${vehicleCompactActions(vehicle)}</div>
       </article>`;
     }).join("")}</div>`;
   }
@@ -7586,6 +7645,7 @@
     const modalClass = [
       type === "driver" ? "driver-editor-modal" : "",
       type === "vehicle" ? "vehicle-editor-modal" : "",
+      type === "serviceRecord" ? "service-editor-modal" : "",
       type === "vehicleFolder" ? "vehicle-folder-modal" : "",
       ["staffAnnouncement", "staffCalendarEvent", "adminUser"].includes(type) ? "staff-editor" : ""
     ].filter(Boolean).join(" ");
@@ -7595,6 +7655,8 @@
         <form id="modalForm" class="modal-form">
           <div class="modal-form-body form-grid">${formHtml}</div>
           <div class="modal-actions">
+            ${type === "vehicle" && id ? `<button class="danger-btn vehicle-edit-delete" type="button" data-delete="vehicles:${id}">刪除此車輛</button>` : ""}
+            <p class="error modal-save-error" role="alert" hidden></p>
             <button class="ghost-btn" type="button" data-close-modal>關閉</button>
             <button class="primary-btn" type="submit">儲存</button>
           </div>
@@ -7664,7 +7726,8 @@
           return;
         }
       }
-      if (tableName === "driver_links") {
+      if (tableName === "vehicle_service_records" && !record.service_schedule_id) delete record.service_schedule_id;
+    if (tableName === "driver_links") {
         record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
       }
       if (tableName === "insurance_partners") {
@@ -7703,9 +7766,21 @@
           }
           updateOptions = { insurance_expected_updated_at: item?.updated_at ?? null, insurance_override: type === "insuranceStatusOverride" };
         }
-        const saved = id ? await update(tableName, id, normalizedRecord, updateOptions) : await insert(tableName, normalizedRecord);
+        let saved;
+        if (tableName === "calendar_events" && ["maintenance","repair","tires"].includes(normalizedRecord.event_type)) {
+          const result = await apiRequest("save_service_schedule", {id:id || null,record:normalizedRecord,expected_updated_at:item?.updated_at ?? null});
+          saved=result.event;
+          const index=state.data.calendar_events.findIndex(row=>row.id===saved.id);
+          if(index<0)state.data.calendar_events.push(saved);else state.data.calendar_events[index]=saved;
+          const notices=state.data.maintenance_notifications ||= [], noticeIndex=notices.findIndex(row=>row.id===result.notification.id);
+          if(noticeIndex<0)notices.push(result.notification);else notices[noticeIndex]=result.notification;
+        } else saved = id ? await update(tableName, id, normalizedRecord, updateOptions) : await insert(tableName, normalizedRecord);
         if (tableName === "insurance_requests" && saved?.status === "completed" && saved.request_type === "quote") applyInsuranceExpiry(saved);
-        if (tableName === "calendar_events") await syncCalendarNotification(saved);
+        // Service schedules and notifications were committed together by save_service_schedule.
+        if (tableName === "vehicle_service_records" && saved?.service_schedule_id) {
+          const event = state.data.calendar_events.find(row => row.id === saved.service_schedule_id);
+          if (event) event.service_record_id = saved.id;
+        }
         const pushMessage = !id && ["announcements", "personal_messages", "maintenance_notifications", "payment_notices"].includes(tableName)
           ? linePushSummary(state.lastLinePushResult)
           : "";
@@ -7724,6 +7799,8 @@
         if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
       } catch (err) {
         const message = err.message || err;
+        const inlineError = form.querySelector(".modal-save-error");
+        if (inlineError) { inlineError.hidden = false; inlineError.textContent = message; }
         await showAlert(message, tableName === "vehicle_service_records" && /里程/.test(message) ? "人工審核 · 里程異常" : "儲存失敗");
       } finally {
         if (document.body.contains(modal)) {
@@ -8915,8 +8992,8 @@
 
   function adminUserForm(item) {
     const permissions = item.permissions || { drivers: true, vehicles: true, loans: true, service_records: true, messages: true, finance: true, insurance: false };
-    const permissionSections = adminNavDepartments.map(([department, keys]) => {
-      const items = keys.filter((key) => !["adminUsers", "home"].includes(key)).map((key) => [key, adminNavLabels[key] || key]);
+    const permissionSections = [...new Set(adminPermissionCatalog().map(([, , group]) => group).filter(group => group !== "員工首頁"))].map((department) => {
+      const items = adminPermissionCatalog().filter(([, , group]) => group === department).map(([key,label]) => [key,label]);
       if (!items.length) return "";
       return `<div class="permission-section field full">
         <h4>${escapeHtml(department)}</h4>
@@ -9122,7 +9199,7 @@
   function servicePartsSummary(item = {}) {
     const parts = parseServiceParts(item);
     if (!parts.length) return `<p>${escapeHtml(item.parts_replaced || "-")}</p>`;
-    return `<div class="service-parts-summary">${parts.map((part) => `<span><b class="${servicePartTypeClass(part.record_type)}">${escapeHtml(part.record_type || "未分類")}</b><strong>${escapeHtml(part.part_no || "-")}</strong>${escapeHtml(part.name || "-")}<small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
+    return `<div class="service-parts-summary">${parts.map((part) => `<span><b class="${servicePartTypeClass(part.record_type)}">${escapeHtml(part.record_type || "未分類")}</b><strong>${escapeHtml(part.part_no || "-")}</strong><em class="service-part-name">${escapeHtml(part.name || "-")}</em><small>x${Number(part.quantity || 0)} ｜ 單價 $${Number(part.unit_price || 0).toLocaleString()} ｜ 金額 $${Number(part.amount || 0).toLocaleString()}</small></span>`).join("")}</div>`;
   }
 
   function vehicleLoanForm(item) {
@@ -9155,6 +9232,7 @@
       + input("service_date", "作業日期", formDate(item.service_date) || today(), "date", true)
       + input("odometer", "當下里程（km）", item.odometer, "number")
       + repairShopOptions(item.vendor)
+      + `<input type="hidden" name="service_schedule_id" value="${escapeHtml(item.service_schedule_id || "")}">`
       + text("complaint", "送修原因", item.complaint)
       + text("actual_work_performed", "實際維修", item.actual_work_performed || item.work_performed)
       + servicePartsEditor(item)
@@ -9656,25 +9734,14 @@
   }
 
   async function syncCalendarNotification(item) {
-    if (!["maintenance", "repair", "tires"].includes(item.event_type) || !item.driver_id) return;
-    const vehicle = item.vehicle_id
-      ? state.data.vehicles.find((row) => row.id === item.vehicle_id)
-      : findVehicleByPlate(item.plate_no);
-    const patch = {
-      driver_id: item.driver_id,
-      vehicle_id: vehicle?.id || null,
-      service_date: item.event_date,
-      service_time: item.event_time || null,
-      vendor: item.vendor || "",
-      status: "pending",
-      content: `[共同行事曆 - ${calendarTypeName(item.event_type)}] ${item.plate_no}\n${item.content || ""}`.trim()
-    };
-    if (item.maintenance_notification_id) {
-      await update("maintenance_notifications", item.maintenance_notification_id, patch);
-      return;
+    if (!["maintenance", "repair", "tires"].includes(item.event_type)) return;
+    const result = await apiRequest("sync_service_schedule", { id: item.id });
+    if (result.event) Object.assign(item, result.event);
+    if (result.notification) {
+      const rows = state.data.maintenance_notifications ||= [];
+      const index = rows.findIndex(row => row.id === result.notification.id);
+      if (index < 0) rows.push(result.notification); else rows[index] = result.notification;
     }
-    const notification = await insert("maintenance_notifications", patch);
-    await update("calendar_events", item.id, { maintenance_notification_id: notification.id });
   }
 
   async function handleLogin(value) {
@@ -10149,6 +10216,12 @@
       render();
       return;
     }
+    if (target?.hasAttribute("data-own-avatar")) { if (!target.closest(".own-avatar-editor")) openOwnAvatar(); return; }
+    if (target?.dataset.workorderSchedule) {
+      const job = state.data.calendar_events.find(row => row.id === target.dataset.workorderSchedule);
+      if (job) openModal("serviceRecord", null, {vehicle_id:job.vehicle_id,plate_no:job.plate_no,service_date:serviceCompletionDate(job.completed_at),odometer:job.completed_odometer,vendor:job.vendor,record_type:job.event_type === "tires" ? "輪胎" : job.event_type === "repair" ? "維修" : "定期保養",actual_work_performed:job.content,service_schedule_id:job.id});
+      return;
+    }
     if (target?.dataset.fleetSchedule || target?.hasAttribute("data-fleet-maintenance-new")) {
       if (!state.admin || !adminCan("calendar")) return;
       const vehicle = (state.data.vehicles || []).find(item => item.id === target.dataset.fleetSchedule) ||
@@ -10562,7 +10635,7 @@
       const [tableName, id] = target.dataset.delete.split(":");
       try {
         await remove(tableName, id);
-        if (["staff_announcements", "staff_calendar_events"].includes(tableName) && !(state.data[tableName] || []).some(row => row.id === id)) target.closest(".modal-backdrop")?.remove();
+        if (["staff_announcements", "staff_calendar_events", "vehicles"].includes(tableName) && !(state.data[tableName] || []).some(row => row.id === id)) target.closest(".modal-backdrop")?.remove();
       } catch(error) { await showAlert(error.message || error, "刪除失敗"); }
       return;
     }
@@ -11031,7 +11104,20 @@
     }
     if (target.dataset.taskStatus) {
       const [tableName, id, status] = target.dataset.taskStatus.split(":");
-      await update(tableName, id, { status });
+      if (tableName === "maintenance_notifications" && status === "completed" && state.data.maintenance_notifications.find(row => row.id === id)?.service_schedule_id) {
+        if (target.disabled) return;
+        if (!(await showConfirm("確認已完成本次保養／調胎？送出後將通知車輛部登打工單。", "完成確認"))) return;
+        target.disabled = true;
+        try {
+          const value = await showPrompt("請輸入完成時的儀表里程（公里）", "", "完成里程");
+          if (value === null) return;
+          const mileage = Number(value);
+          if (!String(value).trim() || !Number.isFinite(mileage) || mileage < 0) throw new Error("請輸入有效里程");
+          const result = await apiRequest("complete_service_schedule", { id, odometer: mileage });
+          Object.assign(state.data.maintenance_notifications.find(row => row.id === id) || {}, result.notification);
+        } catch(error) { await showAlert(error.message, "未能完成保養回報"); }
+        finally { target.disabled = false; }
+      } else await update(tableName, id, { status });
       if (state.view === "messagesCenter" && tableName === "personal_messages" && status === "completed") state.messageReadFilter = "read";
       render();
     }

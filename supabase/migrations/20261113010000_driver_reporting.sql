@@ -47,7 +47,8 @@ language sql stable security definer set search_path = '' as $$
   select min(p.id::text)::uuid from public.drivers d join public.insurance_partners p
     on (case when d.dealer_partner_id is not null then p.id = d.dealer_partner_id
       else p.name = d.fleet_name end)
-  where d.id = p_driver and p.partner_type = 'dealer' and p.active is true
+  where d.id = p_driver and d.driver_status in ('跑趟中','待上線')
+    and p.name = '亞菲得股份有限公司' and p.partner_type = 'dealer' and p.active is true
     and coalesce(p.frontend_permissions->'driverReporting' = 'true'::jsonb,
       p.name = '亞菲得股份有限公司')
   having count(*) = 1;
@@ -70,7 +71,7 @@ declare result jsonb; begin
       from public.drivers d
       left join public.insurance_partners p on p.id=public.driver_reporting_dealer(d.id)
       left join public.driver_reporting_submissions s on s.driver_id=d.id and s.month=p_month
-      where (p_driver is null and (p.id is not null or s.id is not null)) or d.id=p_driver),'[]'),
+      where p.id is not null and (p_driver is null or d.id=p_driver)),'[]'),
     'audit',case when p_driver is null then coalesce((select jsonb_agg(to_jsonb(a) order by a.created_at desc,a.id desc)
       from (select * from public.driver_reporting_audit where month=p_month order by created_at desc,id desc limit 100) a),'[]') else '[]'::jsonb end
   ) into result;

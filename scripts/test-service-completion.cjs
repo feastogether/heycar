@@ -1,0 +1,51 @@
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const {PGlite}=require('../.fleet-preview/node_modules/@electric-sql/pglite');
+const {createEmployeeWorkflowHandler,profileIdentity,validAvatar}=require('../supabase/functions/data-api/employee-workflow.mjs');
+async function run(){
+ const db=new PGlite();
+ const v='10000000-0000-4000-8000-000000000001',d='20000000-0000-4000-8000-000000000001',other='20000000-0000-4000-8000-000000000002',e='30000000-0000-4000-8000-000000000001';
+ try{
+  await db.exec(`create role anon;create role authenticated;create role service_role;
+   create table insurance_partners(id uuid primary key default gen_random_uuid(),name text,partner_type text,active boolean);
+   create table vehicles(id uuid primary key,current_driver_id uuid,driver_history jsonb default '[]',vehicle_files jsonb default '[]');
+   create table vehicle_service_records(id uuid primary key default gen_random_uuid(),vehicle_id uuid,service_date date,record_type text,odometer numeric);
+   create table maintenance_notifications(id uuid primary key default gen_random_uuid(),driver_id uuid,vehicle_id uuid,service_date date,service_time time,vendor text,content text,status text,updated_at timestamptz);
+   create table calendar_events(id uuid primary key default gen_random_uuid(),event_type text,driver_id uuid,vehicle_id uuid,event_date date,event_time time,vendor text,content text,status text,maintenance_notification_id uuid,fleet_name text,plate_no text,updated_at timestamptz);
+   insert into insurance_partners(name,partner_type,active)values('測試保養廠','repair_shop',true);
+   insert into vehicles(id,current_driver_id,driver_history,vehicle_files) values('${v}','${d}','[{"name":"原駕駛"}]','[{"url":"original-policy.pdf"}]');
+   insert into calendar_events(id,event_type,vehicle_id,event_date,event_time,vendor,content)values('${e}','maintenance','${v}',current_date,'09:00','測試保養廠','十萬公里定期保養');`);
+  await db.exec(fs.readFileSync('supabase/migrations/20261113040000_service_completion_workflow.sql','utf8'));
+  const q=async(sql,args=[]) => (await db.query(sql,args)).rows[0]?.result;
+  const before=await q('select to_jsonb(v) as result from vehicles v');
+  const countBefore=(await db.query('select count(*)::int n from calendar_events')).rows[0].n;
+  await assert.rejects(q('select save_vehicle_service_schedule(null,$1,null) as result',[JSON.stringify({event_type:'maintenance',vehicle_id:v,event_date:'2026-11-13',vendor:'不存在的廠商',content:'測試'})]),/廠商管理/);
+  assert.equal((await db.query('select count(*)::int n from calendar_events')).rows[0].n,countBefore,'failed notification rolls back the schedule too');
+  const tire=await q('select save_vehicle_service_schedule(null,$1,null) as result',[JSON.stringify({event_type:'tires',vehicle_id:v,event_date:'2026-11-13',vendor:'測試保養廠',content:'調胎',fleet_name:'全部車商',plate_no:'TEST-001'})]);
+  assert.equal(tire.event.event_type,'tires');assert.equal(tire.notification.service_schedule_id,tire.event.id);
+  const tireDone=await q('select complete_vehicle_service_schedule($1,$2,$3) as result',[tire.notification.id,d,100000]);assert.equal(tireDone.event.status,'completed');
+  const sync=()=>q('select sync_vehicle_service_schedule($1) as result',[e]);
+  const scheduled=await sync(), repeated=await sync();
+  assert.equal(scheduled.notification.id,repeated.notification.id,'resaving a schedule does not duplicate notification');
+  assert.equal(scheduled.notification.driver_id,d,'current vehicle driver is notified');
+  assert.equal(scheduled.notification.vendor,'測試保養廠');
+  const complete=(driver,km)=>q('select complete_vehicle_service_schedule($1,$2,$3) as result',[scheduled.notification.id,driver,km]);
+  await assert.rejects(complete(other,100000),/本人/);
+  await assert.rejects(complete(d,-1),/有效/);
+  const done=await complete(d,100000);assert.equal(done.event.status,'completed');assert.equal(Number(done.event.completed_odometer),100000);
+  assert.equal((await db.query('select count(*)::int n from vehicle_service_records')).rows[0].n,0,'completion never creates a work order');
+  await assert.rejects(complete(d,100000),/已處理/);await assert.rejects(sync(),/已完成/);
+  const record=await db.query("insert into vehicle_service_records(vehicle_id,service_date,record_type,odometer,service_schedule_id)values($1,current_date,'定期保養',100000,$2)returning id",[v,e]);
+  assert.equal((await db.query('select service_record_id from calendar_events where id=$1',[e])).rows[0].service_record_id,record.rows[0].id);
+  await assert.rejects(db.query("insert into vehicle_service_records(vehicle_id,service_date,service_schedule_id)values($1,current_date,$2)",[v,e]),/已登打|unique/);
+  assert.deepEqual(await q('select to_jsonb(v) as result from vehicles v'),before,'workflow leaves vehicle history and policy files untouched');
+  const handler=createEmployeeWorkflowHandler({db:{rpc:async(name,args)=>({data:{name,args}})},adminCan:async()=>false});
+  assert.equal((await handler({action:'sync_service_schedule',id:e},{session_type:'driver',driver_id:d})).status,403);
+  assert.equal((await handler({action:'sync_service_schedule',id:e},{session_type:'admin',admin_user_id:'test'})).status,403);
+  const response=await handler({action:'complete_service_schedule',id:e,driver_id:other,odometer:100000},{session_type:'driver',driver_id:d});
+  assert.equal(response.body.args.p_driver,d,'posted driver ID cannot impersonate another driver');
+  assert.equal(profileIdentity({session_type:'admin',is_super_admin:true}).actor_id,'super-admin');
+  assert(validAvatar('data:image/jpeg;base64,/9j/AA=='));assert(!validAvatar('data:image/svg+xml;base64,PHN2Zz4='));assert(!validAvatar('https://external.example/avatar.png'));assert(!validAvatar('data:image/jpeg;base64,ZmFrZQ=='));
+  console.log('PASS: transactional scheduling, one notification, driver ownership, idempotent completion, no automatic history writes, work-order linkage, unchanged vehicle data, and avatar validation.');
+ }finally{await db.close();}
+}
+run().catch(error=>{console.error(error);process.exitCode=1;});

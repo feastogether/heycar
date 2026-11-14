@@ -4,7 +4,7 @@ const path=require('node:path'),assert=require('node:assert/strict');
 const root=path.resolve(__dirname,'..');
 const base='http://127.0.0.1:4191';
 async function run(){
-  const child=spawn(process.execPath,['.fleet-preview/server.cjs'],{cwd:root,env:{...process.env,FLEET_PREVIEW_PORT:'4191',REPORTING_PREVIEW_DB:'memory'},stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.execPath,['scripts/preview-driver-reporting.cjs'],{cwd:root,env:{...process.env,FLEET_PREVIEW_PORT:'4191'},stdio:['ignore','pipe','pipe']});
   let browser;
   try{
     await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Preview startup timed out')),15000);child.once('exit',code=>{clearTimeout(timer);reject(Error('Preview exited '+code));});child.stdout.on('data',chunk=>{if(String(chunk).includes('Local fleet preview:')){clearTimeout(timer);resolve();}});child.stderr.on('data',chunk=>{if(!String(chunk).includes('ExperimentalWarning'))process.stderr.write(chunk);});});
