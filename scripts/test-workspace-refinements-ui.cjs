@@ -36,8 +36,10 @@ async function main(){
   await page.locator('#modalForm [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
   await page.locator('[data-modal="adminUser"][data-id]').click();assert(await permission.isChecked());await page.locator('#modalForm [data-close-modal]').click();
   assert((await api('load')).data.admin_users[0].permissions.fleetOperations);
-  await nav('vehicles');const scrolled=await page.evaluate(()=>{const nav=document.querySelector('.side-nav');nav.scrollTop=200;const side=document.querySelector('.admin-sidebar');side.scrollTop=200;return [nav.scrollTop,side.scrollTop];});
+  await nav('vehicles');const menu=page.locator('[aria-controls="adminSidebar"]');if(await menu.getAttribute('aria-expanded')==='false')await menu.click();
+  const scrolled=await page.evaluate(()=>{const nav=document.querySelector('.side-nav');nav.scrollTop=200;const side=document.querySelector('.admin-sidebar');side.scrollTop=200;return [nav.scrollTop,side.scrollTop];});assert(scrolled.some(value=>value>0),'sidebar was actually scrolled');
   await nav('serviceRecords');assert.deepEqual(await page.evaluate(()=>[document.querySelector('.side-nav').scrollTop,document.querySelector('.admin-sidebar').scrollTop]),scrolled);
+  if(await menu.getAttribute('aria-expanded')==='true')await menu.click();
   for(const width of [320,390,768,1440]){
    await page.setViewportSize({width,height:900});await nav('vehicles');const actions=page.locator('.vehicle-row-actions').first();await actions.waitFor();
    assert.deepEqual((await actions.locator('button').allTextContents()).map(s=>s.trim()),['資料','保單','罰單','編輯']);
