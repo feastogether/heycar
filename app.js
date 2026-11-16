@@ -7768,6 +7768,7 @@
         }
         let saved;
         if (tableName === "calendar_events" && ["maintenance","repair","tires"].includes(normalizedRecord.event_type)) {
+          if (!normalizedRecord.driver_id) throw new Error("請選擇本次保養／調胎的通知司機。");
           const result = await apiRequest("save_service_schedule", {id:id || null,record:normalizedRecord,expected_updated_at:item?.updated_at ?? null});
           saved=result.event;
           const index=state.data.calendar_events.findIndex(row=>row.id===saved.id);
@@ -9301,13 +9302,45 @@
       text("content", "繳費內容", p.content) + attachmentField(p) + (!p.id ? linePushCheckbox() : "");
   }
 
+  function currentMaintenanceDriver(vehicle = {}) {
+    const drivers = state.data.drivers || [];
+    const active = vehicleActiveDriverRecords(vehicle);
+    const match = record => {
+      if (record.driver_id) return drivers.find(driver => driver.id === record.driver_id) || null;
+      const named = drivers.filter(driver => driver.name === String(record.driver_name || "").trim());
+      return named.length === 1 ? named[0] : null;
+    };
+    if (active.length) {
+      const matched = active.map(match).filter(Boolean);
+      return matched.find(driver => driver.id === vehicle.current_driver_id) || matched[0] || null;
+    }
+    return drivers.find(driver => driver.id === vehicle.current_driver_id) || vehicleDrivers(vehicle)[0] || null;
+  }
+
+  function syncMaintenanceDriverPicker(form, vehicle) {
+    if (!form?.querySelector("[data-maintenance-driver-help]")) return;
+    const driver = currentMaintenanceDriver(vehicle);
+    form.querySelectorAll('input[name="driver_id"]').forEach(input => { input.checked = input.value === (driver?.id || ""); });
+    const count = form.querySelector("[data-driver-picker-count]");
+    if (count) count.textContent = driver ? "已選擇 1 位" : "尚未選擇";
+    const search = form.querySelector("[data-driver-picker-search]");
+    if (search) { search.value = ""; search.dispatchEvent(new Event("input", { bubbles: true })); }
+    form.querySelector("[data-maintenance-driver-help]").textContent = driver
+      ? `已帶入目前駕駛：${driver.name}。需要改派時，可直接選擇其他司機。`
+      : "此車尚無可對應的目前駕駛，請選擇本次通知司機。";
+  }
+
   function calendarEventForm(item) {
+    const vehicle = state.data.vehicles.find(row => row.id === item.vehicle_id);
+    const driverId = item.id ? item.driver_id : item.driver_id || currentMaintenanceDriver(vehicle)?.id || "";
+    const driver = state.data.drivers.find(row => row.id === driverId);
     return input("event_date", "日期", formDate(item.event_date) || today(), "date", true) +
       input("event_time", "時間", item.event_time || "", "time") +
       select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["repair", "維修"], ["tires", "調胎"], ["other", "其他"]]) +
       fleetOptions("fleet_name", "通知車商", item.fleet_name) +
       vehiclePlatePicker(item, "車牌") +
-      searchableDriverOptions(item.driver_id) +
+      searchableDriverOptions(driverId) +
+      `<small class="field full" data-maintenance-driver-help>${driver ? escapeHtml(`${item.id ? "本次通知司機" : "已帶入目前駕駛"}：${driver.name}。需要改派時，可直接選擇其他司機。`) : "此車尚無可對應的目前駕駛，請選擇本次通知司機。"}</small>` +
       repairShopOptions(item.vendor, "維修／保養廠商") +
       text("content", "內容", item.content);
   }
@@ -11755,6 +11788,7 @@
       if (plateInput) plateInput.value = option?.dataset.plate || "";
       const searchInput = vehiclePickerSearch(root);
       if (searchInput && option?.dataset.plate) searchInput.value = option.dataset.plate;
+      syncMaintenanceDriverPicker(form, vehicleFromOption(option));
       return;
     }
     const mailRecipientSelect = e.target.closest("[data-mail-recipient-select]");

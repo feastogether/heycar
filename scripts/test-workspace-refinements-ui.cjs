@@ -4,6 +4,7 @@ const {chromium}=require('playwright');
 const root=path.resolve(__dirname,'..'),port=4193,base='http://127.0.0.1:'+port;
 const id=n=>`10000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
 const dealer=id(1),other=id(2),driver='20000000-0000-4000-8000-000000000001';
+const alternateDriver='20000000-0000-4000-8000-000000000002';
 const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
 const fixture={
  dealers:[{id:dealer,name:'亞菲得股份有限公司',partner_type:'dealer',active:true},{id:other,name:'士弘國際租賃有限公司',partner_type:'dealer',active:true}],
@@ -16,6 +17,8 @@ const fixture={
  staff_users:[{id:id(50),name:'測試夥伴',active:true,permissions:{fleetOperations:false},extension:'1234'}]
 };
 fixture.baselines[0].service_date=new Date(Date.parse(today)-40*86400000).toISOString().slice(0,10);
+fixture.vehicles[1].current_driver_id=alternateDriver;
+fixture.vehicles[1].driver_history=[];
 async function main(){
  const dataFile=path.join(root,'.fleet-preview','qa-workspace-'+process.pid+'.json');fs.writeFileSync(dataFile,JSON.stringify(fixture));
  const child=spawn(process.execPath,['scripts/preview-fleet-workspace.cjs'],{cwd:root,env:{...process.env,FLEET_PREVIEW_PORT:String(port),FLEET_PREVIEW_DATA:dataFile,REPORTING_PREVIEW_DB:'memory'},stdio:['ignore','pipe','pipe']});
@@ -58,9 +61,20 @@ async function main(){
   await page.locator('.userbox [data-own-avatar]').click();const image=await page.evaluate(()=>{const c=document.createElement('canvas');c.width=c.height=40;const x=c.getContext('2d');x.fillStyle='#b68a46';x.fillRect(0,0,40,40);return c.toDataURL('image/png');});
   await page.locator('[data-own-avatar-file]').setInputFiles({name:'test-avatar.png',mimeType:'image/png',buffer:Buffer.from(image.split(',')[1],'base64')});await page.locator('[data-own-avatar-save]:not([disabled])').waitFor();await page.locator('[data-own-avatar-save]').click();await page.locator('.own-avatar-editor').waitFor({state:'hidden'});assert((await page.locator('.userbox [data-own-avatar] img').getAttribute('src')).startsWith('data:image/jpeg'));
   await nav('maintenanceManagement');await page.locator('[data-fleet-schedule]').first().waitFor();await page.locator('[data-fleet-schedule]').first().click();
+  assert.equal(await page.locator('#modalForm input[name=driver_id]:checked').inputValue(),driver,'opening a schedule automatically selects the vehicle current driver');
+  await page.locator('#modalForm [name=vehicle_id]').selectOption(id(12));
+  assert.equal(await page.locator('#modalForm input[name=driver_id]:checked').inputValue(),alternateDriver,'changing vehicle selects its current driver');
   await page.locator('#modalForm [name=vehicle_id]').selectOption(id(11));await page.locator('#modalForm input[name=driver_id][value="'+driver+'"]').check();await page.locator('#modalForm [name=vendor]').selectOption('測試保養廠');await page.locator('#modalForm [name=content]').fill('十萬公里定期保養');await page.locator('#modalForm [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
   const scheduled=(await api('load')).data.calendar_events.find(row=>row.maintenance_notification_id);assert(scheduled);
-  const driverPage=await browser.newPage({viewport:{width:390,height:844}});await driverPage.goto(base+'/?review=driver');await driverPage.locator('[data-view="maintenance"]').click();await driverPage.locator('[data-task-status$=":completed"]').click();await driverPage.locator('[data-dialog-confirm]').click();await driverPage.locator('.app-dialog-input').fill('100000');await driverPage.locator('[data-dialog-confirm]').click();
+  assert.equal(scheduled.driver_id,driver);
+  await page.locator('[data-modal="calendarEvent"][data-id="'+scheduled.id+'"]').first().click();
+  await page.locator('#modalForm input[name=driver_id][value="'+alternateDriver+'"]').check();
+  await page.locator('#modalForm [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
+  await page.locator('[data-modal="calendarEvent"][data-id="'+scheduled.id+'"]').first().click();
+  assert.equal(await page.locator('#modalForm input[name=driver_id]:checked').inputValue(),alternateDriver,'editing preserves the previously selected alternate driver');
+  await page.locator('#modalForm [data-close-modal]').click();
+  assert.equal((await api('load')).data.vehicles.find(row=>row.id===id(11)).current_driver_id,driver,'reassigning maintenance leaves vehicle driver unchanged');
+  const driverPage=await browser.newPage({viewport:{width:390,height:844}});await driverPage.goto(base+'/?review=driver2');await driverPage.locator('[data-view="maintenance"]').click();await driverPage.locator('[data-task-status$=":completed"]').click();await driverPage.locator('[data-dialog-confirm]').click();await driverPage.locator('.app-dialog-input').fill('100000');await driverPage.locator('[data-dialog-confirm]').click();
   await driverPage.locator('[data-task-status$=":completed"]').waitFor({state:'hidden'});
   const loaded=(await api('load')).data;assert(loaded.calendar_events.find(row=>row.id===scheduled.id).completed_at);assert.equal(loaded.vehicle_service_records.length,1,'driver completion did not create history');
   await page.reload();await page.locator('[data-admin-view="serviceRecords"]').waitFor({state:'attached'});await nav('maintenanceManagement');await page.getByText('已完成・待工單',{exact:true}).first().waitFor();await nav('serviceRecords');await page.locator('[data-workorder-schedule="'+scheduled.id+'"]').click();await page.locator('#modalForm [name=complaint]').fill('定期保養');await page.locator('#modalForm [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
