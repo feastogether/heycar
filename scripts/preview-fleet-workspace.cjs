@@ -36,6 +36,7 @@ const suppliers = [
 const directory = fixture.partners || [...fixture.dealers, ...suppliers, broker];
 fixture.partners = directory;
 const reporting = require('./preview-reporting-db.cjs')(directory, process.argv.includes('--check') ? null : fixture.drivers);
+fixture.drivers ||= reporting.drivers;
 const eligibleDrivers=reporting.drivers.filter(row=>row.dealer_partner_id===a.id&&['跑趟中','待上線'].includes(row.driver_status));
 const previewDrivers={driver:eligibleDrivers[0]||reporting.drivers[0],driver2:eligibleDrivers[1]||eligibleDrivers[0]||reporting.drivers[1],otherdriver:reporting.drivers.find(row=>row.dealer_partner_id!==a.id)||reporting.drivers[2]};
 for(const [role,driver] of Object.entries(previewDrivers))sessions['preview-'+role]={session_type:'driver',driver_id:driver.id};
@@ -82,6 +83,7 @@ const tables = {
   fleet_migration_reviews: [],
   insurance_partners: directory,
   vehicles: fixture.vehicles,
+  drivers: reporting.drivers,
 };
 
 function query(table) {
@@ -114,7 +116,7 @@ function query(table) {
       }
       return 0;
     });
-    return rows.slice(from, to).map(row => Object.fromEntries(columns.map(field => [field, row[field]])));
+    return rows.slice(from, to).map(row => columns.includes('*') ? structuredClone(row) : Object.fromEntries(columns.map(field => [field, row[field]])));
   };
   return {
     select(fields) { columns = fields.split(","); return this; },
@@ -393,6 +395,12 @@ async function request(req, res) {
       if (raw.length > 7200000) return send(res, {}, 413);
     }
     const body = JSON.parse(raw || "{}");
+    if(['save_driver_onboarding','complete_driver_onboarding'].includes(body.action)) {
+      const {createOnboardingHandler}=require('../supabase/functions/data-api/onboarding-workflow.mjs');
+      const result=await createOnboardingHandler({db:{from:query},adminCan:async actor=>actor.is_super_admin===true})(body,session);
+      if(result.status===200){await reporting.syncDriver(result.body.data);persistFixture();}
+      return send(res,result.body,result.status);
+    }
     if (reporting.actions.includes(body.action)) {
       const result = await reporting.handle(body, session);
       return send(res, result.body, result.status);

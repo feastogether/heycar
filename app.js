@@ -6242,6 +6242,23 @@
     return Boolean(progress.completed_at || driver.onboarding_completed_at);
   }
 
+  function chooseOnboardingStatus(driver) {
+    return new Promise(resolve => {
+      const modal=document.createElement("div");modal.className="modal-backdrop";
+      modal.innerHTML=`<section class="modal onboarding-close-dialog" role="dialog" aria-modal="true" aria-labelledby="onboardingCloseTitle"><div class="modal-title"><h3 id="onboardingCloseTitle">上線結案</h3></div><form data-onboarding-close-form><div class="modal-form-body"><p><strong>${escapeHtml(driver.name)}</strong> · 目前狀態：${escapeHtml(driver.driver_status || "待上線")}</p><label class="field">結案後司機狀態<select name="driver_status" required><option value="">請選擇結案後狀態</option>${["跑趟中","停派中","待上線","已離職","留停中","其他"].map(status=>`<option value="${status}">${status}</option>`).join("")}</select></label><p class="onboarding-close-help">確認後會同時完成上線結案並更新司機狀態；其他駕駛資料不變。</p></div><div class="modal-actions"><button class="ghost-btn" type="button" data-onboarding-close-cancel>取消</button><button class="primary-btn" type="submit">確認結案</button></div></form></section>`;
+      const close=value=>{modal.remove();resolve(value);};
+      modal.addEventListener("click",event=>{if(event.target===modal||event.target.closest("[data-onboarding-close-cancel]"))close(null);});
+      modal.addEventListener("keydown",event=>{if(event.key==="Escape"){event.stopPropagation();close(null);}});
+      modal.querySelector("form").addEventListener("submit",event=>{event.preventDefault();close(new FormData(event.currentTarget).get("driver_status"));});
+      document.body.appendChild(modal);modal.querySelector("select").focus();
+    });
+  }
+
+  function applyOnboardingDriver(driver) {
+    const current=(state.data.drivers || []).find(row=>row.id===driver.id);
+    if(current)Object.assign(current,driver);
+  }
+
   function adminDriverOnboarding() {
     const dealerFilter = state.onboardingDealerFilter || "";
     const dealers = dealerPartners();
@@ -6293,6 +6310,7 @@
             <strong>${escapeHtml(driver.name || "未命名司機")}</strong>
             <span>${escapeHtml(driver.phone || "-")}</span>
             <span>所屬車商：${escapeHtml(driverDealerName(driver))}</span>
+            <span>司機狀態：${escapeHtml(driver.driver_status || "待上線")}</span>
             <span>負責人員：${escapeHtml(responsibleName || "未指定")}</span>
             ${satelliteDogBadge(driver, progress)}
           </div>
@@ -6310,6 +6328,7 @@
         </div>
         <div class="actions">
           <button class="primary-btn" data-modal="driverOnboarding" data-id="${driver.id}">更新進度</button>
+          ${!onboardingIsCompleted(driver) ? `<button class="soft-btn" type="button" data-onboarding-close="${escapeHtml(driver.id)}">結案</button>` : ""}
           <button class="soft-btn" data-action="edit-onboarding-driver" data-id="${driver.id}">編輯司機</button>
         </div>
       </article>
@@ -7767,7 +7786,18 @@
           updateOptions = { insurance_expected_updated_at: item?.updated_at ?? null, insurance_override: type === "insuranceStatusOverride" };
         }
         let saved;
-        if (tableName === "calendar_events" && ["maintenance","repair","tires"].includes(normalizedRecord.event_type)) {
+        if (type === "driverOnboarding") {
+          const complete=Boolean(normalizedRecord.onboarding_completed_at && !onboardingIsCompleted(item));
+          let status;
+          if(complete) {
+            modal.style.display="none";
+            try {status=await chooseOnboardingStatus(item);} finally {modal.style.display="";}
+            if(status===null)return;
+          }
+          const result=await apiRequest(complete?"complete_driver_onboarding":"save_driver_onboarding",{id,progress:normalizedRecord.onboarding_progress,status,completed_on:normalizedRecord.onboarding_progress.completed_at,expected_updated_at:item.updated_at??null});
+          saved=result.data;applyOnboardingDriver(saved);
+          if(complete)state.onboardingFilter="completed";
+        } else if (tableName === "calendar_events" && ["maintenance","repair","tires"].includes(normalizedRecord.event_type)) {
           if (!normalizedRecord.driver_id) throw new Error("請選擇本次保養／調胎的通知司機。");
           const result = await apiRequest("save_service_schedule", {id:id || null,record:normalizedRecord,expected_updated_at:item?.updated_at ?? null});
           saved=result.event;
@@ -10250,6 +10280,18 @@
       return;
     }
     if (target?.hasAttribute("data-own-avatar")) { if (!target.closest(".own-avatar-editor")) openOwnAvatar(); return; }
+    if (target?.dataset.onboardingClose) {
+      const driver=state.data.drivers.find(row=>row.id===target.dataset.onboardingClose);
+      if(!driver || target.disabled)return;
+      target.disabled=true;
+      try {
+        const status=await chooseOnboardingStatus(driver);if(status===null)return;
+        const result=await apiRequest("complete_driver_onboarding",{id:driver.id,status,completed_on:today(),expected_updated_at:driver.updated_at??null});
+        applyOnboardingDriver(result.data);state.onboardingFilter="completed";render();
+      } catch(error) {await showAlert(error.message || error,"上線結案失敗");}
+      finally {if(target.isConnected)target.disabled=false;}
+      return;
+    }
     if (target?.dataset.workorderSchedule) {
       const job = state.data.calendar_events.find(row => row.id === target.dataset.workorderSchedule);
       if (job) openModal("serviceRecord", null, {vehicle_id:job.vehicle_id,plate_no:job.plate_no,service_date:serviceCompletionDate(job.completed_at),odometer:job.completed_odometer,vendor:job.vendor,record_type:job.event_type === "tires" ? "輪胎" : job.event_type === "repair" ? "維修" : "定期保養",actual_work_performed:job.content,service_schedule_id:job.id});

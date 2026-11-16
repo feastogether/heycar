@@ -6,6 +6,16 @@
   const states = new Map();
   const monthDays = month => new Date(Number(month.slice(0,4)),Number(month.slice(5)),0).getDate();
   const dateAt = (month, day) => `${month}-${String(day).padStart(2,'0')}`;
+  function daySummary(rows, date) {
+    const result={work:[],off:[],pending:[],unconfirmed:[]};
+    for(const row of rows) {
+      const submission=row.submission;
+      if(!submission || !['approved','pending'].includes(submission.status)) result.unconfirmed.push(row);
+      else if((submission.off_dates || []).includes(date)) result[submission.status==='approved'?'off':'pending'].push(row);
+      else result.work.push(row);
+    }
+    return result;
+  }
   function mount(root, options) {
     if (!root) return;
     const key = options.identity;
@@ -47,14 +57,26 @@
       const c=data.config || {is_open:false,opens_on:data.server_today,closes_on:data.server_today,allowed_days:4};
       return `<details class="dr-panel dr-settings" ${!data.config?'open':''}><summary>月份開放設定與禁休日 <span>${c.is_open?'已啟用':'未開放'} · 排定 ${c.allowed_days} 天 · ${state.blocked.size} 天禁休</span></summary><form data-dr-settings><div class="dr-settings-fields"><label class="dr-switch"><input name="is_open" type="checkbox" ${c.is_open?'checked':''}>開放本月報班</label><label>開放日期<input type="date" name="opens_on" value="${c.opens_on}" required></label><label>截止日期（當日 23:59）<input type="date" name="closes_on" value="${c.closes_on}" required></label><label>排定休假天數<input type="number" name="allowed_days" value="${c.allowed_days}" min="0" max="31" required></label></div><div class="dr-settings-calendar"><div><h3>點選日期設為禁休日</h3><p class="dr-muted">標示禁休後，司機不能選擇該日。與已送出休假重疊時，系統會拒絕儲存，保留既有資料。</p><p class="dr-muted">變更排定天數僅套用之後送出的報班。</p></div>${calendar(true)}</div><div class="dr-form-actions"><button type="submit" class="primary-btn" ${busy?'disabled':''}>${busy?'正在儲存…':'儲存月份設定'}</button></div></form></details>`;
     }
+    function availabilityCalendar(rows) {
+      const first=new Date(Date.UTC(Number(state.month.slice(0,4)),Number(state.month.slice(5))-1,1)).getUTCDay();
+      const selected=state.calendarDate?.startsWith(state.month)?state.calendarDate:data.server_today.startsWith(state.month)?data.server_today:dateAt(state.month,1);
+      const summary=daySummary(rows,selected);
+      const labels={work:'預計上班',off:'已核准休假',pending:'待審休假',unconfirmed:'待確認'};
+      return `<section class="dr-availability" aria-label="每月上班與休假人數"><p class="dr-calendar-help">目前篩選 ${rows.length} 位司機。上班依已送出報班估算，並非實際出勤；休假核准後才計入休假人數，未報班或不同意的申請列為待確認。</p><div class="dr-weekdays">${['日','一','二','三','四','五','六'].map(day=>`<span>${day}</span>`).join('')}</div><div class="dr-availability-grid">${'<div class="dr-availability-empty" aria-hidden="true"></div>'.repeat(first)}${Array.from({length:monthDays(state.month)},(_,index)=>{
+        const date=dateAt(state.month,index+1), counts=daySummary(rows,date);
+        return `<button type="button" class="dr-availability-day ${date===selected?'is-selected':''} ${date===data.server_today?'today':''}" data-dr-calendar-day="${date}" aria-pressed="${date===selected}" aria-label="${date} 預計上班 ${counts.work.length} 人，核准休假 ${counts.off.length} 人，待審休假 ${counts.pending.length} 人，待確認 ${counts.unconfirmed.length} 人"><time datetime="${date}">${index+1}</time><span class="dr-availability-count work">上班 <b data-dr-count="work">${counts.work.length}</b></span><span class="dr-availability-count off">休假 <b data-dr-count="off">${counts.off.length}</b></span>${counts.pending.length?`<span class="dr-availability-count pending">待審 <b data-dr-count="pending">${counts.pending.length}</b></span>`:''}${counts.unconfirmed.length?`<span class="dr-availability-count unconfirmed">待定 <b data-dr-count="unconfirmed">${counts.unconfirmed.length}</b></span>`:''}</button>`;
+      }).join('')}</div><section class="dr-availability-detail" aria-label="當天司機名單"><h3>${dateLabel(selected)} · 當日名單</h3><div class="dr-availability-groups">${Object.entries(labels).map(([key,label])=>`<section class="${key}"><h4>${label} <b>${summary[key].length}</b></h4><div>${summary[key].map(row=>`<span>${escape(row.driver_name)}</span>`).join('')||'<small>無</small>'}</div></section>`).join('')}</div><p class="dr-muted">休假審核請切換清單模式；審核後會同步更新日曆人數。</p></section></section>`;
+    }
+
     function adminView() {
       const rows=data.rows||[], submitted=rows.filter(row=>row.submission), pending=submitted.filter(row=>row.submission.status==='pending');
       const filtered=rows.filter(row=>(!state.dealer||row.dealer_id===state.dealer)&&(!state.search||`${row.driver_name} ${row.dealer_name}`.includes(state.search))&&(state.filter==='all'||(state.filter==='none'?!row.submission:row.submission?.status===state.filter)));
       const dealers=[...new Map(rows.filter(row=>row.dealer_id).map(row=>[row.dealer_id,row.dealer_name])).entries()];
-      return monthPicker()+settings()+`<div class="dr-stats"><div><small>應報班司機／含本月歷史紀錄</small><b>${rows.length}</b></div><div><small>已送出</small><b>${submitted.length}</b></div><div class="pending"><small>待審核</small><b>${pending.length}</b></div><div class="approved"><small>已同意</small><b>${submitted.filter(row=>row.submission.status==='approved').length}</b></div></div><article class="dr-panel"><div class="dr-list-toolbar"><div class="dr-filters"><label>姓名／車商<input type="search" data-dr-search value="${escape(state.search)}" placeholder="搜尋司機或車商"></label><label>車商<select data-dr-dealer><option value="">全部車商</option>${dealers.map(([id,name])=>`<option value="${id}" ${state.dealer===id?'selected':''}>${escape(name)}</option>`).join('')}</select></label><label>審核狀態<select data-dr-filter>${[['all','全部'],['pending','待審核'],['approved','已同意'],['rejected','不同意'],['none','尚未報班']].map(([value,label])=>`<option value="${value}" ${state.filter===value?'selected':''}>${label}</option>`).join('')}</select></label></div><button class="ghost-btn" data-dr="export">匯出清單 CSV</button></div><div class="dr-table-wrap"><table class="dr-table"><thead><tr><th>司機／所屬車商</th><th>休假日期</th><th>狀態／天數</th><th>審核</th></tr></thead><tbody>${filtered.map(row=>{
+      const calendarRows=rows.filter(row=>(!state.dealer||row.dealer_id===state.dealer)&&(!state.search||`${row.driver_name} ${row.dealer_name}`.includes(state.search)));
+      return monthPicker()+settings()+`<div class="dr-stats"><div><small>應報班司機／含本月歷史紀錄</small><b>${rows.length}</b></div><div><small>已送出</small><b>${submitted.length}</b></div><div class="pending"><small>待審核</small><b>${pending.length}</b></div><div class="approved"><small>已同意</small><b>${submitted.filter(row=>row.submission.status==='approved').length}</b></div></div><article class="dr-panel"><div class="dr-list-toolbar"><div class="dr-view-switch" role="group" aria-label="報班顯示模式">${[["list","清單"],["calendar","日曆"]].map(([key,label])=>`<button type="button" class="ghost-btn" data-dr-mode="${key}" aria-pressed="${(state.mode||"list")===key}">${label}</button>`).join("")}</div><div class="dr-filters"><label>姓名／車商<input type="search" data-dr-search value="${escape(state.search)}" placeholder="搜尋司機或車商"></label><label>車商<select data-dr-dealer><option value="">全部車商</option>${dealers.map(([id,name])=>`<option value="${id}" ${state.dealer===id?'selected':''}>${escape(name)}</option>`).join('')}</select></label>${state.mode==='calendar'?'':`<label>審核狀態<select data-dr-filter>${[['all','全部'],['pending','待審核'],['approved','已同意'],['rejected','不同意'],['none','尚未報班']].map(([value,label])=>`<option value="${value}" ${state.filter===value?'selected':''}>${label}</option>`).join('')}</select></label>`}</div><button class="ghost-btn" data-dr="export">匯出清單 CSV</button></div>${state.mode==='calendar'?availabilityCalendar(calendarRows):`<div class="dr-table-wrap"><table class="dr-table"><thead><tr><th>司機／所屬車商</th><th>休假日期</th><th>狀態／天數</th><th>審核</th></tr></thead><tbody>${filtered.map(row=>{
         const s=row.submission;
         return `<tr><td><strong>${escape(row.driver_name)}</strong><small>${escape(row.dealer_name)}</small></td><td><div class="dr-date-chips">${s?s.off_dates.map(date=>`<span class="${s.status}">${Number(date.slice(-2))} 日</span>`).join('')||'<span class="dr-muted">本月不排休</span>':'<span class="dr-muted">尚未送出</span>'}</div></td><td>${s?`${badge(s)}<small>${s.off_dates.length} 天／排定 ${s.allowed_days} 天</small>${s.off_dates.length>s.allowed_days?'<small class="dr-over">超過排定天數</small>':''}`:'—'}</td><td>${s?.status==='pending'?`<div class="dr-review-actions"><button class="primary-btn" data-dr-approve="${s.id}" ${busy?'disabled':''}>同意</button><button class="ghost-btn" data-dr-reject="${s.id}" ${busy?'disabled':''}>不同意</button></div>`:s?`<small>${escape(s.reviewer_name||'')}</small><small>${escape(s.review_reason||'')}</small>`:'—'}</td></tr>`;
-      }).join('')||'<tr><td colspan="4" class="dr-empty">目前沒有符合條件的司機</td></tr>'}</tbody></table></div></article><details class="dr-panel dr-audit"><summary>操作紀錄（最近 100 筆）</summary>${(data.audit||[]).map(item=>`<div><strong>${escape(item.actor?.name)}</strong><span>${escape(({month_settings:'修改月份設定',submitted:'送出休假',approved:'同意休假',rejected:'不同意休假'})[item.action]||item.action)}</span><small>${escape(new Date(item.created_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}))}</small>${item.details?.reason?`<p>${escape(item.details.reason)}</p>`:''}</div>`).join('')||'<p class="dr-muted">尚無操作紀錄</p>'}</details>`;
+      }).join('')||'<tr><td colspan="4" class="dr-empty">目前沒有符合條件的司機</td></tr>'}</tbody></table></div>`}</article><details class="dr-panel dr-audit"><summary>操作紀錄（最近 100 筆）</summary>${(data.audit||[]).map(item=>`<div><strong>${escape(item.actor?.name)}</strong><span>${escape(({month_settings:'修改月份設定',submitted:'送出休假',approved:'同意休假',rejected:'不同意休假'})[item.action]||item.action)}</span><small>${escape(new Date(item.created_at).toLocaleString('zh-TW',{timeZone:'Asia/Taipei'}))}</small>${item.details?.reason?`<p>${escape(item.details.reason)}</p>`:''}</div>`).join('')||'<p class="dr-muted">尚無操作紀錄</p>'}</details>`;
     }
     function paint(error = '') {
       if (!alive()) return;
@@ -93,6 +115,8 @@
     });
     root.addEventListener('click', async event=>{
       const button=event.target.closest('button'); if (!button||busy) return;
+      if(['list','calendar'].includes(button.dataset.drMode)) {state.mode=button.dataset.drMode;paint();return;}
+      if(button.dataset.drCalendarDay) {state.calendarDate=button.dataset.drCalendarDay;paint();return;}
       const day=button.dataset.drDay, block=button.dataset.drBlock, action=button.dataset.dr;
       if (day&&open()&&!submission()&&!data.config.blocked_dates.includes(day)) {state.selected.has(day)?state.selected.delete(day):state.selected.add(day);paint();}
       if (block) {
@@ -133,5 +157,5 @@
     });
     paint();load();
   }
-  window.HeycarDriverReporting={mount};
+  window.HeycarDriverReporting={mount,daySummary};
 })();

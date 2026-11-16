@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dealerInsuranceHistory, insuranceWrite } from "./insurance-workflow.mjs";
 import { createDriverReportingHandler } from "./driver-reporting.mjs";
 import { createEmployeeWorkflowHandler } from "./employee-workflow.mjs";
+import { createOnboardingHandler } from "./onboarding-workflow.mjs";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
@@ -1608,6 +1609,10 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (["save_driver_onboarding", "complete_driver_onboarding"].includes(body.action)) {
+      const result = await createOnboardingHandler({db,adminCan})(body,session);
+      return json(result.body,result.status);
+    }
     if (["save_service_schedule", "sync_service_schedule", "complete_service_schedule", "load_avatar_profiles", "save_own_avatar"].includes(body.action)) {
       const result = await createEmployeeWorkflowHandler({db,adminCan})(body,session);
       return json(result.body,result.status);

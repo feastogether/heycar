@@ -41,5 +41,5 @@ module.exports=function createReportingPreview(directory, sourceDrivers = null) 
       return {data:result};
     }catch(error){return {error:{code:error.code,message:error.message}};}
   }}});
-  return {drivers,handle,actions:reportingActions,close:async()=>{await ready;await db.close();}};
+  return {drivers,handle,actions:reportingActions,syncDriver:async driver=>{await ready;await db.query('update drivers set name=$1,dealer_partner_id=$2,fleet_name=$3,driver_status=$4 where id=$5',[driver.name,driver.dealer_partner_id,driver.fleet_name,driver.driver_status,driver.id]);await db.exec('checkpoint');},close:async()=>{await ready;await db.close();}};
 };

@@ -6,6 +6,8 @@
 .vehicle-visual-art{max-width:100%;overflow:hidden}
 .vehicle-edit-delete{margin-right:auto}
 .modal-save-error{flex-basis:100%;margin:0;font-size:13px}
+.onboarding-close-dialog{width:min(440px,100%);max-width:calc(100vw - 32px)}
+.onboarding-close-dialog .modal-form-body{padding:20px;display:grid;gap:16px}.onboarding-close-dialog p{margin:0;font-size:14px;line-height:1.7}.onboarding-close-dialog .field{display:grid;gap:8px}.onboarding-close-dialog select{width:100%;min-height:44px}.onboarding-close-dialog .onboarding-close-help{font-size:12px;color:#718096}
 .service-record-row{border:1px solid #dce3ed;border-radius:16px;padding:18px;background:#fff;box-shadow:0 3px 12px #20304705}
 .service-record-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
 .service-record-main{display:grid!important;grid-template-columns:1fr 1fr 1.2fr;gap:16px!important}

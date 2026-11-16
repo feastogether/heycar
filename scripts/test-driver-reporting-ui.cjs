@@ -54,11 +54,33 @@ async function run(){
     await admin.locator('[data-dr="refresh"]').click();
     await admin.locator('[data-dr-approve]').waitFor();
     assert.equal(await admin.locator('.dr-date-chips .pending').count(),5);
+    await admin.locator('[data-dr-mode="calendar"]').click();
+    const month=await admin.locator('[data-dr-month]').inputValue();
+    const firstDay=admin.locator('[data-dr-calendar-day="'+month+'-01"]');
+    assert.equal(await firstDay.locator('[data-dr-count="work"]').textContent(),'0');
+    assert.equal(await firstDay.locator('[data-dr-count="off"]').textContent(),'0');
+    assert.equal(await firstDay.locator('[data-dr-count="pending"]').textContent(),'1');
+    assert.equal(await firstDay.locator('[data-dr-count="unconfirmed"]').textContent(),'1');
+    await firstDay.click();assert((await admin.locator('.dr-availability-detail .pending').innerText()).includes('測試司機一'));
+    const menu=admin.locator('.admin-topbar [aria-controls="adminSidebar"]');
+    if(await menu.getAttribute('aria-expanded')==='true'){await menu.click();await admin.locator('.dr-availability-grid').waitFor();}
+    for(const width of [320,390,768,1440]){
+      await admin.setViewportSize({width,height:900});
+      assert(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'calendar fits '+width);
+      assert(await firstDay.evaluate(el=>el.scrollWidth<=el.clientWidth+1),'calendar day fits '+width);
+      if(width===390)await admin.screenshot({path:path.join(root,'.fleet-preview/reporting-admin-calendar-mobile.png'),fullPage:true});
+    }
+    await admin.locator('[data-dr-mode="list"]').click();
     await admin.screenshot({path:path.join(root,'.fleet-preview/reporting-admin-pending.png'),fullPage:true});
     await admin.locator('[data-dr-approve]').click();
     await admin.locator('[data-dialog-confirm]').click();
     await admin.locator('.dr-table .dr-badge.approved').waitFor();
     assert.equal(await admin.locator('.dr-date-chips .approved').count(),5);
+    await admin.locator('[data-dr-mode="calendar"]').click();
+    assert.equal(await firstDay.locator('[data-dr-count="off"]').textContent(),'1');
+    assert.equal(await firstDay.locator('[data-dr-count="pending"]').count(),0);
+    assert.equal(await admin.locator('[data-dr-calendar-day="'+month+'-06"] [data-dr-count="work"]').textContent(),'1');
+    await admin.locator('[data-dr-mode="list"]').click();
     await driver.locator('[data-dr="refresh"]').click();
     await driver.locator('.dr-locked .dr-badge.approved').waitFor();
     assert.equal(await driver.locator('.dr-day.approved').count(),5);

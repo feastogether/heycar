@@ -19,6 +19,11 @@ const fixture={
 fixture.baselines[0].service_date=new Date(Date.parse(today)-40*86400000).toISOString().slice(0,10);
 fixture.vehicles[1].current_driver_id=alternateDriver;
 fixture.vehicles[1].driver_history=[];
+fixture.drivers=[
+ {id:driver,name:'測試司機一',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註',unknown_field:'保留'},updated_at:null},
+ {id:alternateDriver,name:'測試司機二',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註'},updated_at:null},
+ {id:'20000000-0000-4000-8000-000000000003',name:'其他車商司機',dealer_partner_id:other,driver_status:'待上線',updated_at:null}
+];
 async function main(){
  const dataFile=path.join(root,'.fleet-preview','qa-workspace-'+process.pid+'.json');fs.writeFileSync(dataFile,JSON.stringify(fixture));
  const child=spawn(process.execPath,['scripts/preview-fleet-workspace.cjs'],{cwd:root,env:{...process.env,FLEET_PREVIEW_PORT:String(port),FLEET_PREVIEW_DATA:dataFile,REPORTING_PREVIEW_DB:'memory'},stdio:['ignore','pipe','pipe']});
@@ -81,7 +86,27 @@ async function main(){
   assert.equal(await page.locator('[data-workorder-schedule="'+scheduled.id+'"]').count(),0);
   assert.equal((await api('load')).data.vehicle_service_records.length,2);
   await page.reload();await page.locator('[data-admin-view="adminUsers"]').waitFor({state:'attached'});await nav('adminUsers');await page.locator('[data-modal="adminUser"][data-id]').click();assert(await permission.isChecked());
-  assert.deepEqual(errors,[]);console.log('PASS: permission persistence, sidebar scroll, four inline vehicle actions, delete inside edit only, 320/390/768/1440px history, compact idle, avatar upload, manual schedule → driver completion → work-order reminder → linked work order.');
+  await page.locator('#modalForm [data-close-modal]').click();
+  await page.setViewportSize({width:390,height:900});await nav('driverOnboarding');
+  await page.locator('[data-onboarding-close="'+alternateDriver+'"]').click();
+  assert.equal(await page.locator('[data-onboarding-close-form] [name="driver_status"]').inputValue(),'');
+  assert(await page.locator('.onboarding-close-dialog').evaluate(el=>el.getBoundingClientRect().right<=innerWidth+1));
+  await page.locator('[data-onboarding-close-cancel]').click();assert.equal((await api('load')).data.drivers.find(row=>row.id===alternateDriver).driver_status,'待上線');
+  await page.locator('[data-onboarding-close="'+alternateDriver+'"]').click();
+  await page.locator('[data-onboarding-close-form] [name="driver_status"]').selectOption('跑趟中');
+  await page.locator('[data-onboarding-close-form] [type="submit"]').click();await page.locator('.onboarding-row.is-completed').waitFor();
+  const finished=(await api('load')).data.drivers.find(row=>row.id===alternateDriver);assert.equal(finished.driver_status,'跑趟中');assert(finished.onboarding_completed_at);assert.equal(finished.onboarding_progress.notes,'原始進度備註');
+  await page.locator('[data-onboarding-filter="active"]').click();await page.locator('[data-modal="driverOnboarding"][data-id="'+driver+'"]').click();
+  await page.locator('#modalForm [name="onboarding_completed_at"]').fill(today);await page.locator('#modalForm [type=submit]').click();
+  assert.equal(await page.locator('.modal-backdrop:visible').count(),1,'status selection replaces the visible progress editor');
+  await page.locator('[data-onboarding-close-cancel]').click();await page.locator('#modalForm').waitFor();
+  assert.equal((await api('load')).data.drivers.find(row=>row.id===driver).driver_status,'待上線');
+  await page.setViewportSize({width:320,height:900});await page.locator('#modalForm [type=submit]').click();
+  assert(await page.locator('.onboarding-close-dialog').evaluate(el=>el.getBoundingClientRect().right<=innerWidth+1));
+  await page.locator('[data-onboarding-close-form] [name="driver_status"]').selectOption('停派中');await page.locator('[data-onboarding-close-form] [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
+  const stopped=(await api('load')).data.drivers.find(row=>row.id===driver);assert.equal(stopped.driver_status,'停派中');assert.equal(stopped.onboarding_progress.unknown_field,'保留');
+  const report=await api('load_driver_reporting',{month:today.slice(0,7)});assert(!report.data.rows.some(row=>row.driver_id===driver),'status change immediately updates reporting eligibility');assert(report.data.rows.some(row=>row.driver_id===alternateDriver));
+  assert.deepEqual(errors,[]);console.log('PASS: workspace permissions, responsive fleet UI, maintenance completion flow, onboarding status selection/cancellation, progress-editor closure and immediate reporting eligibility update.');
  }finally{if(browser)await browser.close();child.kill();await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));fs.unlinkSync(dataFile);}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});
