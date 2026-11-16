@@ -17,7 +17,7 @@
     const submission = () => data?.rows?.[0]?.submission;
     const open = () => data?.config?.is_open && data.server_today >= data.config.opens_on && data.server_today <= data.config.closes_on;
     const badge = s => `<span class="dr-badge ${escape(s.status)}">${statusLabels[s.status]}</span>`;
-    const refreshButton = () => `<button class="ghost-btn dr-refresh" data-dr="refresh" ${busy?'disabled':''} aria-label="重新整理報班資料">↻ 重新整理</button>`;
+    const refreshButton = () => `<button class="ghost-btn dr-refresh" type="button" data-dr="refresh" ${busy?'disabled':''} aria-label="重新整理報班資料"><span aria-hidden="true">↻</span><span>重新整理</span></button>`;
     const shell = content => `<section class="driver-reporting ${options.driver?'dr-driver':''}">${options.driver ? (!data?`<div class="dr-loading-toolbar">${refreshButton()}</div>`:'') : ''}${content}</section>`;
     const availableMonths = () => [...new Set([state.month,...(data?.months||[])])].sort();
     function monthPicker() {
@@ -25,7 +25,7 @@
         const months=availableMonths(), index=months.indexOf(state.month);
         return `<div class="dr-toolbar dr-driver-toolbar"><button class="ghost-btn dr-back" data-view="home" type="button">返回</button><button class="ghost-btn" data-dr="previous" aria-label="上個報班月份" ${index<=0||busy?'disabled':''}>‹</button><label class="dr-month-choice"><span class="dr-sr-only">報班月份</span><select data-dr-available aria-label="報班月份">${months.map(month=>`<option value="${month}" ${month===state.month?'selected':''}>${month.replace('-',' 年 ')} 月</option>`).join('')}</select></label><button class="ghost-btn" data-dr="next" aria-label="下個報班月份" ${index>=months.length-1||busy?'disabled':''}>›</button>${refreshButton()}</div>`;
       }
-      return `<div class="dr-toolbar">${refreshButton()}<div class="dr-month"><button class="ghost-btn" data-dr="previous" aria-label="上個月">‹</button><label>報班月份<input type="month" data-dr-month value="${state.month}" aria-label="報班月份"></label><button class="ghost-btn" data-dr="next" aria-label="下個月">›</button></div>${options.driver ? `<label>已開放／曾報班月份<select data-dr-available><option value="">選擇月份</option>${(data?.months||[]).map(month=>`<option value="${month}" ${month===state.month?'selected':''}>${month}</option>`).join('')}</select></label>` : `<span class="dr-muted">${data?.config ? `${dateLabel(data.config.opens_on)} ～ ${dateLabel(data.config.closes_on)}` : '此月份尚未設定'}</span>`}</div>`;
+      return `<div class="dr-toolbar dr-admin-toolbar"><div class="dr-month" role="group" aria-label="切換報班月份"><button class="ghost-btn" type="button" data-dr="previous" aria-label="上個月" ${busy?'disabled':''}>‹</button><label class="dr-month-choice"><span class="dr-sr-only">報班月份</span><input type="month" data-dr-month value="${state.month}" aria-label="報班月份" ${busy?'disabled':''}></label><button class="ghost-btn" type="button" data-dr="next" aria-label="下個月" ${busy?'disabled':''}>›</button></div>${refreshButton()}</div>`;
     }
     function calendar(blockEditor = false) {
       const config = data?.config;

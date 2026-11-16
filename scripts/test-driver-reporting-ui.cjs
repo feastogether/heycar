@@ -86,6 +86,11 @@ async function run(){
       await admin.evaluate(()=>document.querySelector('[data-admin-view="driverReporting"]')?.click());
       await admin.locator('.dr-stats').waitFor();
       assert.equal(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'admin viewport '+width);
+      const controls=await admin.locator('.dr-admin-toolbar button,.dr-admin-toolbar input').evaluateAll(nodes=>nodes.map(node=>({top:node.getBoundingClientRect().top,height:node.getBoundingClientRect().height})));
+      assert.equal(controls.length,4);
+      assert(Math.max(...controls.map(node=>node.top))-Math.min(...controls.map(node=>node.top))<2,'admin month controls align at '+width);
+      assert(Math.max(...controls.map(node=>node.height))-Math.min(...controls.map(node=>node.height))<2,'admin controls have consistent height at '+width);
+      if(width===390)await admin.screenshot({path:path.join(root,'.fleet-preview/reporting-admin-toolbar-mobile.png')});
     }
     assert.deepEqual(errors,[]);
     console.log('PASS: actual admin/driver entry points, blocked dates, over-quota warning, submit locking, reload, approval colors, dealer opt-out, and 320/390/768/1440px layouts.');
