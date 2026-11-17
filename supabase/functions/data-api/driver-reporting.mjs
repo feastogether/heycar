@@ -20,9 +20,10 @@ export function createDriverReportingHandler({ db, adminCan }) {
       const c = body.config || {};
       if (typeof c.is_open !== 'boolean' || !Number.isInteger(c.allowed_days) || c.allowed_days < 0 || c.allowed_days > 31 ||
           !Array.isArray(c.blocked_dates) || !Number.isInteger(body.revision) || body.revision < 0) return fail('月份設定格式錯誤');
+      if(c.range_rules!==undefined&&(!Array.isArray(c.range_rules)||c.range_rules.length>20))return fail('條件限休最多設定20組');
       rpc = 'driver_reporting_save_month';
       args = { p_month: month + '-01', p_config: { is_open: c.is_open, opens_on: c.opens_on, closes_on: c.closes_on,
-        allowed_days: c.allowed_days, blocked_dates: c.blocked_dates }, p_revision: body.revision, p_actor: actor };
+        allowed_days: c.allowed_days, blocked_dates: c.blocked_dates, ...(c.range_rules===undefined?{}:{range_rules:c.range_rules}) }, p_revision: body.revision, p_actor: actor };
     } else if (body.action === 'submit_driver_reporting') {
       if (!session.driver_id) return fail('SESSION_EXPIRED',401);
       if (!Array.isArray(body.dates) || body.dates.length > 31 || body.confirmed !== true || !Number.isInteger(body.revision)) return fail('請確認休假日期與送出聲明');

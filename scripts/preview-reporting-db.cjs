@@ -21,6 +21,7 @@ module.exports=function createReportingPreview(directory, sourceDrivers = null) 
         create table public.drivers(id uuid primary key,name text,dealer_partner_id uuid,fleet_name text,driver_status text);`);
       await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261113010000_driver_reporting.sql'),'utf8'));
     }
+    if(!(await db.query("select 1 from information_schema.columns where table_name='driver_reporting_months'and column_name='range_rules'")).rows.length)await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261117040000_driver_reporting_range_rules.sql'),'utf8'));
     await db.exec("alter table drivers add column if not exists driver_status text default '待上線'");
     if(sourceDrivers) await db.query("update drivers set driver_status='停派中' where id=any($1::uuid[])",[examples.map(row=>row.id)]);
     for(const row of drivers)await db.query('insert into drivers(id,name,dealer_partner_id,fleet_name,driver_status) values($1,$2,$3,$4,$5) on conflict(id) do update set driver_status=excluded.driver_status,name=excluded.name,dealer_partner_id=excluded.dealer_partner_id,fleet_name=excluded.fleet_name',[row.id,row.name,row.dealer_partner_id,row.fleet_name,row.driver_status]);

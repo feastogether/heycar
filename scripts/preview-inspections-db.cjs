@@ -6,7 +6,7 @@ module.exports=function createInspectionsPreview({vehicles,drivers,directory,por
  const root=path.resolve(__dirname,'..');
  const db=new PGlite(dbPath||((process.env.INSPECTION_PREVIEW_DB==='memory'||process.env.REPORTING_PREVIEW_DB==='memory')?undefined:path.join(root,'.fleet-preview/inspection-data')));
  const folder=filesPath||process.env.INSPECTION_PREVIEW_FILES||path.join(root,'.fleet-preview/inspection-files');
- const signatures={inspection_create:['uuid','text','text','timestamptz','jsonb','jsonb'],inspection_load:['uuid','uuid','uuid','text','integer','boolean'],inspection_save_photo:['uuid','uuid','bigint','jsonb'],inspection_submit:['uuid','uuid','bigint','bigint','text','boolean'],inspection_review:['uuid','bigint','text','text','text[]','jsonb']};
+ const signatures={inspection_start:['uuid','uuid','bigint'],inspection_create:['uuid','text','text','timestamptz','jsonb','jsonb'],inspection_load:['uuid','uuid','uuid','text','integer','boolean'],inspection_save_photo:['uuid','uuid','bigint','jsonb'],inspection_submit:['uuid','uuid','bigint','bigint','text','boolean'],inspection_review:['uuid','bigint','text','text','text[]','jsonb']};
  const ready=(async()=>{
   await db.waitReady;
   if(!(await db.query("select to_regclass('public.vehicle_inspection_tasks') as name")).rows[0].name){
@@ -16,6 +16,7 @@ module.exports=function createInspectionsPreview({vehicles,drivers,directory,por
     create table vehicles(id uuid primary key,plate_no text,current_driver_id uuid,driver_history jsonb,assigned_driver_names text,dealer_partner_id uuid,status text,lease_status text);`);
    await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261117010000_vehicle_inspections.sql'),'utf8'));
   }
+  if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_tasks'and column_name='eligible_driver_ids'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261117050000_shared_vehicle_inspections.sql'),'utf8'));
  })();
  const seen=new Map();
  async function sync(){await ready;

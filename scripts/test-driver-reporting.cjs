@@ -15,6 +15,7 @@ async function makeDatabase() {
     insert into insurance_partners values('${ids.dealer}','亞菲得股份有限公司','dealer',true,'{}'),('${ids.other}','其他車商','dealer',true,'{}');
     insert into drivers(id,name,dealer_partner_id,fleet_name) values('${ids.driver}','測試司機一','${ids.dealer}',null),('${ids.second}','測試司機二','${ids.dealer}',null),('${ids.third}','未開放司機','${ids.other}',null);`);
   await db.exec(migration);
+  await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261117040000_driver_reporting_range_rules.sql'),'utf8'));
   return db;
 }
 

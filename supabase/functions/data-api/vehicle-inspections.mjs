@@ -1,5 +1,5 @@
 export const inspectionSlots=['front','front_right','right','rear_right','rear','rear_left','left','front_left','cabin','odometer'];
-export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_draft','inspection_submit','inspection_review'];
+export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_draft','inspection_submit','inspection_review','inspection_start'];
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const safeName=value=>String(value||'照片.jpg').replace(/[\x00-\x1f/\\]/g,'').slice(0,160)||'照片.jpg';
 export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto}) {
@@ -28,7 +28,7 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
     if((body.task_id!=null&&!uuid(body.task_id))||(body.batch_id!=null&&!uuid(body.batch_id)))return fail('檢查編號錯誤');
     const page=body.page??1;
     if(!Number.isInteger(page)||page<1||page>10000)return fail('頁碼錯誤');
-    if(!['all','pending','draft','submitted','approved','returned','cancelled','overdue','incomplete'].includes(body.status||'all'))return fail('篩選狀態錯誤');
+    if(!['all','pending','draft','submitted','approved','returned','cancelled','overdue','incomplete','todo'].includes(body.status||'all'))return fail('篩選狀態錯誤');
     const data=await rpc('inspection_load',{p_driver:driver?session.driver_id:null,p_batch:body.batch_id||null,p_task:body.task_id||null,p_status:body.status||'all',p_page:page,p_history:admin&&body.history===true});
     return {body:{data:await present(data)},status:200};
    }
@@ -50,15 +50,17 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
     return {body:{data},status:200};
    }
    if(!driver)return fail('僅指定司機可拍攝與送出檢查',403);
+   if(body.action==='inspection_start'){const data=await rpc('inspection_start',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision});return {body:{data},status:200};}
    if(body.action==='inspection_draft'||body.action==='inspection_submit') {
     if((body.odometer!==null&&(!Number.isSafeInteger(body.odometer)||body.odometer<0||body.odometer>9999999))||typeof body.notes!=='string'||body.notes.length>2000)return fail('請填寫有效的整數里程與備註');
     const data=await rpc('inspection_submit',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_odometer:body.odometer,p_notes:body.notes,p_submit:body.action==='inspection_submit'});
     return {body:{data},status:200};
    }
    if(!uuid(body.request_id)||!inspectionSlots.includes(body.slot)||typeof body.base64!=='string'||body.base64.length>2796204)return fail('請使用壓縮後 2 MB 以內的指定角度照片');
-   const task=await db.from('vehicle_inspection_tasks').select('*').eq('id',body.task_id).eq('driver_id',session.driver_id).maybeSingle();
+   const task=await db.from('vehicle_inspection_tasks').select('*').eq('id',body.task_id).maybeSingle();
    if(task.error)throw task.error;
-   if(!task.data)return fail('找不到本人的車輛檢查',404);
+   if(!task.data||!(task.data.eligible_driver_ids||[task.data.driver_id]).includes(session.driver_id))return fail('找不到本人的車輛檢查',404);
+   if(task.data.claimed_by&&task.data.claimed_by!==session.driver_id)return fail('同車司機已開始執行此檢查，無需重複拍攝',409);
    let bytes;try{bytes=Uint8Array.from(atob(body.base64),char=>char.charCodeAt(0));}catch{return fail('照片內容無效');}
    const jpeg=bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
    const png=[137,80,78,71,13,10,26,10].every((value,index)=>bytes[index]===value);

@@ -34,10 +34,12 @@ async function main(){
   const slots=['front','front_right','right','rear_right','rear','rear_left','left','front_left','cabin','odometer'];
   let number=0;
   const shoot=async slot=>{
+    const chooserPromise=driver.waitForEvent('filechooser');
     await driver.locator('[data-i-slot="'+slot+'"]').click();
+    const chooser=await chooserPromise;
     const encoded=await driver.evaluate(n=>{const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const ctx=canvas.getContext('2d');ctx.fillStyle='hsl('+n*23+',60%,50%)';ctx.fillRect(0,0,640,480);ctx.fillStyle='#fff';ctx.font='40px sans-serif';ctx.fillText('Angle '+n,80,240);return canvas.toDataURL('image/png').split(',')[1];},++number);
     const response=driver.waitForResponse(async response=>response.url().endsWith('/__preview_api')&&response.request().postDataJSON()?.action==='inspection_photo');
-    await driver.locator('[data-i-camera]').setInputFiles({name:slot+'.png',mimeType:'image/png',buffer:Buffer.from(encoded,'base64')});
+    await chooser.setFiles({name:slot+'.png',mimeType:'image/png',buffer:Buffer.from(encoded,'base64')});
     const result=await response;assert.equal(result.status(),200,await result.text());await driver.locator('[data-i-camera]:not([disabled])').waitFor();
   };
   for(const slot of slots)await shoot(slot);

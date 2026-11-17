@@ -1918,7 +1918,7 @@
   }
   function inspectionPlaceholder() {return '<div id="vehicleInspectionsRoot"></div>';}
   function mountVehicleInspections(driver) {
-    window.HeycarVehicleInspections?.mount(document.getElementById("vehicleInspectionsRoot"), {driver,identity:driver?'driver:'+state.user.id:'admin:'+currentAdminChatId(),api:apiRequest,confirm:showConfirm,prompt:showPrompt,alert:showAlert});
+    window.HeycarVehicleInspections?.mount(document.getElementById("vehicleInspectionsRoot"), {driver,driverId:driver?state.user.id:null,identity:driver?'driver:'+state.user.id:'admin:'+currentAdminChatId(),api:apiRequest,confirm:showConfirm,prompt:showPrompt,alert:showAlert});
   }
 
   function reportingPlaceholder() {
@@ -1928,7 +1928,7 @@
   function mountDriverReporting(driver) {
     if (!window.HeycarDriverReporting) return;
     window.HeycarDriverReporting.mount(document.getElementById("driverReportingRoot"), {
-      driver, identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}`,
+      back:()=>{state.view="home";render();}, driver, identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}`,
       api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert
     });
   }
@@ -5917,18 +5917,22 @@
     return state.admin ? (state.adminProfile?.is_super_admin ? "super-admin" : state.adminProfile?.id) : state.user?.id || state.partner?.id;
   }
   function ownAvatarButton() {
-    const id = ownProfileKey(), profile = avatarProfiles.find(row=>row.actor_id === id);
-    return '<button type="button" class="own-avatar-button" data-own-avatar aria-label="編輯我的頭像" title="編輯我的頭像">'+staffAvatar({id,name:state.adminProfile?.name || state.user?.name || state.partner?.name,avatar_url:profile?.avatar_url})+'</button>';
+    const id=ownProfileKey(),type=state.admin?"admin":state.partner?"partner":"driver";
+    const account=state.admin?{...(state.data.admin_users||[]).find(row=>row.id===id),...state.adminProfile}:state.user||state.partner||{};
+    const profile=avatarProfiles.find(row=>row.actor_id===id&&row.actor_type===type);
+    return '<button type="button" class="own-avatar-button" data-own-avatar aria-label="編輯我的頭像" title="編輯我的頭像">'+staffAvatar({id,name:account.name,avatar_url:profile?.avatar_url||account.avatar_url||(state.admin?(state.data.admin_users||[]).find(row=>row.id===id)?.avatar_url:"")},true)+'</button>';
   }
+  let avatarLoading=false;
   async function ensureOwnAvatar() {
-    if (!state.apiSession || avatarSession === state.apiSession || !hasApi) return;
-    const token = state.apiSession; avatarSession = token; avatarProfiles = [];
-    try {
-      const result = await apiRequest("load_avatar_profiles");
-      if (state.apiSession !== token) return;
-      avatarProfiles = result.profiles || []; render();
-    } catch(error) { console.warn("Avatar loading deferred:", error.message); }
+    if(!state.apiSession||avatarSession===state.apiSession||avatarLoading||!hasApi)return;
+    const token=state.apiSession;avatarLoading=true;
+    if(avatarSession!==token)avatarProfiles=[];
+    try {const result=await apiRequest("load_avatar_profiles");if(state.apiSession!==token)return;avatarProfiles=result.profiles||[];avatarSession=token;
+      // Update the header only: do not erase an open calendar or unsaved selections.
+      document.querySelectorAll('.topbar [data-own-avatar]').forEach(button=>{const template=document.createElement('template');template.innerHTML=ownAvatarButton();button.replaceWith(template.content.firstElementChild);});
+    }catch(error){console.warn("Avatar loading deferred:",error.message);}finally{avatarLoading=false;if(state.apiSession&&state.apiSession!==token)void ensureOwnAvatar();}
   }
+
   function openOwnAvatar() {
     const modal = document.createElement("div"); modal.className="modal-backdrop";
     modal.innerHTML='<section class="modal own-avatar-editor"><div class="modal-title"><h3>我的頭像</h3></div><div class="own-avatar-body">'+ownAvatarButton()+'<label>選擇照片<input data-own-avatar-file type="file" accept="image/png,image/jpeg,image/webp"></label><p>照片會自動裁成正方形並壓縮，顯示為圓形頭像。</p><p role="status" data-own-avatar-status></p></div><div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button><button class="primary-btn" data-own-avatar-save disabled>儲存頭像</button></div></section>';
@@ -5952,12 +5956,12 @@
     });
   }
 
-  function staffAvatar(user = {}) {
+  function staffAvatar(user = {}, eager = false) {
     const isSuper = user.id === "super-admin";
     const profile = avatarProfiles.find(row=>row.actor_id === user.id);
     const url = String(profile?.avatar_url || user.avatar_url || (isSuper ? "./assets/heycar-afide-logo.png" : ""));
     const safeUrl = isSuper || /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
-    return `<span class="staff-avatar">${safeUrl ? `<img ${isSuper ? 'class="staff-super-avatar"' : ""} src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="lazy">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
+    return `<span class="staff-avatar">${safeUrl ? `<img ${isSuper ? 'class="staff-super-avatar"' : ""} src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="${eager ? "eager" : "lazy"}">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
   }
 
   function staffNoticeAuthor(item) {
