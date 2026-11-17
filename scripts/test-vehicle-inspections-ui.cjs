@@ -15,6 +15,13 @@ async function main(){
   await admin.goto(base+'/?review=admin');await admin.locator('[data-admin-view="vehicleInspections"]').waitFor({state:'attached'});
   const nav=async name=>admin.evaluate(key=>document.querySelector('[data-admin-view="'+key+'"]').click(),name);
   await nav('vehicleInspections');await admin.locator('[data-i="new"]').click();await admin.locator('[data-i-create]').waitFor();
+  for(const width of [320,390,768,1440]){
+    await admin.setViewportSize({width,height:960});
+    const dimensions=await admin.locator('[data-i-target]').first().evaluate(input=>{const box=input.getBoundingClientRect(),text=input.nextElementSibling.getBoundingClientRect(),label=input.parentElement.getBoundingClientRect();return {width:box.width,height:box.height,textLeft:text.left,boxRight:box.right,textRight:text.right,labelRight:label.right};});
+    assert.equal(dimensions.width,18,'target checkbox width at '+width);assert.equal(dimensions.height,18,'target checkbox height at '+width);assert(dimensions.textLeft>=dimensions.boxRight,'name is beside checkbox');assert(dimensions.textRight<=dimensions.labelRight,'name fits target row');
+    assert(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'target list fits viewport '+width);
+  }
+  await admin.setViewportSize({width:1440,height:960});
   await admin.locator('[data-i-create] [name=title]').fill('每月車況檢查');await admin.locator('[data-i-create] [name=due_on]').fill(today);
   await admin.locator('[data-i-target]').first().check();await admin.locator('[data-i-create] [type=submit]').click();await admin.locator('[data-dialog-confirm]').click();
   await admin.locator('.vi-task-card').waitFor();let loaded=(await api('inspection_load')).data;assert.equal(loaded.total,1);const taskId=loaded.tasks[0].task.id;
