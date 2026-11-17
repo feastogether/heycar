@@ -1,5 +1,7 @@
 # 亞菲得開發接續紀錄 — 2026-09-12
 
+> 2026-11-17：新增本機車輛檢查（拍攝、補拍、審核）及租借還車修復，仍未發布。詳見 [本機更新紀錄](docs/vehicle-inspections-and-loans-20261117.md)。
+
 > 2026-11-13 最新狀態：正式環境已按使用者要求回退；後續更新僅在 `review/fleet-integration` 本機，尚未再次發布。請先讀 [最新回退與本機紀錄](docs/local-update-and-production-rollback-20261113.md)。下方為較早的歷史紀錄。
 
 ## 專案與 Git

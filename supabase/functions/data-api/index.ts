@@ -3,6 +3,8 @@ import { dealerInsuranceHistory, insuranceWrite } from "./insurance-workflow.mjs
 import { createDriverReportingHandler } from "./driver-reporting.mjs";
 import { createEmployeeWorkflowHandler } from "./employee-workflow.mjs";
 import { createOnboardingHandler } from "./onboarding-workflow.mjs";
+import { createInspectionHandler } from "./vehicle-inspections.mjs";
+import { createLoanActionHandler } from "./vehicle-loans.mjs";
 
 const cors = {
   "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
@@ -1330,8 +1332,8 @@ async function assertVehicleLoanAvailable(record: Record<string, unknown>, editi
   const vehicleId = compactText(record.vehicle_id);
   const plateNo = compactText(record.plate_no).toUpperCase();
   const start = parseTime(record.borrow_at);
-  const end = parseTime(record.return_at || record.borrow_at);
-  if (start === null || end === null || (!vehicleId && !plateNo)) return;
+  const end = parseTime(record.return_at);
+  if (start === null || end === null || end <= start || (!vehicleId && !plateNo)) throw new Error("請選擇車輛，且預計還車時間必須晚於借車時間");
   const requestedStart = Math.min(start, end);
   const requestedEnd = Math.max(start, end);
 
@@ -1609,6 +1611,13 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if (body.action === "vehicle_loan_action") {
+      const result=await createLoanActionHandler({db})(body,session);return json(result.body,result.status);
+    }
+    if (String(body.action).startsWith("inspection_")) {
+      const result = await createInspectionHandler({db,adminCan})(body,session);
+      return json(result.body,result.status);
+    }
     if (["save_driver_onboarding", "complete_driver_onboarding"].includes(body.action)) {
       const result = await createOnboardingHandler({db,adminCan})(body,session);
       return json(result.body,result.status);
@@ -1984,22 +1993,20 @@ Deno.serve(async (req) => {
           body.record.requested_by_admin_id = session.admin_user_id || null;
           body.record.requested_by_name = session.admin_name || "同仁";
           body.record.status = "pending_approval";
+          for(const key of ["approved_at","actual_return_at","closed_at"])body.record[key]=null;
           await assertVehicleLoanAvailable(body.record || {});
           body.record.requested_by_name = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
-        } else if (!session.is_super_admin && body.action === "update") {
-          const { data: loan } = await db.from("vehicle_loans").select("*").eq("id", body.id).single();
-          if (!loan || loan.requested_by_admin_id !== session.admin_user_id || loan.status !== "approved") {
-            return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
-          }
-          body.record = {
-            status: "return_pending",
-            actual_return_at: body.record.actual_return_at || new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
+        } else if (body.action === "update") {
+          const {data:loan,error}=await db.from("vehicle_loans").select("*").eq("id",body.id).maybeSingle();if(error)throw error;
+          if(!loan)return json({error:"找不到租借紀錄"},404);
+          if(!session.is_super_admin)return json({error:"請使用登記還車功能"},403);
+          if(loan.updated_at!==body.loan_expected_updated_at)return json({error:"租借紀錄已更新，請重新整理後再編輯"},409);
+          if(body.record.status && body.record.status!==loan.status)return json({error:"請使用核准、登記還車或確認結案按鈕"},400);
+          // Generic editing cannot overwrite a concurrent workflow transition.
+          for(const key of ['status','requested_by_admin_id','requested_by_name','approved_at','actual_return_at','closed_at'])delete body.record[key];
+          await assertVehicleLoanAvailable({...loan,...body.record},compactText(body.id));
         } else if (!session.is_super_admin) {
-          return json({ error: "LOAN_ACTION_NOT_ALLOWED" }, 403);
-        } else if (body.action === "update" && (body.record?.vehicle_id || body.record?.plate_no || body.record?.borrow_at || body.record?.return_at)) {
-          await assertVehicleLoanAvailable(body.record || {}, compactText(body.id));
+          return json({error:"LOAN_ACTION_NOT_ALLOWED"},403);
         }
       }
     }
@@ -2141,6 +2148,7 @@ Deno.serve(async (req) => {
         return json(await signStorageUrls({ data }));
       }
       let query = db.from(body.table).update(body.record).eq("id", body.id);
+      if (body.table === "vehicle_loans") query = body.loan_expected_updated_at == null ? query.is("updated_at", null) : query.eq("updated_at", body.loan_expected_updated_at);
       if (session.session_type === "driver") query = query.eq("driver_id", session.driver_id);
       if (session.session_type === "partner") {
         const { data: partner } = await db.from("insurance_partners").select("partner_type").eq("id", session.partner_id).single();

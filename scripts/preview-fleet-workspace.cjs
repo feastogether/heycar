@@ -37,6 +37,10 @@ const directory = fixture.partners || [...fixture.dealers, ...suppliers, broker]
 fixture.partners = directory;
 const reporting = require('./preview-reporting-db.cjs')(directory, process.argv.includes('--check') ? null : fixture.drivers);
 fixture.drivers ||= reporting.drivers;
+let loans;
+const getLoans=()=>loans ||= require("./preview-loans-db.cjs")(fixture);
+let inspections;
+const getInspections=()=>inspections ||= require('./preview-inspections-db.cjs')({vehicles:fixture.vehicles,drivers:reporting.drivers,directory,port,filesPath:process.env.INSPECTION_PREVIEW_FILES||(process.env.REPORTING_PREVIEW_DB==='memory'?fixturePath+'.inspection-files':undefined)});
 const eligibleDrivers=reporting.drivers.filter(row=>row.dealer_partner_id===a.id&&['跑趟中','待上線'].includes(row.driver_status));
 const previewDrivers={driver:eligibleDrivers[0]||reporting.drivers[0],driver2:eligibleDrivers[1]||eligibleDrivers[0]||reporting.drivers[1],otherdriver:reporting.drivers.find(row=>row.dealer_partner_id!==a.id)||reporting.drivers[2]};
 for(const [role,driver] of Object.entries(previewDrivers))sessions['preview-'+role]={session_type:'driver',driver_id:driver.id};
@@ -365,6 +369,10 @@ async function request(req, res) {
     res.writeHead(200, { "Content-Type": file.mime, "Content-Disposition": "attachment" });
     return res.end(file.bytes);
   }
+  if(req.method==='GET'&&url.pathname.startsWith('/__inspection_file/')){
+    const file=inspections?.file(url.pathname.split('/').pop());if(!file)return send(res,{},404);
+    res.writeHead(200,{'Content-Type':file.mime,'Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff'});return res.end(file.bytes);
+  }
   if (req.method === "POST" && url.pathname === "/__preview_storage") {
     const session = sessions[req.headers["x-afide-session"]];
     if (session?.session_type !== "admin") return send(res, { error: "ADMIN_PERMISSION_DENIED" }, 403);
@@ -395,6 +403,28 @@ async function request(req, res) {
       if (raw.length > 7200000) return send(res, {}, 413);
     }
     const body = JSON.parse(raw || "{}");
+    if(body.action==='vehicle_loan_action'){const result=await getLoans().handle(body,session);if(result.status===200)persistFixture();return send(res,result.body,result.status);}
+    if(body.table==='vehicle_loans'&&['insert','update','delete'].includes(body.action)){
+      if(session.session_type!=='admin')return send(res,{error:'沒有租借權限'},403);
+      const rows=fixture.vehicle_loans ||= [],current=rows.find(row=>row.id===body.id);
+      if(body.action==='delete'){
+        if(!session.is_super_admin)return send(res,{error:'沒有刪除權限'},403);
+        if(!current)return send(res,{error:'找不到租借紀錄'},404);
+        rows.splice(rows.indexOf(current),1);fixture.vehicle_loan_actions=(fixture.vehicle_loan_actions||[]).filter(row=>row.loan_id!==current.id);await loans?.close();loans=undefined;persistFixture();return send(res,{ok:true});
+      }
+      if(body.action==='update'&&(!session.is_super_admin||!current))return send(res,{error:'無法編輯租借紀錄'},403);
+      if(current&&current.updated_at!==body.loan_expected_updated_at)return send(res,{error:'租借紀錄已更新，請重新整理後再編輯'},409);
+      const record={...body.record};
+      for(const key of ['status','requested_by_admin_id','requested_by_name','approved_at','actual_return_at','closed_at'])delete record[key];
+      const next={...current,...record};const start=Date.parse(next.borrow_at),end=Date.parse(next.return_at);
+      if(!Number.isFinite(start)||!Number.isFinite(end)||end<=start)return send(res,{error:'預計還車時間必須晚於借車時間'},400);
+      const vehicle=fixture.vehicles.find(row=>row.id===next.vehicle_id);if(!vehicle)return send(res,{error:'請選擇車輛'},400);
+      if(rows.some(row=>row.id!==current?.id&&row.vehicle_id===next.vehicle_id&&row.status!=='completed'&&Date.parse(row.borrow_at)<end&&Date.parse(row.return_at)>start))return send(res,{error:'所選時段已有其他借用'},409);
+      Object.assign(next,{id:current?.id||randomUUID(),plate_no:vehicle.plate_no,updated_at:new Date().toISOString()});
+      if(!current)Object.assign(next,{status:'pending_approval',requested_by_admin_id:session.admin_user_id||null,requested_by_name:session.admin_name||'整合預覽',created_at:new Date().toISOString()});
+      if(current)rows[rows.indexOf(current)]=next;else rows.push(next);persistFixture();return send(res,{data:next});
+    }
+    if(String(body.action).startsWith('inspection_')){const result=await getInspections().handle(body,session);return send(res,result.body,result.status);}
     if(['save_driver_onboarding','complete_driver_onboarding'].includes(body.action)) {
       const {createOnboardingHandler}=require('../supabase/functions/data-api/onboarding-workflow.mjs');
       const result=await createOnboardingHandler({db:{from:query},adminCan:async actor=>actor.is_super_admin===true})(body,session);
@@ -598,7 +628,7 @@ async function request(req, res) {
       const vehicles = dealer ? fixture.vehicles.filter(item => item.dealer_partner_id === partner.id) : fixture.vehicles;
       const requests = dealer ? insuranceCases.filter(item => item.dealer_partner_id === partner.id).map(sanitizeDealerInsuranceRequest) : insuranceCases;
       return send(res, {
-        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers, insurance_requests: requests,
+        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers, insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
           calendar_events: partner ? [] : fixture.calendar, vehicle_service_records: partner ? [] : fixture.baselines, maintenance_notifications: partner ? [] : notifications },
         ...(partner ? { partner } : { admin_profile: admin }),
       });

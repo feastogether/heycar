@@ -15,7 +15,7 @@
   const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
   const hasApi = Boolean(dataApiUrl);
   const app = document.getElementById("app");
-  const directDriverViews = new Set(["driverReporting", "dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
+  const directDriverViews = new Set(["vehicleInspections", "driverReporting", "dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
   const initialDriverView = requestedDriverView();
 
   const state = {
@@ -281,7 +281,9 @@
     ,driverHelper: "M5 4h14v15H5V4Zm3 4h8M8 12h8M8 16h5"
   };
 
+  featureIcons.vehicleInspections = featureIcons.myVehicle;
   const driverFrontendFeatures = [
+    ["vehicleInspections", "車輛檢查"],
     ["driverReporting", "司機報班"],
     ["dispatchCenter", "派趟中心"],
     ["messagesCenter", "訊息中心"],
@@ -1856,10 +1858,12 @@
     const showLinkCenter = (state.data.driver_links || []).length > 0;
 
         if (state.view === "home") {
+          if (canShowDriverFeature("vehicleInspections")) void ensureInspectionSummary();
           layout(`
             <div class="dashboard-grid">
           ${driverFeature("dispatchCenter", "派趟中心", "今日與未完成派趟", dispatchCount)}
           ${driverFeature("driverReporting", "司機報班", "每月休假填報與審核進度", 0)}
+          ${driverFeature("vehicleInspections", "車輛檢查", "外觀、車內與儀表照片回報", state.inspectionPendingCount || 0)}
           ${driverFeature("messagesCenter", "訊息中心", "公告與私人訊息", unread + pendingMsg)}
           ${driverFeature("myVehicle", "我的車輛", "行照與車輛資訊", 0)}
           ${driverFeature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
@@ -1877,6 +1881,7 @@
     }
 
     const views = {
+      vehicleInspections: inspectionPlaceholder,
       driverReporting: reportingPlaceholder,
       announcements: driverAnnouncements,
       dispatchCenter: driverDispatchCenter,
@@ -1899,7 +1904,21 @@
       return;
     }
     layout(views[state.view]());
+    if (state.view === "vehicleInspections") mountVehicleInspections(true);
     if (state.view === "driverReporting") mountDriverReporting(true);
+  }
+
+  let inspectionSummaryAt = 0, inspectionSummarySession = "", inspectionSummaryLoading = false;
+  async function ensureInspectionSummary() {
+    if (!state.user || !state.apiSession || inspectionSummaryLoading || inspectionSummarySession === state.apiSession && Date.now()-inspectionSummaryAt<60000) return;
+    inspectionSummaryLoading=true;const token=state.apiSession;
+    try {const result=await apiRequest("inspection_load",{page:1,status:"all"});if(state.apiSession===token){state.inspectionPendingCount=(result.data.counts.pending||0)+(result.data.counts.returned||0);inspectionSummarySession=token;inspectionSummaryAt=Date.now();if(state.view==="home")render();}}
+    catch(error){inspectionSummaryAt=Date.now();inspectionSummarySession=token;}
+    finally {inspectionSummaryLoading=false;}
+  }
+  function inspectionPlaceholder() {return '<div id="vehicleInspectionsRoot"></div>';}
+  function mountVehicleInspections(driver) {
+    window.HeycarVehicleInspections?.mount(document.getElementById("vehicleInspectionsRoot"), {driver,identity:driver?'driver:'+state.user.id:'admin:'+currentAdminChatId(),api:apiRequest,confirm:showConfirm,prompt:showPrompt,alert:showAlert});
   }
 
   function reportingPlaceholder() {
@@ -5522,6 +5541,7 @@
   }
 
   const adminNavLabels = {
+    vehicleInspections: "車輛檢查",
     driverReporting: "司機報班",
     home: "首頁",
     internalAnnouncements: "內部公告發布",
@@ -5566,7 +5586,7 @@
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["dispatchCenter", "driverReporting", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
-    ["車輛事業", ["vehicleTypes", "vehicles", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
+    ["車輛事業", ["vehicleTypes", "vehicles", "vehicleInspections", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
   ];
 
@@ -6059,6 +6079,7 @@
       ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
       ["driverReporting", "司機報班", "🗓️", "driverReporting"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
+      ["vehicleInspections", "車輛檢查", "📷", "vehicleInspections"],
       ["fleetCases", "罰單管理", "🧾", "fleetCases"],
       ["maintenanceManagement", "保養管理", "🛠️", "maintenanceManagement"],
       ["idleManagement", "怠速管理", "⏱️", "fleetOperations"],
@@ -6098,6 +6119,7 @@
       hiringManagement: adminHiringManagement,
       vehicleTypes: adminVehicleTypes,
       dispatchCenter: adminDispatchCenter,
+      vehicleInspections: inspectionPlaceholder,
       driverReporting: reportingPlaceholder,
       vehicles: adminVehicles,
       fleetCases: renderFleetFines,
@@ -6145,6 +6167,7 @@
     const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
+    if (state.adminView === "vehicleInspections") mountVehicleInspections(false);
     if (state.adminView === "driverReporting") mountDriverReporting(false);
     if (state.adminView === "home" && !adminFullDataReady && !adminWarmupScheduled && state.apiSession) {
       adminWarmupScheduled = true;
@@ -6493,13 +6516,8 @@
       ? `<button class="ghost-btn" data-modal="keyAccessCode" ${activeKeyAccessCode() ? `data-id="${activeKeyAccessCode().id}"` : ""}>密碼管理</button>`
       : "";
     return `
-      <div class="section-head"><div><h2>車輛租借</h2><small>登入同仁：${escapeHtml(state.adminProfile?.name || "管理者")}</small></div><div class="actions">${keyCodeButton}<button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div></div>
-      <section class="loan-overview" aria-label="目前租借概況">
-        <div class="loan-overview-copy"><small>所有同仁共用資訊</small><strong>目前借出與預借車輛</strong><span>可查看使用者、預借時間與預計歸還時間</span></div>
-        <div class="loan-overview-stat"><strong>${usingCount}</strong><span>使用中</span></div>
-        <div class="loan-overview-stat"><strong>${upcomingCount}</strong><span>待使用</span></div>
-        <div class="loan-overview-stat"><strong>${activeLoans.length}</strong><span>未結案</span></div>
-      </section>
+      <div class="section-head"><div><h2>車輛租借</h2></div><div class="actions">${keyCodeButton}<button class="primary-btn" data-modal="vehicleLoan">登記使用</button></div></div>
+      <details class="loan-compact-summary"><summary>使用中 ${usingCount} · 預借 ${upcomingCount} · 未結案 ${activeLoans.length}<span>查看車輛使用狀況</span></summary>
       <section class="loan-in-use-section" aria-label="目前使用中的車輛">
         <div class="loan-in-use-head"><div><small>即時使用狀態</small><h3>目前誰正在使用車輛</h3></div><span>${usingCount} 輛使用中</span></div>
         <div class="loan-in-use-grid">
@@ -6508,7 +6526,8 @@
             <div class="loan-vehicle-card-main"><div class="loan-vehicle-card-top"><strong>${escapeHtml(item.plate_no || "未填車牌")}</strong><span>使用中</span></div><div class="loan-current-user"><small>目前使用者</small><b>${escapeHtml(item.requested_by_name || "未填寫")}</b></div><div class="loan-current-time"><small>借用時間</small><strong>${fmtDateTime(item.borrow_at)} <i>→</i> ${fmtDateTime(item.return_at)}</strong></div></div>
           </article>`).join("") : `<div class="loan-in-use-empty"><span aria-hidden="true">🚘</span><div><strong>目前沒有車輛借出</strong><small>核准並開始使用的車輛會顯示在這裡</small></div></div>`}
         </div>
-      </section>
+      </section></details>
+      <details class="loan-compact-filters" ${search || date || state.loanStatusFilter ? "open" : ""}><summary>篩選租借紀錄</summary>
       <form id="loanSearchForm" class="loan-filter-panel">
         <div class="compact-filter-bar">${loanStatuses.map(([value, label]) => `<button type="button" class="filter-btn ${state.loanStatusFilter === value ? "active" : ""}" data-loan-filter="${value}">${label}</button>`).join("")}</div>
         <div class="loan-search-row">
@@ -6517,7 +6536,7 @@
           <button class="primary-btn">篩選</button>
           <button class="ghost-btn" type="button" data-action="clear-loan-search">清除</button>
         </div>
-      </form>
+      </form></details>
       <div class="loan-list">
         ${items.length ? items.map((item) => `<article class="loan-row ${item.status === "completed" ? "is-muted" : ""}">
           <div class="loan-row-plate"><span class="plate-chip">${escapeHtml(item.plate_no || "-")}</span><span class="status ${loanStatusClass(item.status)}">${escapeHtml(loanStatusText(item.status))}</span></div>
@@ -6535,7 +6554,7 @@
             <button class="soft-btn" data-loan-detail="${item.id}">查看</button>
             ${state.adminProfile?.is_super_admin ? `<button class="soft-btn" data-modal="vehicleLoan" data-id="${item.id}">編輯</button>` : ""}
             ${state.adminProfile?.is_super_admin && item.status === "pending_approval" ? `<button class="primary-btn" data-loan-action="${item.id}:approve">同意借車</button>` : ""}
-            ${!state.adminProfile?.is_super_admin && item.status === "approved" ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">登記還車</button>` : ""}
+            ${item.status === "approved" && (state.adminProfile?.is_super_admin || item.requested_by_admin_id === state.adminProfile?.id) ? `<button class="primary-btn" data-modal="vehicleReturn" data-id="${item.id}">登記還車</button>` : ""}
             ${state.adminProfile?.is_super_admin && item.status === "return_pending" ? `<button class="primary-btn" data-loan-action="${item.id}:close">確認結案</button>` : ""}
             ${state.adminProfile?.is_super_admin ? `<button class="danger-btn" data-delete="vehicle_loans:${item.id}">刪除</button>` : ""}
           </div>
@@ -7753,7 +7772,8 @@
         record.frontend_permissions = Object.fromEntries(driverFrontendFeatures.map(([key]) => [key, formData.get(`frontend_${key}`) === "true"]));
         driverFrontendFeatures.forEach(([key]) => delete record[`frontend_${key}`]);
       }
-      if (tableName === "vehicle_loans") {
+      try {
+      if (type === "vehicleLoan") {
         const normalizedLoan = normalizeRecord(tableName, { ...record });
         const conflict = loanConflictFor(normalizedLoan, id || "");
         if (conflict) {
@@ -7761,11 +7781,11 @@
           return;
         }
       }
-      try {
         const normalizedRecord = type === "driverOnboarding"
           ? normalizeDriverOnboardingRecord(record)
           : normalizeRecord(tableName, record);
         let updateOptions;
+        if (tableName === "vehicle_loans") updateOptions = {loan_expected_updated_at:item?.updated_at ?? null};
         if (type === "vehicleFolder") updateOptions = { vehicle_files_expected_updated_at: item?.updated_at ?? null };
         if (initialVehicleFields) {
           for (const key of Object.keys(normalizedRecord)) {
@@ -7786,7 +7806,10 @@
           updateOptions = { insurance_expected_updated_at: item?.updated_at ?? null, insurance_override: type === "insuranceStatusOverride" };
         }
         let saved;
-        if (type === "driverOnboarding") {
+        if (type === "vehicleReturn") {
+          const result = await apiRequest("vehicle_loan_action", {id, operation:"return", actual_return_at:normalizedRecord.actual_return_at, expected_updated_at:item.updated_at ?? null});
+          saved=result.data;state.data.vehicle_loans=state.data.vehicle_loans.map(row=>row.id===id?saved:row);
+        } else if (type === "driverOnboarding") {
           const complete=Boolean(normalizedRecord.onboarding_completed_at && !onboardingIsCompleted(item));
           let status;
           if(complete) {
@@ -10958,7 +10981,7 @@
       render();
     }
     if (target.dataset.adminView) {
-      if (!["home", "driverReporting"].includes(target.dataset.adminView) && !adminFullDataReady) {
+      if (!["home", "driverReporting", "vehicleInspections"].includes(target.dataset.adminView) && !adminFullDataReady) {
         try { await withAppLoading("正在載入功能資料", ensureAdminWorkspaceData); }
         catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
       }
@@ -11247,10 +11270,15 @@
     }
     if (target.dataset.loanAction) {
       const [id, action] = target.dataset.loanAction.split(":");
-      await update("vehicle_loans", id, action === "approve"
-        ? { status: "approved", approved_at: now() }
-        : { status: "completed", closed_at: now() });
-      render();
+      if(target.disabled)return;
+      const item=state.data.vehicle_loans.find(row=>row.id===id);if(!item)return;
+      target.disabled=true;
+      try {
+        if(!await showConfirm(item.plate_no+" · "+(action==="approve"?"確認核准這次借車？":"確認車輛與鑰匙已歸還並結案？"),"確認租借操作"))return;
+        const result=await apiRequest("vehicle_loan_action",{id,operation:action,expected_updated_at:item.updated_at??null});
+        state.data.vehicle_loans=state.data.vehicle_loans.map(row=>row.id===id?result.data:row);render();
+      }catch(error){await showAlert(error.message||error,"無法更新租借");}finally{target.disabled=false;}
+      return;
     }
   });
 

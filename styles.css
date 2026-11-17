@@ -7763,3 +7763,12 @@ body {
 .insurance-renewal-actions:empty { display: none; }
 .insurance-renewal { text-align: start; }
 .insurance-renewal small { display: block; color: #78531d; }
+/* Compact internal loan toolbar; expand details only when needed. */
+.loan-compact-summary,.loan-compact-filters{background:#fff;border:1px solid #dce3ed;border-radius:14px;margin:0 0 12px;overflow:hidden;min-width:0}
+.loan-compact-summary>summary,.loan-compact-filters>summary{padding:13px 16px;cursor:pointer;font-size:14px;font-weight:700;color:#25364b}
+.loan-compact-summary>summary span{font-size:12px;font-weight:400;color:#6b7789;margin-left:14px}
+.loan-compact-summary .loan-in-use-section{border:0;margin:0;padding-top:4px}
+.loan-compact-summary .loan-in-use-head{display:none}
+.loan-compact-filters .loan-filter-panel{border:0;margin:0;padding-top:4px}
+.loan-list .loan-row .actions{gap:6px;flex-wrap:wrap}
+@media(max-width:600px){.loan-compact-summary>summary span{display:none}.loan-compact-filters .loan-search-row{display:flex;flex-wrap:wrap}.loan-compact-filters .loan-search-row input{min-width:0;flex:1 1 130px}.loan-list .loan-row{min-width:0}.loan-list .loan-row-facts>div{min-width:0}.loan-list .loan-row-facts strong{overflow-wrap:anywhere}}
