@@ -15,7 +15,7 @@ create trigger preserve_fleet_idle_driver_name
 before update of driver_name on public.fleet_idle_daily
 for each row execute function public.preserve_fleet_idle_driver_name();
 
-create index fleet_service_record_odometer_idx
+create index if not exists fleet_service_record_odometer_idx
   on public.vehicle_service_records (vehicle_id, service_date)
   where odometer is not null;
 

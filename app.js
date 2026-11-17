@@ -2709,7 +2709,7 @@
     const fleetOnly = suggestions !== null;
     const view = fleetOnly ? fleetOperationsState() : null;
     const items = calendarItems(isAdmin).filter(item => !fleetOnly || fleetCalendarMatches(item, view));
-    const completedDates = fleetOnly ? fleetCompletedServiceDates() : null;
+    const completedDates = fleetOnly ? fleetCompletedServiceDates(view.serviceBaselines || []) : null;
     const overdue = item => completedDates && fleetCalendarOverdue(item, completedDates);
     const byDate = new Map();
     for (const item of items) {
@@ -3855,7 +3855,7 @@
       if (request === view.request) {
         view.rows = data.rows || [];
         view.migrationReviews = data.review_cases || [];
-        if (section === "fuel") view.telemetry = related?.rows || null;
+        if (section === "fuel") {view.telemetry = related?.rows || null; view.serviceBaselines = data.service_baselines || [];}
         if (section === "importIdle") view.importedDates = [...new Set(view.rows.map(row => row.record_date))].sort().reverse();
       }
     } catch (error) {
@@ -4191,9 +4191,9 @@
       /^(?:completed?|cancelled|canceled|closed)$/i.test(String(event.status || "").trim());
   }
 
-  function fleetCompletedServiceDates() {
+  function fleetCompletedServiceDates(baselines = []) {
     const dates = new Map();
-    for (const record of state.data.vehicle_service_records || []) {
+    for (const record of [...(state.data.vehicle_service_records || []), ...baselines]) {
       if (!record.vehicle_id || !record.service_date || record.service_date > today()) continue;
       for (const [kind, types] of [["maintenance", /定期保養/], ["tires", /輪胎|調胎/], ["repair", /維修|事故修復/]]) {
         if (!types.test(record.record_type || "")) continue;
@@ -4210,11 +4210,11 @@
     return !vehicleId || (completedDates.get(vehicleId + "/" + event.event_type) || "") < event.event_date;
   }
 
-  function fleetProjections(rows, telemetry = []) {
+  function fleetProjections(rows, telemetry = [], baselines = []) {
     const asOf = today();
     const serviceHistory = new Map();
-    const completedDates = fleetCompletedServiceDates();
-    const projectionHistory = [...(state.data.vehicle_service_records || []), ...(state.data.calendar_events || []).filter(event => event.completed_at && !event.service_record_id).map(event => ({vehicle_id:event.vehicle_id,service_schedule_id:event.id,service_date:serviceCompletionDate(event.completed_at),odometer:event.completed_odometer,record_type:event.event_type === "tires" ? "輪胎" : event.event_type === "repair" ? "維修" : "定期保養",completion_only:true}))];
+    const completedDates = fleetCompletedServiceDates(baselines);
+    const projectionHistory = [...baselines, ...(state.data.vehicle_service_records || []), ...(state.data.calendar_events || []).filter(event => event.completed_at && !event.service_record_id).map(event => ({vehicle_id:event.vehicle_id,service_schedule_id:event.id,service_date:serviceCompletionDate(event.completed_at),odometer:event.completed_odometer,record_type:event.event_type === "tires" ? "輪胎" : event.event_type === "repair" ? "維修" : "定期保養",completion_only:true}))];
     for (const record of projectionHistory) {
       if (!record.service_date || record.service_date > asOf) continue;
       if (!serviceHistory.has(record.vehicle_id)) serviceHistory.set(record.vehicle_id, []);
@@ -4421,7 +4421,7 @@
       (!view.search || (key && window.HeycarFleetReports.plateKey(item.plate_no).includes(key)));
   }
 
-  function fleetCalendarSuggestions(view, projections = fleetProjections(fleetReportRows(view), view.telemetry)) {
+  function fleetCalendarSuggestions(view, projections = fleetProjections(fleetReportRows(view), view.telemetry, view.serviceBaselines)) {
     const suggestions = new Map();
     if (!adminCan("fleetOperations") || !view.showSuggestions || view.calendarVendor) return suggestions;
     for (const row of projections) {
@@ -4518,7 +4518,7 @@
     if (!view.rows && !view.loading && !view.error) void loadFleetOperations(view);
     const context = fleetVehicleContext(view.search, view.section);
     if (view.section === "calendar") {
-      const projections = fleetProjections(fleetReportRows(view), view.telemetry);
+      const projections = fleetProjections(fleetReportRows(view), view.telemetry, view.serviceBaselines);
       const suggestions = fleetCalendarSuggestions(view, projections);
       return `<section class="fleet-case-page fleet-workspace" data-calendar-layout="${view.calendarLayout}">${navigation}${context}
         ${fleetCalendarControls(view, projections)}
@@ -4528,7 +4528,7 @@
     }
     const importing = view.section === "importIdle" || view.section === "importFuel";
     const allRows = importing ? [] : fleetReportRows(view);
-    const projections = view.section === "fuel" ? fleetProjections(allRows, view.telemetry).sort((a, b) =>
+    const projections = view.section === "fuel" ? fleetProjections(allRows, view.telemetry, view.serviceBaselines).sort((a, b) =>
       Number(b.services.some(fleetNeedsAttention)) - Number(a.services.some(fleetNeedsAttention)) || a.plate.localeCompare(b.plate)) : [];
     const rows = view.section === "fuel" ? (view.attention ? projections.filter(row => row.services.some(fleetNeedsAttention)) : projections)
       : view.section === "policy" && view.policyFilter && view.policyFilter !== "all"

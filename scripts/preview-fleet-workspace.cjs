@@ -83,6 +83,7 @@ const tables = {
   fleet_fine_files: fixture.files,
   fleet_idle_daily: fixture.idle,
   fleet_fuel_stats: fixture.fuel,
+  fleet_service_baselines: fixture.service_baselines || [],
   fleet_policy_documents: fixture.policies,
   fleet_migration_reviews: [],
   insurance_partners: directory,

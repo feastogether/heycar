@@ -1051,7 +1051,8 @@ async function handleFleetOperations(body: Record<string, any>, session: Record<
       const reviews = await db.from("fleet_migration_reviews").select("id,plate_no,reason,source_data,existing_data,status")
         .eq("status", "pending").order("plate_no").limit(500);
       if (reviews.error) throw reviews.error;
-      return json({ rows: data || [], review_cases: reviews.data || [] });
+      const baselines = await dispatchRows("fleet_service_baselines", "id,source_id,vehicle_id,record_type,service_date,odometer");
+      return json({ rows: data || [], review_cases: reviews.data || [], service_baselines: baselines });
     }
     if (body.section === "policy") {
       const policyColumns = "id,vehicle_id,policy_type,company,policy_number,start_date,expiry_date,name,storage_path,files";
