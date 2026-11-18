@@ -1636,7 +1636,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return data ? json({ ok: true }) : json({ error: "此資料已核對，請重新整理" }, 409);
     }
-    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting"].includes(body.action)) {
+    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting", "admin_edit_driver_reporting"].includes(body.action)) {
       const response = await createDriverReportingHandler({ db, adminCan })(body, session);
       return json(response.body, response.status);
     }

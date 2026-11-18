@@ -1,5 +1,5 @@
 export const inspectionSlots=['front','front_right','right','rear_right','rear','rear_left','left','front_left','cabin','odometer'];
-export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_draft','inspection_submit','inspection_review','inspection_start'];
+export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_draft','inspection_submit','inspection_review','inspection_start','inspection_batches','inspection_batch_action'];
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const safeName=value=>String(value||'照片.jpg').replace(/[\x00-\x1f/\\]/g,'').slice(0,160)||'照片.jpg';
 export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto}) {
@@ -24,6 +24,15 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
    return result.data;
   };
   try {
+   if(body.action==='inspection_batches'||body.action==='inspection_batch_action'){
+    if(!admin)return fail('僅授權後台可管理檢查批次',403);
+    if(body.action==='inspection_batches'){
+     if(!Number.isInteger(body.page??1)||(body.page??1)<1||(body.page??1)>10000)return fail('頁碼錯誤');
+     return {body:{data:await rpc('inspection_batches',{p_page:body.page??1,p_deleted:body.deleted===true})},status:200};
+    }
+    if(!uuid(body.batch_id)||!['cancel','delete','restore'].includes(body.operation)||!Number.isSafeInteger(body.revision)||body.confirmed!==true||typeof body.reason!=='string'||body.reason.length>1000)return fail('請確認批次操作內容');
+    return {body:{data:await rpc('inspection_batch_action',{p_batch:body.batch_id,p_operation:body.operation,p_revision:body.revision,p_reason:body.reason,p_actor:actor})},status:200};
+   }
    if(body.action==='inspection_load') {
     if((body.task_id!=null&&!uuid(body.task_id))||(body.batch_id!=null&&!uuid(body.batch_id)))return fail('檢查編號錯誤');
     const page=body.page??1;

@@ -86,6 +86,18 @@ async function run(){
     assert.equal(await driver.locator('.dr-day.approved').count(),5);
     await driver.setViewportSize({width:390,height:844});
     await driver.screenshot({path:path.join(root,'.fleet-preview/reporting-driver-approved.png'),fullPage:true});
+    await admin.setViewportSize({width:390,height:900});
+    await admin.locator('[data-dr-edit]').click();await admin.locator('.dr-edit-dialog').waitFor();
+    assert.equal(await admin.locator('[data-admin-edit-day="'+month+'-09"]').isEnabled(),true,'admin can select a forbidden day');
+    await admin.locator('[data-admin-edit-day="'+month+'-09"]').click();
+    await admin.locator('.dr-edit-dialog [name=note]').fill('後台核准臨時調休');
+    assert(await admin.locator('.dr-edit-dialog').evaluate(el=>el.getBoundingClientRect().right<=innerWidth),'admin editor fits mobile');
+    await admin.screenshot({path:path.join(root,'.fleet-preview/reporting-admin-calendar-mobile.png')});
+    await admin.locator('.dr-edit-dialog [type=submit]').click();await admin.locator('[data-dialog-confirm]').click();
+    await admin.locator('.dr-edit-dialog').waitFor({state:'detached'});
+    assert.equal(await admin.locator('.dr-table .dr-date-chips .approved').count(),6,'reviewed report is editable without leave constraints');
+    await driver.locator('[data-dr="refresh"]').click();await driver.getByText('後台已調整',{exact:false}).waitFor();
+    assert.equal(await driver.locator('.dr-day.approved').count(),6,'driver sees the revised approved dates');
     const other=await driverContext.newPage();await other.goto(base+'/?review=otherdriver');
     await other.locator('[data-view="dispatchCenter"]').waitFor();
     assert.equal(await other.locator('[data-view="driverReporting"]').count(),0,'other dealer default denied');

@@ -22,6 +22,7 @@ module.exports=function createReportingPreview(directory, sourceDrivers = null) 
       await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261113010000_driver_reporting.sql'),'utf8'));
     }
     if(!(await db.query("select 1 from information_schema.columns where table_name='driver_reporting_months'and column_name='range_rules'")).rows.length)await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261117040000_driver_reporting_range_rules.sql'),'utf8'));
+    if(!(await db.query("select 1 from information_schema.columns where table_name='driver_reporting_submissions'and column_name='admin_edited_at'")).rows.length)await db.exec(fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261118010000_reporting_admin_calendar_edit.sql'),'utf8'));
     await db.exec("alter table drivers add column if not exists driver_status text default '待上線'");
     if(sourceDrivers) await db.query("update drivers set driver_status='停派中' where id=any($1::uuid[])",[examples.map(row=>row.id)]);
     for(const row of drivers)await db.query('insert into drivers(id,name,dealer_partner_id,fleet_name,driver_status) values($1,$2,$3,$4,$5) on conflict(id) do update set driver_status=excluded.driver_status,name=excluded.name,dealer_partner_id=excluded.dealer_partner_id,fleet_name=excluded.fleet_name',[row.id,row.name,row.dealer_partner_id,row.fleet_name,row.driver_status]);
@@ -31,7 +32,7 @@ module.exports=function createReportingPreview(directory, sourceDrivers = null) 
       await db.exec(sql.slice(start,end).replace('create function','create or replace function'));
     }
   })();
-  const signature={driver_reporting_load:['date','uuid'],driver_reporting_save_month:['date','jsonb','bigint','jsonb'],driver_reporting_submit:['date','uuid','date[]','bigint'],driver_reporting_review:['uuid','text','text','bigint','jsonb']};
+  const signature={driver_reporting_admin_edit:['uuid','date[]','bigint','text','jsonb'],driver_reporting_load:['date','uuid'],driver_reporting_save_month:['date','jsonb','bigint','jsonb'],driver_reporting_submit:['date','uuid','date[]','bigint'],driver_reporting_review:['uuid','text','text','bigint','jsonb']};
   const handle=createDriverReportingHandler({adminCan:async session=>session.is_super_admin,db:{rpc:async(name,args)=>{
     await ready;
     for(const row of directory.filter(row=>row.partner_type==='dealer'))await db.query('insert into insurance_partners values($1,$2,$3,$4,$5) on conflict(id) do update set name=excluded.name,partner_type=excluded.partner_type,active=excluded.active,frontend_permissions=excluded.frontend_permissions',[row.id,row.name,row.partner_type,row.active!==false,JSON.stringify(row.frontend_permissions||{})]);

@@ -1,4 +1,4 @@
-export const reportingActions = ['load_driver_reporting','save_driver_reporting_month','submit_driver_reporting','review_driver_reporting'];
+export const reportingActions = ['load_driver_reporting','save_driver_reporting_month','submit_driver_reporting','review_driver_reporting','admin_edit_driver_reporting'];
 
 export function createDriverReportingHandler({ db, adminCan }) {
   return async function handle(body, session) {
@@ -11,7 +11,7 @@ export function createDriverReportingHandler({ db, adminCan }) {
     if (driver && !['load_driver_reporting','submit_driver_reporting'].includes(body.action)) return fail('沒有管理權限',403);
     if (!driver && body.action === 'submit_driver_reporting') return fail('請由司機本人送出報班',403);
     const month = String(body.month || '');
-    if (body.action !== 'review_driver_reporting' && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('請選擇有效月份');
+    if (!['review_driver_reporting','admin_edit_driver_reporting'].includes(body.action) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('請選擇有效月份');
     const actor = { role: 'admin', id: session.admin_user_id || 'super-admin', name: session.admin_name || '最高管理員' };
     let rpc, args;
     if (body.action === 'load_driver_reporting') {
@@ -29,6 +29,9 @@ export function createDriverReportingHandler({ db, adminCan }) {
       if (!Array.isArray(body.dates) || body.dates.length > 31 || body.confirmed !== true || !Number.isInteger(body.revision)) return fail('請確認休假日期與送出聲明');
       rpc = 'driver_reporting_submit';
       args = { p_month: month + '-01', p_driver: session.driver_id, p_dates: body.dates, p_revision: body.revision };
+    } else if(body.action==='admin_edit_driver_reporting') {
+      if(!/^[0-9a-f-]{36}$/i.test(String(body.id||''))||!Array.isArray(body.dates)||body.dates.length>31||!Number.isInteger(body.revision)||body.confirmed!==true)return fail('請確認日曆修改內容');
+      rpc='driver_reporting_admin_edit';args={p_id:body.id,p_dates:body.dates,p_revision:body.revision,p_note:String(body.note||'').trim(),p_actor:actor};
     } else {
       if (!/^[0-9a-f-]{36}$/i.test(String(body.id || '')) || !['approved','rejected'].includes(body.status) ||
           !Number.isInteger(body.revision) || body.confirmed !== true) return fail('請確認審核操作');

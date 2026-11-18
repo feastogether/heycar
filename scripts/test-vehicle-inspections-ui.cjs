@@ -28,6 +28,9 @@ async function main(){
   const driver=await browser.newPage({viewport:{width:390,height:844}});driver.on('pageerror',e=>errors.push(e.message));await driver.goto(base+'/?review=driver');
   await driver.locator('[data-view="vehicleInspections"]').click();await driver.locator('[data-i-task]').click();await driver.locator('[data-i-camera]').waitFor();
   assert.equal(await driver.locator('[data-i-camera]').getAttribute('capture'),'environment');
+  assert.equal(await driver.locator('.vi-photo-image .vi-position-guide svg').count(),10,'each empty photo tile shows its own positional guide');
+  assert.equal(await driver.locator('.vi-photo-caption .vi-take-photo').count(),10,'every editable position invites direct photography');
+  await driver.screenshot({path:path.join(root,'.fleet-preview/inspection-position-guides-mobile.png'),fullPage:true});
   for(const width of [320,390,768]){await driver.setViewportSize({width,height:844});assert(await driver.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'inspection fits '+width);}
   await driver.setViewportSize({width:390,height:844});
   await driver.locator('[name=inspection_odometer]').fill('123456');await driver.locator('[name=inspection_notes]').fill('測試外觀與儀表');
@@ -57,6 +60,17 @@ async function main(){
   for(const width of [320,390,768,1440]){await admin.setViewportSize({width,height:900});assert(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'admin inspection fits '+width);}
   await admin.screenshot({path:path.join(root,'.fleet-preview/inspection-admin-desktop.png'),fullPage:true});
   const final=(await api('inspection_load',{task_id:taskId,history:true})).data;assert.equal(final.task.status,'approved');assert.equal(final.photos.length,12);
+  await admin.locator('[data-i=back]').click();await admin.locator('[data-i=batches]').click();await admin.locator('.vi-batch-list article').waitFor();
+  assert(/^\d{8}-\d{3,}$/.test(await admin.locator('.vi-batch-list strong').first().textContent()));
+  await admin.setViewportSize({width:390,height:900});
+  assert(await admin.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'batch manager fits mobile');
+  await admin.screenshot({path:path.join(root,'.fleet-preview/inspection-batches-mobile.png')});
+  await admin.locator('[data-i-batch-action=delete]').click();await admin.locator('[data-dialog-confirm]').click();await admin.getByText('目前沒有符合條件的批次。',{exact:true}).waitFor();
+  assert.equal((await api('inspection_load',{status:'approved'},'preview-driver')).data.total,0,'deleted batches are hidden from driver history');
+  await admin.locator('[data-i=batches-deleted]').click();await admin.locator('[data-i-batch-action=restore]').click();await admin.locator('[data-dialog-confirm]').click();
+  await admin.getByText('目前沒有已刪除的批次。',{exact:true}).waitFor();await admin.locator('[data-i=batches-active]').click();await admin.locator('.vi-batch-list article').waitFor();
+  const restored=(await api('inspection_load',{task_id:taskId,history:true})).data;assert.equal(restored.photos.length,12,'batch deletion retains all photo versions');assert((await fetch(restored.photos[0].url)).ok,'restored original photo is still downloadable');
+  assert.equal((await api('inspection_load',{status:'approved'},'preview-driver')).data.total,1);
   // Complete a real UI borrow -> approval -> return -> closure cycle.
   await admin.setViewportSize({width:1440,height:900});await nav('vehicleLoans');await admin.locator('[data-modal=vehicleLoan]').first().click();
   await admin.locator('#modalForm [name=vehicle_id]').selectOption(id(11));
