@@ -1,0 +1,38 @@
+.board-admin{display:grid;gap:16px;width:100%;max-width:1360px;min-width:0;margin:0 auto}
+.board-admin *{box-sizing:border-box}
+.board-admin-heading,.board-admin-panel>header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.board-admin-heading h2{margin:0;font-size:22px}
+.board-admin [data-board-error]:empty,.board-admin [data-board-result]:empty{display:none}
+.board-save-status{margin:0;padding:10px 14px;background:#eaf6ef;color:#246746;border-radius:9px;font-size:14px}
+.board-editor-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}
+.board-admin .board-admin-panel{min-width:0;padding:22px;border:1px solid #dfe5ec;border-radius:14px;background:#fff}
+.board-admin form.board-admin-panel{display:flex;flex-direction:column;gap:16px;margin:0}
+.board-admin-panel>header>div{min-width:0;flex:1}
+.board-admin-panel h3{margin:0;font-size:17px;line-height:1.5}
+.board-admin-panel p{margin:5px 0 0;font-size:13px;line-height:1.7;color:#6c7b8c}
+.board-admin .board-field{display:grid;gap:7px;min-width:0;width:100%;font-size:13px;line-height:1.5;color:#455568}
+.board-admin input:not([type=checkbox]),.board-admin textarea{display:block;width:100%;min-width:0;max-width:100%;font-size:15px;line-height:1.6;border:1px solid #d7dfe8;border-radius:8px;padding:10px 12px;background:#fff;color:#263549}
+.board-admin textarea{resize:vertical;min-height:90px}
+.board-admin input[type=checkbox]{display:inline-block;width:17px;height:17px;min-width:17px;max-width:17px;margin:0;flex:none;accent-color:#8c6b32}
+.board-ticker-options{display:grid;gap:12px;min-width:0;margin:0;padding:14px;border:1px solid #e1e7ed;border-radius:9px;background:#f8fafc}
+.board-ticker-options legend{padding:0 5px;font-size:12px;color:#68788d}
+.board-ticker-options label,.board-notice-actions>label{display:flex;align-items:center;gap:9px;font-size:13px;line-height:1.6;min-width:0}
+.board-admin-panel>footer{display:flex;gap:12px;align-items:center;justify-content:flex-end;flex-wrap:wrap;margin-top:auto;padding-top:5px}
+.board-admin-panel>footer small{flex:1 1 180px;font-size:11px;line-height:1.8;color:#728198}
+.board-admin-announcements{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;min-width:0;margin:0}
+.board-admin-announcements article{display:grid;gap:12px;min-width:0;padding:14px;border:1px solid #e0e6ee;border-radius:10px;background:#f7f9fc}
+.board-notice-actions{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.board-admin .board-pair-panel form{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:12px;margin-top:18px}
+.board-pair-list{display:grid;gap:12px;margin-top:18px;min-width:0}
+.board-pair-list article{padding:15px;border:1px solid #e0e6ee;border-radius:10px;min-width:0}
+.board-pair-heading{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;min-width:0}
+.board-pair-heading>div:first-child{flex:1 1 150px;min-width:0}
+.board-pair-heading strong{display:block;font-size:15px;overflow-wrap:anywhere}
+.board-pair-heading small{display:block;font-size:11px;color:#7a889b;margin-top:5px}
+.board-pair-actions{display:flex;gap:7px;flex-wrap:wrap;min-width:0}
+.board-admin button,.board-admin a.ghost-btn{font-size:13px;padding:9px 13px;line-height:1.5;white-space:normal;margin:0}
+.board-saved-link{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;margin-top:12px;min-width:0}
+.board-saved-link input{font-size:12px!important}
+.board-empty{font-size:13px;color:#8290a1;padding:8px 0}
+@media(max-width:1050px){.board-editor-grid{grid-template-columns:minmax(0,1fr)}}
+@media(max-width:500px){.board-admin .board-admin-panel{padding:15px}.board-admin-heading h2{font-size:19px}.board-admin .board-pair-panel form{grid-template-columns:minmax(0,1fr)}.board-saved-link{grid-template-columns:minmax(0,1fr)}.board-pair-actions{width:100%}.board-pair-actions button{flex:1}.board-admin-panel>footer button{width:100%}.board-admin-panel>header>div{flex-basis:100%}}

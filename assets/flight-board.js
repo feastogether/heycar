@@ -7,7 +7,7 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 if (/^[a-f0-9]{64}$/.test(fragment.get('pair') || '')) storage.set('heycar-board-token', fragment.get('pair'));
 if (location.hash) history.replaceState(null, '', location.pathname + location.search);
 let token = storage.get('heycar-board-token'), news = null, audio = null, enabled = false, processing = false, busy = false, feedBusy = false, timer = null, pulseTimer = null;
-let lastFeed = null;const inFlight=new Set(); const watches = new Map(), queue = [];
+let lastFeed = null,briefing=null,briefingBusy=false,briefingTimer=null,tickerItems=[],tickerKey='',tickerIndex=0;const inFlight=new Set(); const watches = new Map(), queue = [];
 let done; try { done = new Map(JSON.parse(storage.get('heycar-board-announced','[]'))); } catch { done = new Map(); }
 const markDone = id => { done.set(id,Date.now()); done = new Map([...done].slice(-300)); storage.set('heycar-board-announced',JSON.stringify([...done])); };
 async function api(body, admin=false) {
@@ -26,14 +26,33 @@ function renderTracked(){
 }
 function renderUpcoming(){
  if(!lastFeed)return;const rows=(lastFeed.flights||[]).filter(f=>!f.landed&&!f.cancelled&&Date.parse(f.estimatedTime||f.scheduledTime)>=Date.now()),rowCount=Math.max(2,Math.min(8,Math.floor((innerHeight-$('upcomingFlights').getBoundingClientRect().top-80)/(innerWidth>=1800?74:66)))),pages=Math.max(1,Math.ceil(rows.length/rowCount)),page=phase()%pages;
- $('upcomingFlights').innerHTML=rows.slice(page*rowCount,page*rowCount+rowCount).map(f=>`<div class="arrival-row"><time>${time(f.estimatedTime||f.scheduledTime)}</time><span class="arrival-airline">${logo(f)}<span><strong>${escape(f.airline||f.airlineCode||'航空公司')}</strong><small>${escape(f.flightNo)}</small></span></span><span>${escape(f.city)}</span><span>${escape(f.terminal||'—')}</span></div>`).join('')||'<p class="empty">等待下一批即將抵達航班資料</p>';
- const notices=lastFeed.announcements||[],notice=notices[phase()%Math.max(1,notices.length)];$('announcementCount').textContent=notices.length>1?`${phase()%notices.length+1} / ${notices.length}`:'';$('companyAnnouncement').innerHTML=notice?'<h3>'+escape(notice.title)+'</h3><p>'+escape(notice.content)+'</p>':'<p class="empty">目前沒有公司公告</p>';
+ $('upcomingFlights').innerHTML=rows.slice(page*rowCount,page*rowCount+rowCount).map(f=>`<div class="arrival-row"><time>${time(f.estimatedTime||f.scheduledTime)}</time><span class="arrival-airline">${logo(f)}<span><strong>${escape(f.airline||f.airlineCode||'航空公司')} <b>${escape(f.flightNo)}</b></strong></span></span><span>${escape(f.city)}</span><span>${escape(f.terminal||'—')}</span></div>`).join('')||'<p class="empty">等待下一批即將抵達航班資料</p>';
+ const notices=lastFeed.announcements||[],notice=notices[phase()%Math.max(1,notices.length)];$('announcementCount').textContent=notices.length>1?`${phase()%notices.length+1} / ${notices.length}`:'';$('companyAnnouncement').innerHTML=notice?'<h3>'+escape(notice.title)+'</h3><p>'+escape(notice.content)+'</p>':'<p class="empty">目前沒有公告</p>';
 }
 
+function paintTicker(){
+ const span=$('marqueeText'),entry=tickerItems[tickerIndex%Math.max(1,tickerItems.length)];
+ $('tickerLabel').textContent=entry?({announcement:'公告',weather:'天氣',stock:'台股',info:'資訊'})[entry.kind]||'資訊':'公告';
+ span.style.animationName='none';span.textContent=entry?.text||'';
+ const distance=span.parentElement.clientWidth;span.style.setProperty('--ticker-start',distance+'px');span.style.animationDuration=Math.max(8,(distance+span.scrollWidth)/80)+'s';void span.offsetWidth;span.style.animationName=entry?'ticker-slide':'none';
+}
+function renderTicker(){
+ if(!lastFeed)return;const manual=(lastFeed.marquee||[]).flatMap(text=>{const chars=Array.from(text),chunks=[];for(let i=0;i<chars.length;i+=160)chunks.push({kind:'announcement',text:chars.slice(i,i+160).join('')});return chunks;}),weather=lastFeed.ticker_weather!==false?(briefing?.items||[]).filter(x=>x.kind==='weather'):[],stock=lastFeed.ticker_stock!==false?(briefing?.items||[]).filter(x=>x.kind==='stock'):[];
+ const items=[];for(let i=0;i<Math.max(manual.length,weather.length,stock.length);i++){if(manual[i])items.push(manual[i]);if(weather[i])items.push(weather[i]);if(stock[i])items.push(stock[i]);}
+ if(briefing?.weather_delayed&&!weather.length&&lastFeed.ticker_weather!==false)items.push({kind:'info',text:'天氣資訊暫時無法取得，稍後自動重試'});
+ if(briefing?.stock_delayed&&!stock.length&&lastFeed.ticker_stock!==false)items.push({kind:'info',text:'台股資訊暫時無法取得，稍後自動重試'});
+ const nextKey=JSON.stringify(items);if(nextKey===tickerKey)return;tickerKey=nextKey;tickerItems=items;tickerIndex=0;paintTicker();
+}
+async function refreshBriefing(){
+ if(briefingBusy||!token||navigator.onLine===false)return;briefingBusy=true;
+ try{briefing=await api({action:'briefing'});renderTicker();}catch{if(!briefing)briefing={items:[],weather_delayed:true,stock_delayed:true};renderTicker();}finally{briefingBusy=false;}
+}
+$('marqueeText').addEventListener('animationend',()=>{if(!tickerItems.length)return;tickerIndex=(tickerIndex+1)%tickerItems.length;paintTicker();});
+
 function renderFeed(patch) {
-  lastFeed={...lastFeed,...patch};const data=lastFeed;
+  const optionsChanged=lastFeed&&((patch.ticker_weather!==undefined&&lastFeed.ticker_weather!==patch.ticker_weather)||(patch.ticker_stock!==undefined&&lastFeed.ticker_stock!==patch.ticker_stock));lastFeed={...lastFeed,...patch};const data=lastFeed;if(optionsChanged)void refreshBriefing();
   $('updatedAt').textContent = `更新 ${time(data.updated_at)}`;
-  $('marqueeText').textContent = data.marquee?.join('　｜　') || '';
+  renderTicker();
   if (!news) news = mountLiveNews($('liveNews'), {videoId:data.news_video_id});
   for (const row of data.watches) {
     if (row.tooOld) { markDone(row.id); continue; }
@@ -82,8 +101,8 @@ async function refresh() {
 }
 $('enableAudio').onclick=async()=>{try{if(!window.speechSynthesis || !window.AudioContext)throw new Error('此瀏覽器不支援語音廣播');audio ||= new AudioContext();await audio.resume();enabled=true;$('startOverlay').hidden=true;void document.documentElement.requestFullscreen?.().catch(()=>{});$('enableAudio').textContent='降落廣播已啟用';$('enableAudio').setAttribute('aria-pressed','true');void announceNext();}catch(error){$('boardStatus').textContent=error.message;}};
 function tick(){const seconds=Math.max(0,Math.ceil(((lastFeed?.next_refresh_at||Date.now()+300000)-Date.now())/1000));$('refreshCountdown').textContent=seconds?String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')+' 後更新':'正在更新航班'; $('clock').textContent=new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});renderTracked();renderUpcoming(); }
-tick();timer=setInterval(tick,1000);pulseTimer=setInterval(()=>void refresh(),5000);
+tick();timer=setInterval(tick,1000);briefingTimer=setInterval(()=>void refreshBriefing(),300000);pulseTimer=setInterval(()=>void refresh(),5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh();});window.addEventListener('online',()=>void refresh());
-window.addEventListener('pagehide',()=>{clearInterval(timer);clearInterval(pulseTimer);channel?.close();news?.destroy();window.speechSynthesis?.cancel();});
-if(token)void refresh();else{$('startMessage').textContent='請在後台「看板管理」取得永久電視連結';$('enableAudio').hidden=true;news=mountLiveNews($('liveNews'));}
+window.addEventListener('pagehide',()=>{clearInterval(timer);clearInterval(pulseTimer);clearInterval(briefingTimer);channel?.close();news?.destroy();window.speechSynthesis?.cancel();});
+if(token){void refresh();void refreshBriefing();}else{$('startMessage').textContent='請在後台「看板管理」取得永久電視連結';$('enableAudio').hidden=true;news=mountLiveNews($('liveNews'));}
 const channel=window.BroadcastChannel?new BroadcastChannel('heycar-flight-watches'):null;if(channel)channel.onmessage=()=>void refresh();
