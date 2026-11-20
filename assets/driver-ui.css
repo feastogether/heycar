@@ -1,0 +1,67 @@
+/* One driver control bar and shared action styling; record actions remain with their record. */
+.driver-workspace{min-width:0;width:100%}
+.driver-workspace :is(.ghost-btn,.primary-btn,.soft-btn,.filter-btn,.danger-btn){border-radius:8px;box-shadow:none;min-height:40px;font-size:13px;font-weight:600;line-height:1.4}
+.driver-workspace :is(.ghost-btn,.soft-btn,.filter-btn){border:1px solid #dce2e9;background:#fff;color:#35465a}
+.driver-workspace .primary-btn{background:#344454;border:1px solid #344454;color:#fff}
+.driver-workspace :is(.filter-btn.active,button[aria-pressed=true]){background:#f4efe5;border-color:#ba9c65;color:#76562b}
+.driver-workspace .driver-toolbar{display:flex;align-items:center;flex-wrap:nowrap;gap:6px;margin:0 0 14px;padding:0;min-width:0;width:100%;max-width:none;min-height:42px}
+.driver-workspace .driver-toolbar-controls{display:flex;align-items:center;gap:5px;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none;white-space:nowrap}
+.driver-toolbar-controls::-webkit-scrollbar{display:none}
+.driver-workspace .driver-toolbar :is(button,summary){flex:none;display:inline-flex;align-items:center;justify-content:center;min-height:42px;height:42px;border:1px solid #dce2e9;border-radius:8px;padding:6px 10px;font-size:13px;line-height:1;white-space:nowrap;box-shadow:none}
+.driver-workspace .driver-toolbar :is(.driver-back,.driver-refresh){width:42px;min-width:42px;max-width:42px;padding:0;font-size:23px;color:#35465a;background:#fff;gap:0}
+.driver-workspace .driver-toolbar :is(.benefit-tabs,.vi-driver-tabs,.message-tabs,.helper-category-tabs,.pager){display:flex;align-items:center;flex-wrap:nowrap;gap:4px;margin:0;padding:0;border:0;min-width:max-content}
+.driver-workspace .driver-toolbar :is(.benefit-tabs,.vi-driver-tabs) button{font-size:12px;padding:6px}
+.driver-workspace .driver-toolbar .vi-driver-tabs small{font-size:10px;margin-left:3px}
+.driver-workspace .driver-toolbar .pager span{font-size:12px;padding:0 6px}
+.driver-workspace .driver-toolbar-month{font-size:14px;text-align:center;min-width:90px}
+.driver-workspace .calendar-toolbar[hidden]{display:none!important}
+.driver-workspace .driver-toolbar .calendar-nav{width:32px;font-size:23px}
+.driver-workspace .driver-toolbar.dr-driver-toolbar{display:grid;grid-template-columns:42px minmax(0,1fr) 42px;gap:6px;max-width:none;margin:0 0 14px}
+.driver-workspace .dr-month-nav{display:grid;grid-template-columns:30px minmax(0,1fr) 30px;gap:4px;min-width:0}
+.driver-workspace .dr-month-nav button{width:30px;padding:0;font-size:23px}
+.driver-workspace .dr-month-nav select{height:42px;min-height:42px;border-radius:8px;font-size:14px}
+.driver-workspace .driver-toolbar.driver-dispatch-toolbar{display:grid;grid-template-columns:42px 30px minmax(0,200px) 30px 42px;justify-content:start;gap:6px}
+.driver-workspace .driver-dispatch-toolbar input{height:42px;min-width:0;width:100%;max-width:100%;padding:6px;font-size:14px;border:1px solid #dce2e9;border-radius:8px;appearance:none;text-align:center}
+.driver-workspace .driver-dispatch-toolbar [data-dispatch-date-shift]{width:30px;padding:0;font-size:23px}
+.driver-workspace .driver-flight-toolbar{position:relative;display:grid;grid-template-columns:42px 42px minmax(60px,1fr) 46px 42px;gap:6px;overflow:visible}
+.driver-workspace .driver-flight-toolbar>input{height:42px;min-width:0;width:100%;padding:8px;font-size:16px;border:1px solid #dce2e9;border-radius:8px;letter-spacing:.5px}
+.driver-workspace .driver-flight-toolbar>button[type=submit]{width:46px;padding:0}
+.driver-flight-options{position:static;min-width:0}
+.driver-flight-options>summary{list-style:none;cursor:pointer;width:42px;padding:0!important}
+.driver-flight-options>summary::-webkit-details-marker{display:none}
+.driver-flight-popover{position:absolute;top:49px;left:0;z-index:40;display:grid;gap:15px;width:280px;max-width:100%;padding:15px;border:1px solid #dce2e9;border-radius:10px;box-shadow:0 10px 28px #2535491a;background:#fff}
+.driver-flight-popover>label{display:grid;gap:7px;font-size:13px}
+.driver-flight-popover input[type=date]{width:100%;max-width:100%;min-width:0;min-height:42px;font-size:16px}
+.driver-workspace .driver-flight-popover .flight-source-choice{display:flex!important;gap:14px;flex-wrap:wrap;margin:0;padding:10px;border:1px solid #e1e6ed;border-radius:8px}
+.driver-flight-popover .flight-source-choice legend{font-size:12px;padding:0 4px}
+.driver-workspace .driver-flight-popover .flight-source-choice label{display:flex;align-items:center;gap:5px;padding:0;min-height:24px;font-size:13px;background:none;color:#35465a;border:0}
+.driver-workspace .driver-flight-popover .flight-source-choice input{position:static!important;opacity:1!important;clip:auto!important;width:16px!important;height:16px!important;margin:0;accent-color:#9b793e}
+.driver-workspace .flight-help{font-size:12px;line-height:1.7;margin:0 0 14px;color:#77869b}
+.driver-workspace .driver-page-head{border:0;background:none;box-shadow:none}
+/* Shared dispatch list: restrained borders, clear time, route and assignment. */
+.dispatch-order-card.dispatch-trip-card{border:1px solid #dfe4ea;border-radius:10px;background:#fff;box-shadow:none;overflow:hidden;margin:0;transform:none}
+.dispatch-order-card.dispatch-trip-card:before{display:none!important}
+.dispatch-trip-card.is-updated{border-color:#b99c66;box-shadow:none}
+.dispatch-order-card.dispatch-trip-card:hover{transform:none;box-shadow:none;border-color:#b7c2ce}
+.dispatch-order-card.dispatch-trip-card>button{display:grid!important;grid-template-columns:76px minmax(0,1fr)!important;grid-template-rows:auto!important;gap:14px!important;padding:15px!important;width:100%;min-height:0!important;text-align:left;border:0;border-radius:0;background:#fff;color:#263549}
+.dispatch-trip-card .dispatch-clock{grid-column:1!important;grid-row:1!important;display:flex;flex-direction:column;justify-content:center;gap:5px;padding:0 12px 0 0;border-right:1px solid #e5e9ee}
+.dispatch-trip-card .dispatch-clock strong{font-size:23px!important;line-height:1.2;color:#243447;font-weight:700}
+.dispatch-trip-card .dispatch-clock small{font-size:12px!important;font-weight:500;color:#768396}
+.dispatch-trip-card .dispatch-card-content{grid-column:2!important;grid-row:1!important;display:grid;gap:8px!important;min-width:0}
+.dispatch-trip-card .dispatch-card-heading{display:flex;align-items:center;gap:8px;flex-wrap:wrap!important;min-width:0}
+.dispatch-trip-card .dispatch-platform-tag{font-size:11px!important;color:#7d653d!important;border:1px solid #ded3bf;background:#faf7f1!important;border-radius:5px;padding:3px 6px!important;font-weight:600}
+.dispatch-trip-card .dispatch-card-route{font-size:16px!important;line-height:1.4;font-weight:650;color:#2c3e51;white-space:normal!important;overflow-wrap:anywhere}
+.dispatch-trip-card .dispatch-status-chip{font-size:11px!important;font-weight:500!important;background:none!important;border:0;padding:0!important;margin-left:auto;white-space:nowrap}
+.dispatch-trip-card .dispatch-card-reference{display:flex;gap:5px 12px;flex-wrap:wrap;font-size:12px;color:#758397}
+.dispatch-trip-card .dispatch-card-reference b{font-size:12px!important;font-weight:500!important;color:#617185}
+.dispatch-trip-card .dispatch-card-reference span{font-size:12px!important;font-weight:500!important}
+.dispatch-trip-card .dispatch-card-people{display:flex;gap:6px 14px;flex-wrap:wrap;border-top:1px solid #edf0f3;padding-top:8px;font-size:12px;line-height:1.6;color:#5e6c7d}
+.dispatch-trip-card .dispatch-card-people span{padding-left:0!important}
+.dispatch-trip-card .dispatch-card-people span:before{display:none!important}
+.dispatch-trip-card .dispatch-updated-chip{display:inline!important;font-size:10px;font-style:normal;color:#9b7436;background:none;padding:0}
+.dispatch-admin-row{border-radius:10px;border:1px solid #dfe4ea;background:#fff;box-shadow:none}
+.dispatch-admin-row .dispatch-trip-card{border:0}
+.dispatch-admin-row>.actions{padding:8px 12px;border-top:1px solid #edf0f3;gap:7px}
+.dispatch-admin-row>.actions button{border-radius:8px;box-shadow:none}
+@media(max-width:500px){.driver-workspace .driver-toolbar.driver-dispatch-toolbar{grid-template-columns:42px 28px minmax(0,1fr) 28px 42px}.dispatch-order-card.dispatch-trip-card>button{grid-template-columns:64px minmax(0,1fr)!important;gap:10px!important;padding:12px!important}.dispatch-trip-card .dispatch-clock strong{font-size:21px!important}.dispatch-trip-card .dispatch-card-route{font-size:14px!important}.dispatch-trip-card .dispatch-card-heading{gap:6px}.dispatch-trip-card .dispatch-clock{padding-right:9px}.dispatch-trip-card .dispatch-status-chip{margin-left:0}.dispatch-trip-card .dispatch-card-people{gap:3px 10px}}
+.driver-workspace .driver-toolbar .driver-back{font-size:13px;font-weight:600}

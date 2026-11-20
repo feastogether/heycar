@@ -468,7 +468,7 @@
       if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
       if (saved.onboardingDealerFilter !== undefined) state.onboardingDealerFilter = saved.onboardingDealerFilter;
       if (saved.driverDealerFilter !== undefined) state.driverDealerFilter = saved.driverDealerFilter;
-      if (saved.dispatchDateFilter) state.dispatchDateFilter = saved.dispatchDateFilter;
+      state.dispatchDateFilter = today();
       state.dispatchAdminDateFilter = today();
     } catch {}
   }
@@ -1921,7 +1921,7 @@
       renderDriver();
       return;
     }
-    layout(views[state.view]());
+    layout(`<section class="driver-workspace" data-driver-view="${escapeHtml(state.view)}">${views[state.view]()}</section>`);
     if(state.view==="dispatchCenter")void refreshDispatchDay();
     if(["heyPoints","equipmentLoans"].includes(state.view))mountBenefits(false,state.view==="heyPoints"?"points":"equipment");
     if (state.view === "vehicleInspections") mountVehicleInspections(true);
@@ -2101,11 +2101,12 @@
     const orders = dispatchOrdersForDriver().filter((item) => String(item.reservation_date || "").slice(0, 10) === selectedDate);
     scheduleDispatchFlightMiniStatuses(orders);
     return `<section class="driver-dispatch-page">
-      <div class="dispatch-date-switcher">
-        <button class="ghost-btn" data-view="home">返回</button>
+      <div class="dispatch-date-switcher driver-toolbar driver-dispatch-toolbar">
+        ${backButton()}
         <button class="ghost-btn" data-dispatch-date-shift="-1" aria-label="前一天">‹</button>
         <input type="date" value="${escapeHtml(selectedDate)}" data-dispatch-date-input>
         <button class="ghost-btn" data-dispatch-date-shift="1" aria-label="後一天">›</button>
+        ${driverRefreshButton()}
       </div>
       <div class="dispatch-card-list">
         ${orders.length ? orders.map(dispatchOrderCard).join("") : `<div class="empty">這一天沒有派趟資料</div>`}
@@ -2113,30 +2114,17 @@
     </section>`;
   }
 
-  function dispatchOrderCard(order, admin = false) {
-    const updated = !admin && dispatchOrderNeedsAttention(order);
-    const flightStatus = dispatchFlightStatusLabel(order);
-    const areaText = [order.city, order.district].filter(Boolean).join("") || "-";
-    if (admin) return `<article class="dispatch-order-card dispatch-admin-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""}">
-      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}" aria-label="查看訂單 ${escapeHtml(order.booking_no || "")}">
-        <span class="dispatch-clock"><strong>${escapeHtml(order.reservation_time || "--:--")}</strong><small>${escapeHtml(order.trip_type || "接送")}</small></span>
-        <span class="dispatch-card-content">
-          <span class="dispatch-card-heading"><b class="dispatch-platform-tag">${escapeHtml(order.source_platform || "派趟")}</b><b class="dispatch-card-route">${escapeHtml(areaText)}</b><span class="dispatch-status-chip ${flightStatus.className}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}">${escapeHtml(flightStatus.text)}</span></span>
-          <span class="dispatch-card-reference">${escapeHtml(order.booking_no || "-")}${order.flight_no ? ` · ${escapeHtml(normalizeFlightNumber(order.flight_no))}` : ""}</span>
-          <span class="dispatch-card-people"><span class="dispatch-vendor">${escapeHtml(order.assigned_vendor || order.vendor_name || "未指定車商")}</span><span class="${order.driver_name ? "" : "dispatch-unassigned"}">${escapeHtml(order.driver_name || "待指派司機")}</span></span>
+  function dispatchOrderCard(order,admin=false){
+    const updated=!admin&&dispatchOrderNeedsAttention(order),flight=dispatchFlightStatusLabel(order),area=[order.city,order.district].filter(Boolean).join('')||'未填地區';
+    const vendor=order.assigned_vendor||order.vendor_name||(admin?'未指定車商':driverFleet());
+    return `<article class="dispatch-order-card dispatch-trip-card ${admin?'dispatch-admin-card':'dispatch-driver-card'} ${platformClass(order.source_platform)} ${order.status==='completed'?'is-completed':''} ${updated?'is-updated':''}">
+      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}" aria-label="查看訂單 ${escapeHtml(order.booking_no||'')}">
+        <span class="dispatch-clock"><strong>${escapeHtml(order.reservation_time||'--:--')}</strong><small>${escapeHtml(order.trip_type||'接送')}</small></span>
+        <span class="dispatch-card-content"><span class="dispatch-card-heading"><b class="dispatch-platform-tag">${escapeHtml(order.source_platform||'派趟')}</b><b class="dispatch-card-route">${escapeHtml(area)}</b><span class="dispatch-status-chip ${flight.className}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}">${escapeHtml(flight.text)}</span></span>
+          <span class="dispatch-card-reference"><b>${escapeHtml(order.booking_no||'未填單號')}</b>${order.flight_no?'<span>航班 '+escapeHtml(normalizeFlightNumber(order.flight_no))+'</span>':''}${updated?'<em class="dispatch-updated-chip">已更新</em>':''}</span>
+          <span class="dispatch-card-people"><span class="dispatch-vendor">${escapeHtml(vendor)}</span><span class="${order.driver_name?'':'dispatch-unassigned'}">${escapeHtml(order.driver_name||(!admin&&state.user?.name)||'待指派司機')}</span></span>
         </span>
-      </button>
-    </article>`;
-    return `<article class="dispatch-order-card dispatch-driver-card ${platformClass(order.source_platform)} ${order.status === "completed" ? "is-completed" : ""} ${updated ? "is-updated" : ""}">
-      <button type="button" data-dispatch-detail="${escapeHtml(order.id)}" aria-label="查看訂單 ${escapeHtml(order.booking_no || "")}">
-        <span class="dispatch-clock"><strong>${escapeHtml(order.reservation_time || "--:--")}</strong><small>${escapeHtml(order.trip_type || "接送")}</small></span>
-        <span class="dispatch-card-content">
-          <span class="dispatch-card-heading"><b class="dispatch-platform-tag">${escapeHtml(order.source_platform || "派趟")}</b><b class="dispatch-card-route">${escapeHtml(areaText)}</b>${updated ? `<em class="dispatch-updated-chip">資料更新</em>` : ""}<span class="dispatch-status-chip ${flightStatus.className}" data-dispatch-flight-key="${escapeHtml(dispatchFlightCacheKey(order))}">${escapeHtml(flightStatus.text)}</span></span>
-          <span class="dispatch-card-reference"><b>${escapeHtml(order.booking_no || "-")}</b>${order.flight_no ? `<span>航班 ${escapeHtml(normalizeFlightNumber(order.flight_no))}</span>` : `<span>無航班資料</span>`}</span>
-          <span class="dispatch-card-people"><span>${escapeHtml(order.assigned_vendor || order.vendor_name || driverFleet())}</span><span>${escapeHtml(order.driver_name || state.user?.name || "待指派司機")}</span></span>
-        </span>
-      </button>
-    </article>`;
+      </button></article>`;
   }
 
   function dispatchFlightCacheKey(order = {}) {
@@ -2381,13 +2369,9 @@
     });
   }
 
-  function backButton() {
-    return `<button class="back-btn" data-view="home">${iconSvg("M15 18 9 12l6-6")}<span>返回</span></button>`;
-  }
-
-  function pageHeader(_title = "", actions = "") {
-    return `<div class="driver-page-head compact-driver-head">${backButton()}${actions ? `<div class="driver-head-actions">${actions}</div>` : ""}</div>`;
-  }
+  function backButton() {return '<button type="button" class="ghost-btn driver-back" data-view="home" aria-label="返回司機首頁" title="返回"><span aria-hidden="true">返回</span></button>';}
+  function driverRefreshButton(){return '<button type="button" class="ghost-btn driver-refresh" data-action="driver-refresh" aria-label="重新整理" title="重新整理"><span aria-hidden="true">↻</span></button>';}
+  function pageHeader(_title='',actions=''){return '<div class="driver-page-head driver-toolbar">'+backButton()+'<div class="driver-head-actions driver-toolbar-controls">'+actions+'</div>'+driverRefreshButton()+'</div>';}
 
   function driverAnnouncements() {
     const list = [...visibleAnnouncements()].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
@@ -2396,7 +2380,11 @@
     state.page = Math.min(state.page, maxPage);
     const pageItems = list.slice((state.page - 1) * pageSize, state.page * pageSize);
     return `
-      ${pageHeader("公佈欄")}
+      ${pageHeader("公佈欄", `      <div class="pager">
+        <button class="ghost-btn" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一頁</button>
+        <span>${state.page} / ${maxPage}</span>
+        <button class="ghost-btn" data-page="${state.page + 1}" ${state.page >= maxPage ? "disabled" : ""}>下一頁</button>
+      </div>`)}
       <div class="luxury-card-mesh">
         ${pageItems.length ? pageItems.map((a) => `
           <article class="modern-luxury-item ${isAnnouncementRead(a.id) ? "is-muted" : ""}">
@@ -2410,11 +2398,7 @@
           </article>
         `).join("") : `<div class="empty">目前沒有公告</div>`}
       </div>
-      <div class="pager">
-        <button class="ghost-btn" data-page="${state.page - 1}" ${state.page <= 1 ? "disabled" : ""}>上一頁</button>
-        <span>${state.page} / ${maxPage}</span>
-        <button class="ghost-btn" data-page="${state.page + 1}" ${state.page >= maxPage ? "disabled" : ""}>下一頁</button>
-      </div>
+
     `;
   }
 
@@ -2431,11 +2415,10 @@
       return state.messageReadFilter === "read" ? isRead : !isRead;
     });
     return `
-      ${pageHeader("訊息中心")}
-      <div class="message-tabs">
+      ${pageHeader("訊息中心", `<div class="message-tabs">
         <button class="filter-btn ${state.messageReadFilter === "unread" ? "active" : ""}" data-message-filter="unread">未閱讀</button>
         <button class="filter-btn ${state.messageReadFilter === "read" ? "active" : ""}" data-message-filter="read">已閱讀</button>
-      </div>
+      </div>`)}
       <div class="message-center-list">
         ${items.length ? items.map((item) => {
           const isAnnouncement = item.message_kind === "公告";
@@ -2480,11 +2463,10 @@
     if (state.driverHelperCategory && !categories.includes(state.driverHelperCategory)) state.driverHelperCategory = "";
     const visible = state.driverHelperCategory ? articles.filter((item) => (item.category || defaultCategory) === state.driverHelperCategory) : articles;
     return `
-      ${pageHeader("司機幫手")}
-      <div class="helper-category-tabs">
+      ${pageHeader("司機幫手", `<div class="helper-category-tabs">
         <button class="filter-btn ${state.driverHelperCategory === "" ? "active" : ""}" data-helper-category="">全部</button>
         ${categories.map((category) => `<button class="filter-btn ${state.driverHelperCategory === category ? "active" : ""}" data-helper-category="${escapeHtml(category)}">${escapeHtml(category)}</button>`).join("")}
-      </div>
+      </div>`)}
       <div class="helper-article-list helper-readable-list">
         ${visible.length ? visible.map((item) => {
           const read = isHelperArticleRead(item.id);
@@ -2609,31 +2591,12 @@
     `;
   }
 
-  function driverFlights() {
-    const defaultDate = state.flightSearch.date || today();
-    return `
-      <div class="panel flight-panel flight-page">
-        <form id="flightSearchForm" class="flight-search">
-          <button class="ghost-btn flight-back-btn" type="button" data-view="home">返回</button>
-          <div class="flight-source-choice" role="radiogroup" aria-label="航班資料">
-            <input type="radio" id="sourceTaoyuan" name="flight_source" value="taoyuan" ${state.flightSearch.source === "taoyuan" ? "checked" : ""}>
-            <label for="sourceTaoyuan">桃園</label>
-            <input type="radio" id="sourceKaohsiung" name="flight_source" value="kaohsiung" ${state.flightSearch.source === "kaohsiung" ? "checked" : ""}>
-            <label for="sourceKaohsiung">高雄</label>
-            <input type="radio" id="sourceTdx" name="flight_source" value="tdx" ${state.flightSearch.source === "tdx" ? "checked" : ""}>
-            <label for="sourceTdx">TDX</label>
-          </div>
-          <label class="flight-date-field">
-            <span>日期</span>
-            <input name="date" type="date" aria-label="航班日期" value="${defaultDate}">
-          </label>
-          <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼" placeholder="輸入航班號碼，例如 JX12、BR108" autocomplete="off" autocapitalize="characters">
-          <button class="primary-btn" type="submit">查詢</button>
-        </form>
-        <p class="flight-help">選擇機場及日期，再輸入完整航班號碼查詢；同一航班 10 分鐘內共用資料。</p>
-        <div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"><div class="empty">請輸入航班號碼後按下查詢</div></div>
-      </div>
-    `;
+  function driverFlights(){
+    const date=state.flightSearch.date||today();
+    return `<section class="flight-page driver-flight-page"><form id="flightSearchForm" class="driver-toolbar driver-flight-toolbar">
+      ${backButton()}<details class="driver-flight-options"><summary class="ghost-btn" aria-label="選擇機場與日期" title="機場與日期">篩選</summary><div class="driver-flight-popover"><fieldset class="flight-source-choice"><legend>機場資料</legend>${[['taoyuan','桃園'],['kaohsiung','高雄'],['tdx','TDX']].map(([value,label])=>'<label><input type="radio" id="source'+({taoyuan:'Taoyuan',kaohsiung:'Kaohsiung',tdx:'Tdx'})[value]+'" name="flight_source" value="'+value+'" '+(state.flightSearch.source===value?'checked':'')+'>'+label+'</label>').join('')}</fieldset><label>日期<input name="date" type="date" aria-label="航班日期" value="${escapeHtml(date)}"></label></div></details>
+      <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼" placeholder="航班號碼" autocomplete="off" autocapitalize="characters"><button class="primary-btn" type="submit">查詢</button>${driverRefreshButton()}
+      </form><p class="flight-help">輸入航班號碼查詢；篩選可切換機場與日期，同一航班十分鐘內共用資料。</p><div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"><div class="empty">請輸入航班號碼後按下查詢</div></div></section>`;
   }
 
   function calendarItems(isAdmin) {
@@ -2763,7 +2726,7 @@
     }
     const content = `
       <div class="panel calendar-panel ${fleetOnly ? "fleet-maintenance-calendar" : ""}">
-        <div class="calendar-toolbar">
+        <div class="calendar-toolbar" ${!isAdmin&&!state.partner?'hidden':''}>
           ${exportOnly ? "" : `<button class="ghost-btn calendar-nav" data-calendar-month="-1" aria-label="上個月">${iconSvg("M15 18 9 12l6-6")}</button>`}
           <h3>${year} 年 ${month + 1} 月</h3>
           ${exportOnly ? "" : `<button class="ghost-btn calendar-nav" data-calendar-month="1" aria-label="下個月">${iconSvg("M9 18l6-6-6-6")}</button>`}
@@ -2780,7 +2743,7 @@
       .sort((a, b) => String(a.event_date).localeCompare(String(b.event_date)) || String(a.event_time || "").localeCompare(String(b.event_time || "")));
     if (!isAdmin) {
       const title = state.partner?.partner_type === "repair_shop" ? `${state.partner.name} 保養行事曆` : "共同行事曆";
-      const header = state.partner ? `<div class="driver-page-head"><h2>${escapeHtml(title)}</h2></div>` : pageHeader(title);
+      const header = state.partner ? `<div class="driver-page-head"><h2>${escapeHtml(title)}</h2></div>` : pageHeader(title, `<button class="ghost-btn calendar-nav" data-calendar-month="-1" aria-label="上個月">‹</button><strong class="driver-toolbar-month">${year} / ${String(month+1).padStart(2,"0")}</strong><button class="ghost-btn calendar-nav" data-calendar-month="1" aria-label="下個月">›</button>`);
       return `${header}${content}`;
     }
     return `
@@ -9980,7 +9943,7 @@
 
   async function fetchFlights(query = "", direction = "arrival", date = today(), airport = "TPE", source = "tdx") {
     if (!cfg.FLIGHT_INFO_URL) return [];
-    const endpoint = new URL(cfg.FLIGHT_INFO_URL);
+    const endpoint = new URL(cfg.FLIGHT_INFO_URL, location.origin);
     endpoint.searchParams.set("q", normalizeFlightSearchQuery(query));
     endpoint.searchParams.set("direction", direction);
     endpoint.searchParams.set("date", date || today());
@@ -10978,7 +10941,13 @@
       collectServiceParts(target.closest("form"));
       return;
     }
+    if(target.dataset.action==='driver-refresh'&&state.user&&!state.admin&&!state.partner){
+      if(state.view==='flights'){document.getElementById('flightSearchForm')?.requestSubmit();return;}
+      target.disabled=true;target.setAttribute('aria-busy','true');
+      try{if(state.view==='dispatchCenter')await refreshDispatchDay(true);else{await loadAll();render();}}catch(error){await showAlert(error.message,'重新整理失敗');}finally{target.disabled=false;target.removeAttribute('aria-busy');}return;
+    }
     if (target.dataset.view) {
+      if(target.dataset.view==="dispatchCenter")state.dispatchDateFilter=today();
       state.view = target.dataset.view;
       state.page = 1;
       render();
@@ -11389,6 +11358,7 @@
       return;
     }
     if (e.target.id === "flightSearchForm") {
+      e.target.querySelector(".driver-flight-options")?.removeAttribute("open");
       e.preventDefault();
       const data = new FormData(e.target);
       const query = String(data.get("flight") || "").trim();

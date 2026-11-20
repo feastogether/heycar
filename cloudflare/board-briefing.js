@@ -18,7 +18,7 @@ export function weatherItems(rows) {
   return rows.map((row,i)=>{
     const temperature=number(row.current?.temperature_2m),rain=number(row.daily?.precipitation_probability_max?.[0]);
     if (!Number.isFinite(temperature)||temperature < -30||temperature>60||!Number.isFinite(rain)||rain<0||rain>100||!/^\d{4}-\d\d-\d\dT\d\d:\d\d/.test(row.current?.time||'')) throw Error('WEATHER_FORMAT');
-    return {kind:'weather',text:CITIES[i][0]+' '+temperature.toFixed(1)+'°C · 今日降雨 '+Math.round(rain)+'% · '+row.current.time.replace('T',' ')+'｜Open-Meteo',date:row.current.time.slice(0,10)};
+    return {kind:'weather',text:CITIES[i][0]+' '+temperature.toFixed(1)+'°C · 今日降雨 '+Math.round(rain)+'%',source:'Open-Meteo',time:row.current.time,date:row.current.time.slice(0,10)};
   });
 }
 export function stockItem(payload, daily=false) {
@@ -53,5 +53,5 @@ export async function boardBriefing(bucket,{fetcher=fetch,now=Date.now(),include
     includeStock?cached(bucket,'stock',300000,async()=>{try{return [stockItem(await json(MIS,fetcher))];}catch{return [stockItem(await json(DAILY,fetcher),true)];}},now):Promise.resolve({items:[],updated_at:now})
   ]);
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date(now));
-  return {items:[...weather.items.filter(x=>x.date===today&&now-weather.updated_at<7200000).map(x=>({...x,text:x.text+(weather.delayed?' · 更新延遲':'')})),...stock.items.map(x=>({...x,text:x.text+(stock.delayed?' · 更新延遲':'')}))],next_refresh_at:now+300000,weather_delayed:!!weather.delayed,stock_delayed:!!stock.delayed};
+  return {items:[...weather.items.filter(x=>x.date===today&&now-weather.updated_at<7200000).map(x=>({...x,text:x.text.replace(/ · \d{4}-\d{2}-\d{2}.*$/,'')+(weather.delayed?' · 更新延遲':'')})),...stock.items.map(x=>({...x,text:x.text+(stock.delayed?' · 更新延遲':'')}))],next_refresh_at:now+300000,weather_delayed:!!weather.delayed,stock_delayed:!!stock.delayed};
 }

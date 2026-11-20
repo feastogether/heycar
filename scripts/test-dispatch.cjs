@@ -106,7 +106,7 @@ async function main() {
   front.dispatchFlightCacheKey = order => order.flight_no || '';
   front.window = { innerWidth: 390 };
   front.normalizeFlightNumber = value => value || '';
-  for (const name of ['driverFleet', 'dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus', 'validFlightNumberQuery']) vm.runInContext(functionSource(app, name), front);
+  for (const name of ['backButton','driverRefreshButton','driverFleet', 'dispatchOrderSort', 'dispatchOrderCard', 'resetDispatchFilters', 'adminDispatchCenter', 'findDriverForDispatch', 'excelCellDate', 'excelCellTime', 'dispatchRecordFromExcelRow', 'driverFlights', 'flightTimeMarkup', 'flightDetailItems', 'localizedFlightStatus', 'validFlightNumberQuery']) vm.runInContext(functionSource(app, name), front);
   assert.equal(front.localizedFlightStatus('Flew'), '已起飛');
   assert.equal(front.localizedFlightStatus('Gate Closed'), '登機門已關閉');
   assert.equal(front.localizedFlightStatus('Unmapped English Status'), '狀態更新中');
@@ -174,7 +174,7 @@ async function main() {
   assert.equal(front.state.dispatchAdminDateFilter, '2026-09-12');
   let time = 1000, requests = 0;
   const flightCache = vm.createContext({
-    cfg: { FLIGHT_INFO_URL: 'https://example.test/flights' }, URL,
+    cfg: { FLIGHT_INFO_URL: 'https://example.test/flights' }, URL,location:{origin:'https://example.test'},
     today: () => '2026-09-15', Date: { now: () => time },
     FLIGHT_CACHE_MS: 600000, flightRequestCache: new Map(),
     fetch: async () => { requests++; return { ok: true, status: 200, json: async () => ({ data: [{ flightNo: 'CI102' }] }) }; }
@@ -221,7 +221,7 @@ async function main() {
     const browser = await chromium.launch({ channel: 'msedge', headless: true });
     try {
       const page = await browser.newPage();
-      const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8') + fs.readFileSync(path.join(root, 'heycar-ui-enhance.css'), 'utf8') + fs.readFileSync(path.join(root, 'staff-home.css'), 'utf8');
+      const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8') + fs.readFileSync(path.join(root, 'heycar-ui-enhance.css'), 'utf8') + fs.readFileSync(path.join(root, 'staff-home.css'), 'utf8') + fs.readFileSync(path.join(root,'assets/driver-ui.css'),'utf8');
       for (const width of [320, 390, 768, 1440]) {
         front.window.innerWidth = width;
         html = front.adminDispatchCenter();
@@ -258,7 +258,7 @@ async function main() {
       front.state.flightSearch = { query: 'CI102', date: '2026-09-15', source: 'kaohsiung' };
       for (const width of [320, 390, 414, 430, 768, 1440]) {
         await page.setViewportSize({ width, height: 900 });
-        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style><div id="app"><div class="app-shell"><header class="topbar"><div class="brand"><img alt="logo"></div><div class="userbox"><div class="airport-weather">高雄機場 30C</div><button class="ghost-btn">登出</button></div></header><div class="marquee-alert"><div class="marquee-track"><span>航班資訊請依現場公告為準</span></div></div><main class="main">${front.driverFlights()}</main></div></div>`);
+        await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><style>${css}</style><div id="app"><div class="app-shell"><header class="topbar"><div class="brand"><img alt="logo"></div><div class="userbox"><div class="airport-weather">高雄機場 30C</div><button class="ghost-btn">登出</button></div></header><div class="marquee-alert"><div class="marquee-track"><span>航班資訊請依現場公告為準</span></div></div><main class="main"><section class="driver-workspace">${front.driverFlights()}</section></main></div></div>`);
         assert(await page.locator('#sourceKaohsiung').isChecked());
         assert.equal(await page.locator('input[name="flight"]').inputValue(), 'CI102');
         assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `flight overflow at ${width}`);
