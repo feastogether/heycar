@@ -118,7 +118,7 @@ async function main() {
   assert(!front.validFlightNumberQuery(''));
   assert(!front.validFlightNumberQuery('HND'));
   front.state.flightSearch = { query: '', date: '2026-09-20', source: 'taoyuan' };
-  assert(front.driverFlights().includes('請輸入航班號碼後按下查詢'));
+  assert(!front.driverFlights().includes('請輸入航班號碼後按下查詢'));assert(!front.driverFlights().includes('flight-help'));assert(front.driverFlights().includes('driverFlightFilters'));
   assert(!functionSource(app, 'renderDriver').includes('loadFlights('), 'entering the flight view must not auto-load flights');
   const flightBox = { innerHTML: '', isConnected: true, setAttribute(key, value) { this[key] = value; } };
   const flightSubmit = { disabled: false, textContent: '查詢', isConnected: true };

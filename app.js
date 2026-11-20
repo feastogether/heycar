@@ -2593,10 +2593,11 @@
 
   function driverFlights(){
     const date=state.flightSearch.date||today();
-    return `<section class="flight-page driver-flight-page"><form id="flightSearchForm" class="driver-toolbar driver-flight-toolbar">
-      ${backButton()}<details class="driver-flight-options"><summary class="ghost-btn" aria-label="選擇機場與日期" title="機場與日期">篩選</summary><div class="driver-flight-popover"><fieldset class="flight-source-choice"><legend>機場資料</legend>${[['taoyuan','桃園'],['kaohsiung','高雄'],['tdx','TDX']].map(([value,label])=>'<label><input type="radio" id="source'+({taoyuan:'Taoyuan',kaohsiung:'Kaohsiung',tdx:'Tdx'})[value]+'" name="flight_source" value="'+value+'" '+(state.flightSearch.source===value?'checked':'')+'>'+label+'</label>').join('')}</fieldset><label>日期<input name="date" type="date" aria-label="航班日期" value="${escapeHtml(date)}"></label></div></details>
-      <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼" placeholder="航班號碼" autocomplete="off" autocapitalize="characters"><button class="primary-btn" type="submit">查詢</button>${driverRefreshButton()}
-      </form><p class="flight-help">輸入航班號碼查詢；篩選可切換機場與日期，同一航班十分鐘內共用資料。</p><div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"><div class="empty">請輸入航班號碼後按下查詢</div></div></section>`;
+    return `<section class="flight-page driver-flight-page"><form id="flightSearchForm" class="driver-flight-search-form">
+      <div class="driver-toolbar driver-flight-toolbar">${backButton()}<button type="button" class="ghost-btn" data-action="driver-flight-filters" aria-label="選擇機場與日期" aria-controls="driverFlightFilters" aria-expanded="false">篩選</button>
+      <input name="flight" value="${escapeHtml(state.flightSearch.query)}" aria-label="航班號碼" placeholder="航班號碼" autocomplete="off" autocapitalize="characters"><button class="primary-btn" type="submit">查詢</button>${driverRefreshButton()}</div>
+      <div id="driverFlightFilters" class="driver-flight-filter-panel" hidden><fieldset class="flight-source-choice"><legend class="driver-sr-only">機場資料</legend>${[['taoyuan','桃園'],['kaohsiung','高雄'],['tdx','TDX']].map(([value,label])=>'<label><input type="radio" id="source'+({taoyuan:'Taoyuan',kaohsiung:'Kaohsiung',tdx:'Tdx'})[value]+'" name="flight_source" value="'+value+'" '+(state.flightSearch.source===value?'checked':'')+'><span>'+label+'</span></label>').join('')}</fieldset><label class="driver-flight-date"><span>日期</span><input name="date" type="date" aria-label="航班日期" value="${escapeHtml(date)}"></label></div>
+      </form><div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"></div></section>`;
   }
 
   function calendarItems(isAdmin) {
@@ -10941,6 +10942,9 @@
       collectServiceParts(target.closest("form"));
       return;
     }
+    if(target.dataset.action==='driver-flight-filters'){
+      const panel=document.getElementById('driverFlightFilters');if(panel){panel.hidden=!panel.hidden;target.setAttribute('aria-expanded',String(!panel.hidden));}return;
+    }
     if(target.dataset.action==='driver-refresh'&&state.user&&!state.admin&&!state.partner){
       if(state.view==='flights'){document.getElementById('flightSearchForm')?.requestSubmit();return;}
       target.disabled=true;target.setAttribute('aria-busy','true');
@@ -11358,7 +11362,7 @@
       return;
     }
     if (e.target.id === "flightSearchForm") {
-      e.target.querySelector(".driver-flight-options")?.removeAttribute("open");
+      const filters=e.target.querySelector('#driverFlightFilters');if(filters)filters.hidden=true;e.target.querySelector('[data-action="driver-flight-filters"]')?.setAttribute('aria-expanded','false');
       e.preventDefault();
       const data = new FormData(e.target);
       const query = String(data.get("flight") || "").trim();
