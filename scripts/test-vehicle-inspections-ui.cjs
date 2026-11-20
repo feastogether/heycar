@@ -26,7 +26,8 @@ async function main(){
   await admin.locator('[data-i-target]').first().check();await admin.locator('[data-i-create] [type=submit]').click();await admin.locator('[data-dialog-confirm]').click();
   await admin.locator('.vi-task-card').waitFor();let loaded=(await api('inspection_load')).data;assert.equal(loaded.total,1);const taskId=loaded.tasks[0].task.id;
   const driver=await browser.newPage({viewport:{width:390,height:844}});driver.on('pageerror',e=>errors.push(e.message));await driver.goto(base+'/?review=driver');
-  await driver.locator('[data-view="vehicleInspections"]').click();await driver.locator('[data-i-task]').click();await driver.locator('[data-i-camera]').waitFor();
+  await driver.locator('[data-view="vehicleInspections"]').click();await driver.locator('[data-i-task]').click();await driver.locator('[data-i-camera]').waitFor({state:'attached'});
+  assert.equal(await driver.locator('.vi-capture-panel').count(),0,'obsolete middle guide is removed');
   assert.equal(await driver.locator('[data-i-camera]').getAttribute('capture'),'environment');
   assert.equal(await driver.locator('.vi-photo-image .vi-position-guide svg').count(),10,'each empty photo tile shows its own positional guide');
   assert.equal(await driver.locator('.vi-photo-caption .vi-take-photo').count(),10,'every editable position invites direct photography');
@@ -43,7 +44,7 @@ async function main(){
     const encoded=await driver.evaluate(n=>{const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;const ctx=canvas.getContext('2d');ctx.fillStyle='hsl('+n*23+',60%,50%)';ctx.fillRect(0,0,640,480);ctx.fillStyle='#fff';ctx.font='40px sans-serif';ctx.fillText('Angle '+n,80,240);return canvas.toDataURL('image/png').split(',')[1];},++number);
     const response=driver.waitForResponse(async response=>response.url().endsWith('/__preview_api')&&response.request().postDataJSON()?.action==='inspection_photo');
     await chooser.setFiles({name:slot+'.png',mimeType:'image/png',buffer:Buffer.from(encoded,'base64')});
-    const result=await response;assert.equal(result.status(),200,await result.text());await driver.locator('[data-i-camera]:not([disabled])').waitFor();
+    const result=await response;assert.equal(result.status(),200,await result.text());await driver.locator('[data-i-camera]:not([disabled])').waitFor({state:'attached'});
   };
   for(const slot of slots)await shoot(slot);
   await driver.screenshot({path:path.join(root,'.fleet-preview/inspection-driver-mobile.png'),fullPage:true});
@@ -53,7 +54,7 @@ async function main(){
   await admin.locator('[data-i="refresh"]').click();await admin.locator('[data-i-task]').click();await admin.locator('[data-i="approve"]').waitFor();
   await admin.locator('[data-i-review]').locator('..').locator('summary').click();await admin.locator('[data-i-review] [value=front]').check();await admin.locator('[data-i-review] [value=odometer]').check();await admin.locator('[data-i-review] [name=reason]').fill('車頭與儀表請補拍');await admin.locator('[data-i-review] [type=submit]').click();await admin.locator('[data-dialog-confirm]').click();
   await admin.getByText('補拍說明：',{exact:false}).waitFor();
-  await driver.reload();await driver.locator('[data-view=vehicleInspections]').click();await driver.locator('[data-i-task]').click();await driver.locator('[data-i-camera]').waitFor();await driver.locator('[data-i-slot=right]').click();assert.equal(await driver.locator('[data-i-camera]').count(),0,'other angles are locked during supplements');
+  await driver.reload();await driver.locator('[data-view=vehicleInspections]').click();await driver.locator('[data-i-task]').click();await driver.locator('[data-i-camera]').waitFor({state:'attached'});await driver.locator('[data-i-slot=right]').click();assert.equal(await driver.locator('[data-i-camera]').count(),0,'other angles are locked during supplements');
   await shoot('front');await shoot('odometer');await driver.locator('[data-i="submit"]').click();await driver.locator('[data-dialog-confirm]').click();await driver.getByText('已送出檢查，等待車輛部審核。',{exact:true}).waitFor();
   await admin.locator('[data-i="refresh"]').click();await admin.locator('[data-i="approve"]').click();await admin.locator('[data-dialog-confirm]').click();await admin.getByText('已審核通過，照片及里程已鎖定。',{exact:true}).waitFor();
   await admin.locator('[data-i-preview]').first().click();await admin.locator('dialog.vi-photo-viewer').waitFor();assert(await admin.locator('dialog.vi-photo-viewer img').evaluate(img=>img.complete&&img.naturalWidth>0));await admin.locator('dialog.vi-photo-viewer button').click();

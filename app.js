@@ -15,7 +15,7 @@
   const supabaseStorageApiUrl = cfg.SUPABASE_URL ? `${cfg.SUPABASE_URL}/functions/v1/storage-api` : storageApiUrl;
   const hasApi = Boolean(dataApiUrl);
   const app = document.getElementById("app");
-  const directDriverViews = new Set(["vehicleInspections", "driverReporting", "dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "links", "flights", "emergency", "broadcast"]);
+  const directDriverViews = new Set(["heyPoints","equipmentLoans","vehicleInspections", "driverReporting", "dispatchCenter", "messagesCenter", "myVehicle", "calendar", "maintenance", "payments", "feedback", "driverHelper", "flights", "emergency", "broadcast"]);
   const initialDriverView = requestedDriverView();
 
   const state = {
@@ -116,6 +116,7 @@
   let dispatchRefreshTimer = null;
   let adminChatRefreshTimer = null;
   let adminChatLoadPromise = null;
+  let adminChatLoadSession = "";
   let loginHistoryRequest = 0;
   let weatherTicker = null;
   let satelliteMap = null;
@@ -276,7 +277,7 @@
     myVehicle: "M4 13l1.4-4.2A2.6 2.6 0 0 1 7.9 7h8.2a2.6 2.6 0 0 1 2.5 1.8L20 13M5 13h14v5H5v-5Zm2 5v2m10-2v2M7.5 15.5h.01m9 0h.01"
     ,dispatchCenter: "M4 5h16v14H4V5Zm4 4h8M8 13h5M16 13h.01M16 16h.01M8 16h5"
     ,messagesCenter: "M4 5h16v12H7l-3 3V5Zm4 4h8m-8 4h5"
-    ,feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
+    ,heyPoints:"m12 3 3 6 7 1-5 5 1 7-6-3-6 3 1-7-5-5 7-1Z",equipmentLoans:"M6 4h12v8H6Zm-1 8h14v7H5Zm3 7v3m8-3v3",feedback: "M5 4h14v13H9l-4 3V4Zm4 5h6m-6 4h4"
     ,links: "M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"
     ,driverHelper: "M5 4h14v15H5V4Zm3 4h8M8 12h8M8 16h5"
   };
@@ -293,7 +294,6 @@
     ["payments", "費用管理"],
     ["feedback", "意見反饋"],
     ["driverHelper", "司機幫手"],
-    ["links", "連結中心"],
     ["flights", "航班資訊"],
     ["emergency", "緊急事件"],
     ["broadcast", "機場轉播"]
@@ -852,10 +852,12 @@
     if (hasApi && state.apiSession) {
       const session = state.apiSession;
       const scope = state.admin && options.homeOnly ? "home" : state.admin && options.workspaceOnly ? "workspace" : "all";
-      const result = await apiRequest("load", { scope });
+      const date=state.admin?state.dispatchAdminDateFilter||today():state.dispatchDateFilter||today();
+      const result = await apiRequest("load", { scope,dispatch_date:date });
       if (session !== state.apiSession) return;
       state.data = scope === "workspace" ? { ...state.data, ...result.data } : { ...emptyData(), ...result.data };
       if (state.admin && scope !== "home") adminFullDataReady = true;
+      if(result.dispatch_date)dispatchDayLoaded=state.apiSession+":"+(state.admin?"admin":"driver")+":"+result.dispatch_date;
       if (result.user) state.user = result.user;
       if (result.partner) state.partner = result.partner;
       if (result.admin_profile) state.adminProfile = result.admin_profile;
@@ -1605,6 +1607,16 @@
     }, FLIGHT_CACHE_MS);
   }
 
+  let dispatchDayLoaded='',dispatchDayPending=null;
+  async function refreshDispatchDay(force=false){
+    if(!state.apiSession||(!state.admin&&!state.user))return;
+    const token=state.apiSession,admin=!!state.admin,date=admin?state.dispatchAdminDateFilter||today():state.dispatchDateFilter||today(),key=token+':'+(admin?'admin':'driver')+':'+date;
+    if(!force&&dispatchDayLoaded===key)return;
+    if(dispatchDayPending?.key===key)return dispatchDayPending.promise;
+    const pending={key,promise:null};
+    pending.promise=(async()=>{try{const result=await apiRequest('load_dispatch_day',{date});if(state.apiSession!==token||date!==(admin?state.dispatchAdminDateFilter||today():state.dispatchDateFilter||today()))return;state.data.dispatch_orders=[...(state.data.dispatch_orders||[]).filter(row=>String(row.reservation_date||'').slice(0,10)!==date),...(result.orders||[])];dispatchDayLoaded=key;if((admin&&state.adminView==='dispatchCenter')||(!admin&&state.view==='dispatchCenter'))render();}catch(error){console.warn('Dispatch refresh failed:',error.message);}finally{if(dispatchDayPending===pending)dispatchDayPending=null;}})();
+    dispatchDayPending=pending;return pending.promise;
+  }
   function ensureDispatchAutoRefresh() {
     const shouldRefresh = Boolean(state.user && state.view === "dispatchCenter" && state.apiSession);
     if (!shouldRefresh && dispatchRefreshTimer) {
@@ -1618,9 +1630,9 @@
         ensureDispatchAutoRefresh();
         return;
       }
+      if(document.hidden||navigator.onLine===false)return;
       try {
-        await loadAll();
-        render();
+        await refreshDispatchDay(true);
       } catch (error) {
         console.warn("dispatch refresh failed", error);
       }
@@ -1628,30 +1640,30 @@
   }
 
   function ensureAdminChatAutoRefresh() {
-    const shouldRefresh = Boolean(state.admin && state.adminChatOpen && state.apiSession);
+    const shouldRefresh = Boolean(state.admin && state.apiSession);
     if (!shouldRefresh && adminChatRefreshTimer) {
       clearInterval(adminChatRefreshTimer);
       adminChatRefreshTimer = null;
       return;
     }
     if (!shouldRefresh || adminChatRefreshTimer) return;
+    void loadAdminChat().then(updateAdminChatDom).catch(error=>{state.adminChatError=error.message;});
     adminChatRefreshTimer = setInterval(async () => {
-      if (document.hidden) return;
-      if (!state.admin || !state.adminChatOpen || !state.apiSession) {
+      if (!state.admin || !state.apiSession) {
         ensureAdminChatAutoRefresh();
         return;
       }
       try {
         const contactId = state.adminChatContactId;
         await loadAdminChat();
-        if (state.adminChatContactId===contactId && (!window.matchMedia("(max-width: 700px)").matches || state.adminChatMobileConversation)) await markAdminChatRead(contactId);
+        if (state.adminChatOpen && state.adminChatContactId===contactId && (!window.matchMedia("(max-width: 700px)").matches || state.adminChatMobileConversation)) await markAdminChatRead(contactId);
         updateAdminChatDom();
       } catch (error) {
         state.adminChatError = `即時通訊更新失敗：${error.message || error}`;
         updateAdminChatDom();
         console.warn("admin chat refresh failed", error);
       }
-    }, 5000);
+    }, 15000);
   }
 
   function driverNotificationCount() {
@@ -1828,7 +1840,7 @@
             </div>
             <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
               <div class="field full login-code-field">
-                
+
                 <div class="login-input-wrap"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm-7 7c.8-3.2 3.2-5 7-5s6.2 1.8 7 5"/></svg><input id="loginCode" name="login" aria-label="手機號碼或登入代碼" autocomplete="one-time-code" inputmode="numeric" placeholder="請輸入手機號碼或登入代碼" required ${state.loginLoading ? "disabled" : ""}></div>
               </div>
               <button class="primary-btn field full login-submit" type="submit" ${state.loginLoading ? "disabled" : ""}>
@@ -1869,9 +1881,11 @@
           ${driverFeature("calendar", "共同行事曆", "車隊派車與作業排程", 0)}
           ${driverFeature("maintenance", "保養維修", "保養與維修派工", pendingMaint)}
           ${driverFeature("payments", "費用管理", "費用與款項通知", pendingPay)}
+          ${driverFeature("equipmentLoans","用品租借","安全座椅與增高墊借還",0)}
+          ${driverFeature("heyPoints","HEY POINT","我的點數與禮品兌換",0)}
           ${driverFeature("feedback", "意見反饋", "回報問題與查看回覆", 0)}
           ${driverFeature("driverHelper", "\u53f8\u6a5f\u5e6b\u624b", "\u6559\u5b78\u6587\u7ae0\u8207\u5e38\u7528\u6307\u5357", 0)}
-          ${showLinkCenter ? driverFeature("links", "連結中心", "新進司機群組與常用連結", 0) : ""}
+
           ${driverFeature("flights", "航班資訊", "桃園機場航班查詢", 0)}
           ${driverFeature("emergency", "緊急事件", "查看事件處理流程", 0)}
           ${driverFeature("broadcast", "機場轉播", "即時觀看機場影像", 0)}
@@ -1881,6 +1895,8 @@
     }
 
     const views = {
+      heyPoints: benefitsPlaceholder,
+      equipmentLoans: benefitsPlaceholder,
       vehicleInspections: inspectionPlaceholder,
       driverReporting: reportingPlaceholder,
       announcements: driverAnnouncements,
@@ -1892,7 +1908,7 @@
       messages: () => driverTaskList("personal_messages", "私人訊息"),
       feedback: driverFeedback,
       driverHelper: driverHelper,
-      links: driverLinkCenter,
+
       emergency: driverEmergency,
       broadcast: driverBroadcast,
       flights: driverFlights,
@@ -1904,6 +1920,8 @@
       return;
     }
     layout(views[state.view]());
+    if(state.view==="dispatchCenter")void refreshDispatchDay();
+    if(["heyPoints","equipmentLoans"].includes(state.view))mountBenefits(false,state.view==="heyPoints"?"points":"equipment");
     if (state.view === "vehicleInspections") mountVehicleInspections(true);
     if (state.view === "driverReporting") mountDriverReporting(true);
   }
@@ -1916,6 +1934,9 @@
     catch(error){inspectionSummaryAt=Date.now();inspectionSummarySession=token;}
     finally {inspectionSummaryLoading=false;}
   }
+  function benefitsPlaceholder(){return '<div id="benefitsRoot"></div>';}
+  document.addEventListener("click",event=>{const b=event.target.closest("[data-service-photos]");if(b)window.HeycarBenefits.showPhotos({api:apiRequest,referenceId:b.dataset.servicePhotos,title:"保養完成照片"});});
+  function mountBenefits(admin,mode){window.HeycarBenefits?.mount(document.getElementById("benefitsRoot"),{api:apiRequest,admin,mode,drivers:state.data.drivers||[],confirm:showConfirm});}
   function inspectionPlaceholder() {return '<div id="vehicleInspectionsRoot"></div>';}
   function mountVehicleInspections(driver) {
     window.HeycarVehicleInspections?.mount(document.getElementById("vehicleInspectionsRoot"), {driver,driverId:driver?state.user.id:null,identity:driver?'driver:'+state.user.id:'admin:'+currentAdminChatId(),api:apiRequest,confirm:showConfirm,prompt:showPrompt,alert:showAlert});
@@ -2049,6 +2070,7 @@
   }
 
   function canShowDriverFeature(view) {
+    if (view === "links")return false;
     if (view === "driverReporting") return reportingEnabledForDealer(driverDealer()) && ["跑趟中", "待上線"].includes(state.user?.driver_status);
     const permissions = driverFrontendPermissions();
     return !permissions || permissions[view] !== false;
@@ -2319,11 +2341,11 @@
     const vehicles = driverAssignedVehicles();
     return `
       ${pageHeader("我的車輛")}
-      <div class="my-vehicle-list">
+      <div class="my-vehicle-list enhanced-vehicles">
         ${vehicles.length ? vehicles.map((vehicle) => {
           const events = vehicleUpcomingCalendar(vehicle);
           const rescuePhone = insuranceCompanyPhone(vehicle.voluntary_insurance_company || vehicle.insurance_company) || vehicle.roadside_assistance_phone || "-";
-          return `<article class="my-vehicle-card">
+          return `<article class="my-vehicle-card">${vehicleVisualArt(vehicle)}
             <header class="my-vehicle-head">
               <span class="plate-chip">${escapeHtml(vehicle.plate_no || "-")}</span>
               <div><strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "未設定車型")}</strong><small>${escapeHtml(vehicle.status || "未設定狀態")}</small></div>
@@ -2480,20 +2502,6 @@
   }
 
 
-  function driverLinkCenter() {
-    const dealerName = currentDriverDealerName();
-    const legacyFleet = driverFleet();
-    const links = (state.data.driver_links || []).filter((item) => {
-      const targetFleets = Array.isArray(item.target_fleets) && item.target_fleets.length ? item.target_fleets : ["全部車隊"];
-      return targetFleets.includes("全部車隊") || targetFleets.includes("全部車商") || targetFleets.includes(dealerName) || targetFleets.includes(legacyFleet);
-    });
-    return `${pageHeader("連結中心")}<div class="link-center-grid">${links.length ? links.map((item) => `
-      <a class="link-center-item" href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">
-        <span class="link-center-icon">${iconSvg(featureIcons.links)}</span>
-        <span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.description || "點選開啟連結")}</small></span>
-        <b>開啟</b>
-      </a>`).join("") : `<div class="empty">目前沒有可用連結</div>`}</div>`;
-  }
 
   function driverFeedback() {
     const items = mine("feedbacks").sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
@@ -2516,7 +2524,7 @@
       ${pageHeader(title)}
       <div class="luxury-card-mesh">
         ${items.length ? items.map((item) => `
-          <article class="modern-luxury-item ${item.status !== "pending" ? "is-muted" : ""}">
+          <article class="modern-luxury-item ${isMaint?'driver-maintenance-card':''} ${item.status !== "pending" ? "is-muted" : ""}">
             <div class="lux-item-top">
               <div class="lux-item-title-group">
                 <div class="lux-item-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
@@ -4355,7 +4363,7 @@
 
   function fleetForecastTable(rows) {
     const services = [["maintenance", "保養"], ["tires", "調胎"]];
-    return `<div class="fleet-table-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格">
+    return `<div class="fleet-table-scroll fleet-forecast-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格">
       <table class="fleet-data-table fleet-forecast-table fleet-two-tier">
         <colgroup span="1"></colgroup><colgroup span="2"></colgroup><colgroup span="3"></colgroup><colgroup span="3"></colgroup><colgroup span="1"></colgroup>
         <thead><tr>
@@ -4488,7 +4496,7 @@
 
   function renderFleetReportSettings(view, navigation) {
     const query = normalizedText(view.settingsSearch || "");
-    const vehicles = state.data.vehicles.map(vehicle => ({ vehicle, driver: vehicleAssignedDriverLabel(vehicle) }))
+    const vehicles = state.data.vehicles.filter(vehicle=>!view.settingsDealer||vehicle.dealer_partner_id===view.settingsDealer).map(vehicle => ({ vehicle, driver: vehicleAssignedDriverLabel(vehicle) }))
       .filter(({ vehicle, driver }) => !query || normalizedText([vehicle.plate_no, vehicle.model, driver].join(" ")).includes(query))
       .sort((a, b) => String(a.vehicle.plate_no).localeCompare(String(b.vehicle.plate_no)));
     const page = fleetListPage(vehicles, view.settingsPage, 25, "data-fleet-settings-page");
@@ -4497,7 +4505,7 @@
       ${vehicle[key] !== false ? "checked" : ""}><span>${label}</span></label>`;
     return `<section class="fleet-case-page fleet-workspace">${navigation}
       <section class="fleet-surface fleet-report-settings">
-        <form id="fleetReportSettingsSearch" class="fleet-list-toolbar"><label>搜尋車輛或使用人
+        <form id="fleetReportSettingsSearch" class="fleet-list-toolbar"><label>車商<select name="dealer"><option value="">全部車商</option>${(state.data.insurance_partners||[]).filter(row=>row.partner_type==="dealer").map(row=>`<option value="${row.id}" ${view.settingsDealer===row.id?"selected":""}>${escapeHtml(row.name)}</option>`).join("")}</select></label><label>搜尋車輛或使用人
           <input type="search" name="q" value="${escapeHtml(view.settingsSearch || "")}"></label><button class="ghost-btn">查詢</button></form>
         <p class="fleet-muted">使用人取自車輛管理。勾選後會立即更新報表顯示設定。</p>
         <div class="fleet-report-settings-list">${page.rows.map(({ vehicle, driver }) => `<article>
@@ -5001,6 +5009,9 @@
     render();
     try {
       const result = await storageRequest("list");
+      const operationFiles=await apiRequest("operation_storage");
+      const managedFiles=(operationFiles.files||[]).map(row=>({...row,name:row.name,path:row.path,folder:row.source,managed:true}));const managedPaths=new Set(managedFiles.map(row=>row.path.startsWith('r2://')?'photos/'+row.path.slice(5):row.path));result.files=[...(result.files||[]).filter(row=>!managedPaths.has(row.path)),...managedFiles];
+      state.operationStorageBytes=(operationFiles.files||[]).reduce((sum,row)=>sum+Number(row.size||0),0);
       state.storageFiles = result.files || [];
       state.storageUsedBytes = Number(result.used_bytes || 0);
       state.storageQuotaBytes = Number(result.quota_bytes || 1024 * 1024 * 1024);
@@ -5097,7 +5108,7 @@
       const bounds = [];
       locatedVehicles.forEach(({ vehicle, coords }) => {
         bounds.push(coords);
-        L.marker(coords)
+        L.marker(coords,{icon:L.divIcon({className:"satellite-car-marker",html:"🚙",iconSize:[42,42],iconAnchor:[21,21]})})
           .bindPopup(`<strong>${escapeHtml(vehicle.plate_no || "-")}</strong><br>${escapeHtml(vehicle.driver || "-")}<br>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}`)
           .addTo(satelliteMarkerLayer);
       });
@@ -5115,9 +5126,9 @@
     const folders = storageFolders();
     const files = filteredStorageFiles();
     return `
-      <div class="section-head"><div><h2>儲存空間</h2><small>管理 Cloudflare R2 附件與容量</small></div><div class="actions"><button class="danger-btn" data-action="delete-storage-files">刪除選取</button><button class="primary-btn" data-action="refresh-storage">${state.storageLoading ? "讀取中..." : "重新整理"}</button></div></div>
+      <div class="section-head"><div><h2>儲存空間</h2><small>一般附件與作業照片分來源顯示；照片 ${formatBytes(state.operationStorageBytes || 0)}</small></div><div class="actions"><button class="danger-btn" data-action="delete-storage-files">刪除選取</button><button class="primary-btn" data-action="refresh-storage">${state.storageLoading ? "讀取中..." : "重新整理"}</button></div></div>
       <section class="storage-usage ${warning}">
-        <div><strong>${formatBytes(state.storageUsedBytes)}</strong><span>已使用，共 ${formatBytes(state.storageQuotaBytes)}</span><b>${percent}%</b></div>
+        <div><strong>${formatBytes(state.storageUsedBytes)}</strong><span>R2 已使用，共 ${formatBytes(state.storageQuotaBytes)}</span><b>${percent}%</b></div>
         <div class="storage-meter"><span style="width:${percent}%"></span></div>
         ${percent >= 75 ? `<p>${percent >= 90 ? "儲存空間即將用完，請立即清理不需要的附件。" : "儲存空間已超過 75%，建議開始整理附件。"}</p>` : ""}
       </section>
@@ -5136,7 +5147,7 @@
       <div class="storage-file-list">
         ${files.length ? files.map((file) => `
           <div class="storage-file-row">
-            <label class="storage-file-check" title="選取檔案"><input type="checkbox" data-storage-file value="${escapeHtml(file.path)}"></label>
+            <label class="storage-file-check" title="選取檔案"><input type="checkbox" data-storage-file value="${escapeHtml(file.path)}" ${file.managed?'disabled title="作業照片請從檢查批次或原功能管理，避免破壞紀錄"':""}></label>
             <span><strong>${escapeHtml(file.name)}</strong><small>${escapeHtml(file.path)}</small></span>
             <b>${formatBytes(file.size)}</b>
             <time>${fmtDate(file.created_at)}</time>
@@ -5238,7 +5249,7 @@
               <button type="button" class="${state.eupSelectedVehicle === String(vehicle.car_unicode || "") ? "active" : ""}" data-satellite-refresh-car="${escapeHtml(vehicle.car_unicode || "")}">
                 <strong>${escapeHtml(vehicle.plate_no || "-")}</strong>
                 <span>${escapeHtml(vehicle.driver || "-")}</span>
-                <small>${escapeHtml(vehicle.status || "-")}${vehicle.speed ? ` · ${escapeHtml(vehicle.speed)} km/h` : ""}</small>
+                <small>${escapeHtml(vehicle.status || "-")} · ${escapeHtml(vehicle.speed??0)} km/h</small>
                 <em>${escapeHtml(vehicle.address || vehicle.gps_time || "-")}</em>
               </button>
             `).join("") : `<p>尚未取得衛星犬車輛資料。</p>`}
@@ -5531,7 +5542,7 @@
       emergencyEvents: ["messages"],
       driverHelperArticles: ["messages"],
       loginSlogans: ["messages"],
-      driverLinks: ["messages"],
+
       payments: ["finance"],
       mailManagement: ["messages"],
       hiringManagement: ["drivers"],
@@ -5541,6 +5552,8 @@
   }
 
   const adminNavLabels = {
+    heyPoints: "點數管理",
+    equipmentManagement: "安椅管理",
     vehicleInspections: "車輛檢查",
     driverReporting: "司機報班",
     home: "首頁",
@@ -5573,7 +5586,7 @@
     emergencyEvents: "緊急事件",
     driverHelperArticles: "\u53f8\u6a5f\u5e6b\u624b",
     loginSlogans: "\u6a19\u8a9e\u7ba1\u7406",
-    driverLinks: "連結管理",
+
     loginHistory: "登入紀錄",
     bom: "BOM表",
     vehicleTypes: "車種管理",
@@ -5584,10 +5597,10 @@
   const adminNavDepartments = [
     ["員工辦公室", ["home"]],
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["heyPoints", "equipmentManagement", "drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["dispatchCenter", "driverReporting", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "vehicleInspections", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
-    ["系統管理", ["adminUsers", "loginHistory", "driverLinks", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
+    ["系統管理", ["adminUsers", "loginHistory", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
   ];
 
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
@@ -5607,13 +5620,13 @@
       if (!items.length) return "";
       return `<section class="nav-group">
         <div class="nav-group-title"><span>${department}</span></div>
-        <div class="nav-group-items">${items.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${adminNavLabels[key] || text}"><span class="nav-icon">${icon}</span><span class="nav-label">${adminNavLabels[key] || text}</span></button>`).join("")}</div>
+        <div class="nav-group-items">${items.map(([key, text, icon]) => `<button class="nav-btn ${state.adminView === key ? "active" : ""}" data-admin-view="${key}" title="${adminNavLabels[key] || text}"><span class="nav-icon">${icon}</span><span class="nav-label">${adminNavLabels[key] || text}</span>${key==="feedbacks"&&(state.feedbackPending??(state.data.feedbacks||[]).filter(row=>!row.admin_reply).length)?`<b class="nav-unread-badge">${(state.feedbackPending??(state.data.feedbacks||[]).filter(row=>!row.admin_reply).length)}</b>`:""}</button>`).join("")}</div>
       </section>`;
     }).join("");
   }
 
   function currentAdminChatId() {
-    return state.adminProfile?.id || "super-admin";
+    return state.adminProfile?.is_super_admin?"super-admin":state.adminProfile?.id || "super-admin";
   }
 
   function currentAdminChatName() {
@@ -5752,7 +5765,8 @@
   }
 
   function loadAdminChat() {
-    if (!adminChatLoadPromise) adminChatLoadPromise = fetchAdminChat().finally(() => { adminChatLoadPromise = null; });
+    if(adminChatLoadSession!==state.apiSession){adminChatLoadSession=state.apiSession;adminChatLoadPromise=null;state.adminChatContactId="";state.adminChatDraft="";state.chatNotificationInitialized=false;state.chatSince="";state.chatDirectoryAt=0;state.feedbackPending=0;state.data.admin_chat_messages=[];state.data.admin_chat_groups=[];state.data.admin_chat_group_messages=[];}
+    if (!adminChatLoadPromise) {const pending=fetchAdminChat().finally(() => {if(adminChatLoadPromise===pending)adminChatLoadPromise = null;});adminChatLoadPromise=pending;}
     return adminChatLoadPromise;
   }
 
@@ -5760,9 +5774,13 @@
     if (!state.admin || !state.apiSession) return;
     const session = state.apiSession;
     const contactId = state.adminChatContactId || "";
-    const result = await apiRequest("load_admin_chat",{group_id:contactId.startsWith("group:") ? contactId.slice(6) : ""});
+    const oldMessages=new Set((state.data.admin_chat_messages||[]).map(item=>item.id));
+    const oldGroupMessages=new Set((state.data.admin_chat_groups||[]).map(group=>group.last_message?.id));
+    let result;const payload={group_id:contactId.startsWith("group:")?contactId.slice(6):"",since:state.chatSince||"",directory:!state.chatDirectoryAt||Date.now()-state.chatDirectoryAt>300000};
+    try{result=await apiRequest("load_admin_chat",payload);}catch(error){if(payload.group_id&&/群組.*成員|群組.*不存在/.test(error.message||"")){state.adminChatContactId="";result=await apiRequest("load_admin_chat",{...payload,group_id:""});}else throw error;}
     if (state.apiSession !== session) return;
     if (result.admin_users) {
+      state.chatDirectoryAt=Date.now();
       const existing = new Map((state.data.admin_users || []).map(user => [user.id, user]));
       const directory = result.admin_users.map(user => ({ ...existing.get(user.id), ...user }));
       if (adminCan("super")) {
@@ -5771,7 +5789,16 @@
       }
       state.data.admin_users = directory;
     }
-    state.data.admin_chat_messages = result.admin_chat_messages || [];
+    if(state.chatNotificationInitialized){
+      const incoming=(result.admin_chat_messages||[]).filter(item=>!oldMessages.has(item.id)&&item.receiver_id===currentAdminChatId()&&!item.read_at);
+      for(const group of result.admin_chat_groups||[])if(group.last_message&&group.last_message.sender_id!==currentAdminChatId()&&!oldGroupMessages.has(group.last_message.id)&&group.unread_count>0)incoming.push({...group.last_message,sender_name:group.name});
+      for(const item of incoming.slice(-3))if("Notification"in window&&Notification.permission==="granted"&&(!document.hasFocus()||!state.adminChatOpen)){const alert=new Notification(item.sender_name||"HEYCAR 新訊息",{body:String(item.message||item.content||"您有新的對話").slice(0,120),tag:"heycar-chat-"+item.id,icon:"/assets/heycar-favicon.png"});alert.onclick=()=>{window.focus();state.adminChatOpen=true;render();alert.close();};}
+    }
+    state.feedbackPending=Number(result.feedback_count||0);
+    const feedbackButton=document.querySelector('[data-admin-view="feedbacks"]');if(feedbackButton){feedbackButton.querySelector('.nav-unread-badge')?.remove();if(state.feedbackPending)feedbackButton.insertAdjacentHTML('beforeend','<b class="nav-unread-badge">'+state.feedbackPending+'</b>');}
+    state.chatNotificationInitialized=true;
+    state.data.admin_chat_messages = result.incremental?[...new Map([...(state.data.admin_chat_messages||[]),...(result.admin_chat_messages||[])].map(row=>[row.id,row])).values()]:result.admin_chat_messages||[];
+    if(result.snapshot_at)state.chatSince=result.snapshot_at;
     state.data.admin_chat_groups = result.admin_chat_groups || [];
     if (result.group_id) {
       const existing = state.data.admin_chat_group_messages || [];
@@ -5781,6 +5808,7 @@
     }
     if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
     state.adminChatError = "";
+    document.title=adminUnreadChatCount()?"("+adminUnreadChatCount()+") HEYCAR 新訊息":"heycar 亞菲得";
   }
 
   function adminUnreadChatCount() {
@@ -5854,6 +5882,7 @@
     finally { delete form.dataset.saving; button.disabled=false; button.textContent="建立群組"; }
   }
 
+  document.addEventListener("click",async event=>{if(!event.target.closest("[data-enable-browser-notifications]"))return;if(!("Notification"in window)){await showAlert("此瀏覽器不支援通知，仍會顯示頁籤未讀數。","瀏覽器通知");return;}const result=await Notification.requestPermission();await showAlert(result==="granted"?"已開啟。保持網站開啟，新訊息會透過瀏覽器通知顯示。":"未取得通知權限，請在瀏覽器網站設定中允許通知。","瀏覽器通知");});
   function adminChatWidget() {
     if (!state.admin) return "";
     const unread = adminUnreadChatCount();
@@ -5868,7 +5897,7 @@
       ${fab}
       <div class="admin-chat-panel">
         <header class="admin-chat-head">
-          <div class="admin-chat-identity">${adminChatAvatar(currentAdminChatId())}<div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div></div>
+          <button class="ghost-btn" type="button" data-enable-browser-notifications title="啟用瀏覽器新訊息通知">🔔 通知</button><div class="admin-chat-identity">${adminChatAvatar(currentAdminChatId())}<div><strong>即時對話</strong><small>${escapeHtml(currentAdminChatName())}</small></div></div>
           <button class="ghost-btn icon-btn" type="button" data-action="toggle-admin-chat" aria-label="關閉對話">×</button>
         </header>
         <div class="admin-chat-layout">
@@ -5920,7 +5949,7 @@
     const id=ownProfileKey(),type=state.admin?"admin":state.partner?"partner":"driver";
     const account=state.admin?{...(state.data.admin_users||[]).find(row=>row.id===id),...state.adminProfile}:state.user||state.partner||{};
     const profile=avatarProfiles.find(row=>row.actor_id===id&&row.actor_type===type);
-    return '<button type="button" class="own-avatar-button" data-own-avatar aria-label="編輯我的頭像" title="編輯我的頭像">'+staffAvatar({id,name:account.name,avatar_url:profile?.avatar_url||account.avatar_url||(state.admin?(state.data.admin_users||[]).find(row=>row.id===id)?.avatar_url:"")},true)+'</button>';
+    return '<button type="button" class="own-avatar-button" data-own-avatar aria-label="個人資料" title="個人資料">'+staffAvatar({id,name:account.name,avatar_type:type,systemAvatar:type==="driver",avatar_url:(type==="driver"?account.photo_url:profile?.avatar_url)||account.avatar_url||(state.admin?(state.data.admin_users||[]).find(row=>row.id===id)?.avatar_url:"")},true)+'</button>';
   }
   let avatarLoading=false;
   async function ensureOwnAvatar() {
@@ -5934,6 +5963,7 @@
   }
 
   function openOwnAvatar() {
+    if(state.user&&!state.admin&&!state.partner){state.view="heyPoints";render();return;}
     const modal = document.createElement("div"); modal.className="modal-backdrop";
     modal.innerHTML='<section class="modal own-avatar-editor"><div class="modal-title"><h3>我的頭像</h3></div><div class="own-avatar-body">'+ownAvatarButton()+'<label>選擇照片<input data-own-avatar-file type="file" accept="image/png,image/jpeg,image/webp"></label><p>照片會自動裁成正方形並壓縮，顯示為圓形頭像。</p><p role="status" data-own-avatar-status></p></div><div class="modal-actions"><button class="ghost-btn" data-close-modal>關閉</button><button class="primary-btn" data-own-avatar-save disabled>儲存頭像</button></div></section>';
     document.body.appendChild(modal);
@@ -5958,9 +5988,9 @@
 
   function staffAvatar(user = {}, eager = false) {
     const isSuper = user.id === "super-admin";
-    const profile = avatarProfiles.find(row=>row.actor_id === user.id);
+    const profile = user.systemAvatar?null:avatarProfiles.find(row=>row.actor_id === user.id&&row.actor_type===(user.avatar_type||"admin"));
     const url = String(profile?.avatar_url || user.avatar_url || (isSuper ? "./assets/heycar-afide-logo.png" : ""));
-    const safeUrl = isSuper || /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
+    const safeUrl = isSuper || (url.startsWith("/")&&!url.startsWith("//")) || url.startsWith("./assets/") || /^https?:\/\//i.test(url) || /^data:image\/(png|jpeg|webp);base64,/i.test(url);
     return `<span class="staff-avatar">${safeUrl ? `<img ${isSuper ? 'class="staff-super-avatar"' : ""} src="${escapeHtml(url)}" alt="${escapeHtml(user.name || "夥伴")}的頭像" loading="${eager ? "eager" : "lazy"}">` : `<span>${escapeHtml(String(user.name || "夥").slice(-2))}</span>`}</span>`;
   }
 
@@ -6077,11 +6107,13 @@
       ["loginHistory", "登入紀錄", "🕘", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
-      
+
       ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
       ["driverReporting", "司機報班", "🗓️", "driverReporting"],
+      ["heyPoints","點數管理","⭐","heyPoints"],
+      ["equipmentManagement","安椅管理","💺","equipmentManagement"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleInspections", "車輛檢查", "📷", "vehicleInspections"],
       ["fleetCases", "罰單管理", "🧾", "fleetCases"],
@@ -6094,7 +6126,6 @@
       ["storage", "儲存空間", "💾", "storage"],
       ["trafficMonitor", "流量監測", "📈", "super"],
       ["satelliteMonitor", "衛星犬監測", "📍", "super"],
-      ["driverLinks", "連結管理", "🔗", "driverLinks"],
       ["mailManagement", "寄信管理", "📮", "mailManagement"],
       ["bom", "BOM表", "🧩", "bom"],
       ["announcements", "公告管理", "📢", "announcements"],
@@ -6130,6 +6161,8 @@
       maintenanceManagement: renderFleetOperations,
       idleManagement: renderFleetOperations,
       fleetPolicies: renderFleetOperations,
+      heyPoints: benefitsPlaceholder,
+      equipmentManagement: benefitsPlaceholder,
       vehicleLoans: adminVehicleLoans,
       serviceRecords: adminServiceRecords,
       insuranceCenter: adminInsuranceCenter,
@@ -6145,7 +6178,7 @@
       marquee: adminMarquee,
       loginSlogans: adminLoginSlogans,
       emergencyEvents: adminEmergencyEvents,
-      driverLinks: adminDriverLinks,
+
       mailManagement: adminMailManagement,
       bom: adminBom
     }[state.adminView]();
@@ -6171,16 +6204,11 @@
     const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
+    if(state.adminView==="dispatchCenter")void refreshDispatchDay();
+    if(["heyPoints","equipmentManagement"].includes(state.adminView))mountBenefits(true,state.adminView==="heyPoints"?"points":"equipment");
     if (state.adminView === "vehicleInspections") mountVehicleInspections(false);
     if (state.adminView === "driverReporting") mountDriverReporting(false);
-    if (state.adminView === "home" && !adminFullDataReady && !adminWarmupScheduled && state.apiSession) {
-      adminWarmupScheduled = true;
-      const session = state.apiSession;
-      setTimeout(() => {
-        if (state.apiSession !== session) return;
-        ensureAdminWorkspaceData().catch(error => console.warn("Workspace prefetch deferred", error.message));
-      }, 250);
-    }
+
   }
 
   function adminDrivers() {
@@ -6462,7 +6490,7 @@
       emergencyEvents: "messages",
       driverHelperArticles: "messages",
       loginSlogans: "messages",
-      driverLinks: "messages",
+
       payments: "finance"
     };
     return Boolean(permissions?.[legacy[key]]);
@@ -7108,7 +7136,7 @@
 
   function adminMarquee() {
     return `
-      <div class="section-head"><h2>跑馬燈號</h2><button class="primary-btn" data-modal="marqueeMessage">新增跑馬燈號</button></div>
+      <div class="section-head"><h2>跑馬燈號</h2><div class="inline-actions"><a class="ghost-btn" href="/flight-board" target="_blank" rel="noopener">電視航班／新聞看板</a><button class="primary-btn" data-modal="marqueeMessage">新增跑馬燈號</button></div></div>
       ${table(["通知內容", "狀態", "建立日期", "操作"], (state.data.marquee_messages || []).map((item) => [
         item.message || "",
         item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
@@ -7491,7 +7519,7 @@
           <button class="ghost-btn" data-action="bulk-maintenance-notification">群發通知</button>
           <button class="primary-btn" data-modal="maintenanceNotification">新增保養通知</button></div>
       </div>
-      ${page.rows.length ? table(taskHeaders("maintenance_notifications"), page.rows.map(row => taskRow("maintenance_notifications", row)), "fleet-notification-table")
+      ${page.rows.length ? table(taskHeaders("maintenance_notifications"), page.rows.map(row => {const cells=taskRow("maintenance_notifications",row);cells[cells.length-1]+='<button class="ghost-btn" data-service-photos="'+row.id+'">照片</button>';return cells;}), "fleet-notification-table")
         : '<p class="empty">沒有符合條件的個別保養通知。</p>'}
       ${page.controls}
     </section>
@@ -7639,7 +7667,7 @@
       bomPackage: ["BOM套餐", "bom_packages", bomPackageForm],
       marqueeMessage: ["跑馬燈號", "marquee_messages", marqueeMessageForm],
       emergencyEvent: ["緊急事件", "emergency_events", emergencyEventForm],
-      driverLink: ["連結", "driver_links", driverLinkForm],
+
       mailRecipient: ["地址", "mail_recipients", mailRecipientForm],
       mailShipment: ["寄件紀錄", "mail_shipments", mailShipmentForm],
       hiringPage: ["招募頁", "hiring_pages", hiringPageForm],
@@ -8471,16 +8499,6 @@
       ${table(["姓名/電話", "居住縣市", "方案／工作型態", "職業駕照", "可接聽時間", "機場接送經驗", "送出時間", "操作"], rows, "hiring-application-table")}`;
   }
 
-  function adminDriverLinks() {
-    return `<div class="section-head"><div><h2>連結管理</h2><small>新進司機入隊後三天內可查看</small></div><button class="primary-btn" data-modal="driverLink">新增連結</button></div>
-      ${table(["名稱", "說明", "可見車隊", "連結", "狀態", "操作"], (state.data.driver_links || []).map((item) => [
-        item.name, item.description || "-",
-        Array.isArray(item.target_fleets) && item.target_fleets.length ? item.target_fleets.join("、") : "全部車隊",
-        `<a href="${escapeHtml(item.url)}" target="_blank" rel="noopener noreferrer">開啟連結</a>`,
-        item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
-        rowActions("driverLink", "driver_links", item.id)
-      ]))}`;
-  }
 
   function multiAttachmentField(item, name, label) {
     const files = Array.isArray(item?.[name]) ? item[name] : [];
@@ -8616,15 +8634,13 @@
   }
 
   function searchableDriverOptions(value) {
-    return `<div class="field full driver-picker single-driver-picker">
-      <label>指定駕駛</label>
-      <div class="driver-picker-toolbar"><input type="search" data-driver-picker-search placeholder="輸入姓名快速搜尋"><span data-driver-picker-count>${value ? "已選擇 1 位" : "尚未選擇"}</span></div>
-      <div class="driver-picker-list">
-        <label class="driver-picker-option" data-driver-picker-option data-search-text="未指定"><input type="radio" name="driver_id" value="" ${!value ? "checked" : ""}><span>未指定</span></label>
-        ${state.data.drivers.map((driver) => `<label class="driver-picker-option" data-driver-picker-option data-search-text="${escapeHtml(String(driver.name).toLowerCase())}"><input type="radio" name="driver_id" value="${driver.id}" ${value === driver.id ? "checked" : ""}><span>${escapeHtml(driver.name)}</span></label>`).join("")}
-      </div>
-    </div>`;
+    const selected=state.data.drivers.find(row=>row.id===value),preferred=(state.data.insurance_partners||[]).find(row=>row.partner_type==='dealer'&&/亞菲得/.test(row.name));
+    const dealer=selected?.dealer_partner_id||preferred?.id||'';
+    return '<div class="field full driver-picker single-driver-picker service-driver-picker"><label>本次通知司機</label><div class="driver-picker-toolbar"><select data-service-driver-dealer aria-label="篩選車商"><option value="">全部車商</option>'+(state.data.insurance_partners||[]).filter(row=>row.partner_type==='dealer').map(row=>'<option value="'+row.id+'" '+(row.id===dealer?'selected':'')+'>'+escapeHtml(row.name)+'</option>').join('')+'</select><input type="search" data-service-driver-search placeholder="輸入姓名或手機尋找司機" value="'+escapeHtml(selected?.name||'')+'"></div><small data-service-driver-selected>'+escapeHtml(selected?'已選：'+selected.name:'尚未選擇司機')+'</small><div class="driver-picker-list"><label class="driver-picker-option" data-service-driver-option data-dealer="" data-search=""><input type="radio" name="driver_id" value="" '+(!value?'checked':'')+'><span>未指定</span></label>'+state.data.drivers.filter(row=>row.driver_status==='跑趟中'||row.id===value).map(row=>'<label class="driver-picker-option" data-service-driver-option data-dealer="'+escapeHtml(row.dealer_partner_id||'')+'" data-search="'+escapeHtml((row.name+' '+(row.phone||'')).toLowerCase())+'" '+(row.id!==value&&dealer&&row.dealer_partner_id!==dealer?'hidden':'')+'><input type="radio" name="driver_id" value="'+row.id+'" '+(row.id===value?'checked':'')+'><span>'+escapeHtml(row.name)+'<small>'+escapeHtml(row.phone||'')+'</small></span></label>').join('')+'</div></div>';
   }
+  function filterServiceDrivers(target){const picker=target.closest('.service-driver-picker');if(!picker)return;const q=picker.querySelector('[data-service-driver-search]').value.trim().toLowerCase(),dealer=picker.querySelector('[data-service-driver-dealer]').value;picker.querySelectorAll('[data-service-driver-option]').forEach(row=>row.hidden=!!((dealer&&row.dataset.dealer&&row.dataset.dealer!==dealer)||(q&&!row.dataset.search.includes(q))));}
+  document.addEventListener('input',event=>{if(event.target.matches('[data-service-driver-search]'))filterServiceDrivers(event.target);});
+  document.addEventListener('change',event=>{if(event.target.matches('[data-service-driver-dealer]')){event.target.closest('.service-driver-picker').querySelector('[data-service-driver-search]').value='';filterServiceDrivers(event.target);}if(event.target.matches('.service-driver-picker [name=driver_id]')){const picker=event.target.closest('.service-driver-picker');picker.querySelector('[data-service-driver-selected]').textContent='已選：'+(state.data.drivers.find(row=>row.id===event.target.value)?.name||'未指定');}});
 
   function vehicleOptions(value) {
     return select("vehicle_id", "指定車輛", value || "", [["", "請選擇"], ...state.data.vehicles.map((v) => [v.id, vehicleName(v.id)])]);
@@ -8766,14 +8782,6 @@
     </div>`;
   }
 
-  function driverLinkForm(item) {
-    return input("name", "\u9023\u7d50\u540d\u7a31", item.name, "text", true)
-      + input("url", "\u9023\u7d50\u7db2\u5740", item.url, "url", true)
-      + input("description", "\u8aaa\u660e", item.description)
-      + input("sort_order", "\u6392\u5e8f", item.sort_order || 0, "number")
-      + fleetMultiOptions("target_fleets", "\u53ef\u67e5\u770b\u8eca\u968a", item.target_fleets)
-      + checkbox("active", "\u555f\u7528\u9023\u7d50", item.active !== false);
-  }
 
   function driverHelperArticleForm(item) {
     return input("category", "\u5206\u985e", item.category || "\u4e00\u822c\u6559\u5b78", "text", true)
@@ -9377,6 +9385,8 @@
   function syncMaintenanceDriverPicker(form, vehicle) {
     if (!form?.querySelector("[data-maintenance-driver-help]")) return;
     const driver = currentMaintenanceDriver(vehicle);
+    const servicePicker=form.querySelector('.service-driver-picker');
+    if(servicePicker){servicePicker.outerHTML=searchableDriverOptions(driver?.id||'');}
     form.querySelectorAll('input[name="driver_id"]').forEach(input => { input.checked = input.value === (driver?.id || ""); });
     const count = form.querySelector("[data-driver-picker-count]");
     if (count) count.textContent = driver ? "已選擇 1 位" : "尚未選擇";
@@ -10115,6 +10125,7 @@
             ${flightDetailItems(flight, flight.direction || "arrival")}
           </div>
           <div class="flight-update">資料來源：${escapeHtml(flight.source || "TDX")} ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
+          ${state.user && !state.admin && !state.partner && flight.direction === "arrival" && flight.sourceType === "taoyuan" ? `<div class="flight-follow-actions"><button class="primary-btn" data-flight-follow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}">追蹤並顯示於電視</button><button class="ghost-btn" data-flight-unfollow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}">取消追蹤</button></div>` : ""}
         </article>
       `).join("") : `<div class="empty">${escapeHtml(sourceName)}查無符合的航班。請確認日期、機場與班號是否正確。</div>`;
     } catch (error) {
@@ -10244,6 +10255,15 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    if (target?.dataset.flightFollow || target?.dataset.flightUnfollow) {
+      target.disabled = true;
+      try {
+        const response = await fetch('/api/flight-board', { method:'POST', headers:{'Content-Type':'application/json','x-afide-session':state.apiSession}, body:JSON.stringify({action:target.dataset.flightFollow?'follow':'unfollow',flight_no:target.dataset.flightFollow||target.dataset.flightUnfollow,date:target.dataset.flightDate}), signal:AbortSignal.timeout(25000) });
+        const result = await response.json(); if (!response.ok) throw new Error(result.error || '追蹤失敗');
+        await showAlert(target.dataset.flightFollow?'已追蹤。航班抵達後，已配對並啟用廣播的電視會提醒。':'已取消此航班追蹤。','航班追蹤');
+      } catch(error) { await showAlert(error.message,'航班追蹤'); } finally { target.disabled=false; }
+      return;
+    }
     if (target?.dataset.vehiclePolicy || target?.dataset.vehicleFines) {
       await openVehicleHistory(target.dataset.vehiclePolicy || target.dataset.vehicleFines, target.dataset.vehiclePolicy ? "policy" : "fines");
       return;
@@ -10985,7 +11005,7 @@
       render();
     }
     if (target.dataset.adminView) {
-      if (!["home", "driverReporting", "vehicleInspections"].includes(target.dataset.adminView) && !adminFullDataReady) {
+      if (!["home", "driverReporting", "vehicleInspections", "heyPoints", "equipmentManagement"].includes(target.dataset.adminView) && !adminFullDataReady) {
         try { await withAppLoading("正在載入功能資料", ensureAdminWorkspaceData); }
         catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
       }
@@ -11206,20 +11226,10 @@
     }
     if (target.dataset.taskStatus) {
       const [tableName, id, status] = target.dataset.taskStatus.split(":");
-      if (tableName === "maintenance_notifications" && status === "completed" && state.data.maintenance_notifications.find(row => row.id === id)?.service_schedule_id) {
-        if (target.disabled) return;
-        if (!(await showConfirm("確認已完成本次保養／調胎？送出後將通知車輛部登打工單。", "完成確認"))) return;
-        target.disabled = true;
-        try {
-          const value = await showPrompt("請輸入完成時的儀表里程（公里）", "", "完成里程");
-          if (value === null) return;
-          const mileage = Number(value);
-          if (!String(value).trim() || !Number.isFinite(mileage) || mileage < 0) throw new Error("請輸入有效里程");
-          const result = await apiRequest("complete_service_schedule", { id, odometer: mileage });
-          Object.assign(state.data.maintenance_notifications.find(row => row.id === id) || {}, result.notification);
-        } catch(error) { await showAlert(error.message, "未能完成保養回報"); }
-        finally { target.disabled = false; }
-      } else await update(tableName, id, { status });
+      if (tableName === "maintenance_notifications" && status === "completed" && !state.data.maintenance_notifications.find(row => row.id === id)?.batch_id) {
+        window.HeycarBenefits.capture({api:apiRequest,purpose:"service",referenceId:id,title:"完成保養／維修回報",slots:window.HeycarBenefits.photoSlots,onSave:async(photos,odometer)=>{const result=await apiRequest("complete_service_schedule",{id,odometer,photos});Object.assign(state.data.maintenance_notifications.find(row=>row.id===id)||{},result.notification);if(result.event?.id)Object.assign(state.data.calendar_events.find(row=>row.id===result.event.id)||{},result.event);render();}});return;
+      }
+      await update(tableName,id,{status});
       if (state.view === "messagesCenter" && tableName === "personal_messages" && status === "completed") state.messageReadFilter = "read";
       render();
     }
@@ -11290,7 +11300,7 @@
     if (e.target.id === "fleetReportSettingsSearch") {
       e.preventDefault();
       const query = new FormData(e.target).get("q");
-      Object.assign(fleetOperationsState(), { settingsSearch: String(query || "").trim(), settingsPage: 1 });
+      Object.assign(fleetOperationsState(), { settingsSearch: String(query || "").trim(), settingsDealer:String(new FormData(e.target).get("dealer")||""), settingsPage: 1 });
       render();
       return;
     }

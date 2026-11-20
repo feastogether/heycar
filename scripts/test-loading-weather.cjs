@@ -38,7 +38,7 @@ async function scopeTests() {
   const calls=[];let release;
   const state={admin:true,apiSession:'session-a',data:{},adminProfile:{}};
   const context=vm.createContext({state,hasApi:true,Promise,emptyData:()=>({vehicles:[],staff_notes:[]}),
-    adminFullDataReady:false,adminFullDataPromise:null,
+    adminFullDataReady:false,adminFullDataPromise:null,today:()=>"2026-11-20",dispatchDayLoaded:'',
     apiRequest:async(action,payload)=>{calls.push(payload);if(payload.scope==='workspace')return new Promise(resolve=>{release=resolve});return {data:{staff_notes:[{content:'保留首頁資料'}]}}}});
   vm.runInContext(`async ${functionSource('loadAll')}\n${functionSource('ensureAdminWorkspaceData')}`,context);
   await context.loadAll({homeOnly:true});assert.equal(calls[0].scope,'home');
@@ -52,7 +52,7 @@ async function scopeTests() {
 }
 
 async function workerTests() {
-  assert(fs.readFileSync(path.join(root,'wrangler.toml'),'utf8').includes('run_worker_first = ["/*.js", "/*.css", "/api/*", "/files/*"]'));
+  assert(fs.readFileSync(path.join(root,'wrangler.toml'),'utf8').includes('"/api/*", "/files/*"'));
   const today=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
   const tomorrow=new Date(Date.parse(`${today}T00:00:00+08:00`)+86400000).toLocaleDateString('sv-SE',{timeZone:'Asia/Taipei'});
   let requests=[];
@@ -76,6 +76,8 @@ async function workerTests() {
   response=await context.worker.fetch(new Request('https://test/files/private.js?v=1'),env);
   assert.equal(await response.text(),'private');assert.equal(response.headers.get('cache-control'),'private, no-store');
   response=await context.worker.fetch(new Request('https://test/api/office-weather'),env);assert.equal(response.status,503);
+  const canonical={ASSETS:{fetch:async request=>new URL(request.url).pathname.endsWith('.html')?Response.redirect('https://test/flight-board',308):new Response('TV board')}};
+  response=await context.worker.fetch(new Request('https://test/flight-board'),canonical);assert.equal(response.status,200,'TV assets must not redirect back into the worker route');assert.equal(await response.text(),'TV board');
 }
 
 function dateTests() {

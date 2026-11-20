@@ -6,7 +6,7 @@ module.exports=function createInspectionsPreview({vehicles,drivers,directory,por
  const root=path.resolve(__dirname,'..');
  const db=new PGlite(dbPath||((process.env.INSPECTION_PREVIEW_DB==='memory'||process.env.REPORTING_PREVIEW_DB==='memory')?undefined:path.join(root,'.fleet-preview/inspection-data')));
  const folder=filesPath||process.env.INSPECTION_PREVIEW_FILES||path.join(root,'.fleet-preview/inspection-files');
- const signatures={inspection_batches:['integer','boolean'],inspection_batch_action:['uuid','text','bigint','text','jsonb'],inspection_start:['uuid','uuid','bigint'],inspection_create:['uuid','text','text','timestamptz','jsonb','jsonb'],inspection_load:['uuid','uuid','uuid','text','integer','boolean'],inspection_save_photo:['uuid','uuid','bigint','jsonb'],inspection_submit:['uuid','uuid','bigint','bigint','text','boolean'],inspection_review:['uuid','bigint','text','text','text[]','jsonb']};
+ const signatures={inspection_create_v2:["uuid","text","text","timestamptz","jsonb","jsonb","text","text","text[]"],inspection_edit_batch:["uuid","bigint","jsonb","uuid[]","jsonb"],inspection_export_manifest:["uuid","jsonb"],inspection_purge_export:["uuid","jsonb","boolean"],inspection_batches:['integer','boolean'],inspection_batch_action:['uuid','text','bigint','text','jsonb'],inspection_start:['uuid','uuid','bigint'],inspection_create:['uuid','text','text','timestamptz','jsonb','jsonb'],inspection_load:['uuid','uuid','uuid','text','integer','boolean'],inspection_save_photo:['uuid','uuid','bigint','jsonb'],inspection_submit:['uuid','uuid','bigint','bigint','text','boolean'],inspection_review:['uuid','bigint','text','text','text[]','jsonb']};
  const ready=(async()=>{
   await db.waitReady;
   if(!(await db.query("select to_regclass('public.vehicle_inspection_tasks') as name")).rows[0].name){
@@ -18,6 +18,7 @@ module.exports=function createInspectionsPreview({vehicles,drivers,directory,por
   }
   if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_tasks'and column_name='eligible_driver_ids'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261117050000_shared_vehicle_inspections.sql'),'utf8'));
   if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_batches'and column_name='batch_no'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261118020000_inspection_batch_management.sql'),'utf8'));
+  if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_tasks'and column_name='required_slots'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261120010000_inspection_spot_edit_export.sql'),'utf8'));
  })();
  const seen=new Map();
  async function sync(){await ready;

@@ -1,8 +1,8 @@
 export const inspectionSlots=['front','front_right','right','rear_right','rear','rear_left','left','front_left','cabin','odometer'];
-export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_draft','inspection_submit','inspection_review','inspection_start','inspection_batches','inspection_batch_action'];
+export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_photo_ticket','inspection_draft','inspection_submit','inspection_review','inspection_start','inspection_batches','inspection_batch_action','inspection_edit_batch','inspection_export','inspection_purge'];
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const safeName=value=>String(value||'照片.jpg').replace(/[\x00-\x1f/\\]/g,'').slice(0,160)||'照片.jpg';
-export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto}) {
+export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto,media=null}) {
  return async function(body,session) {
   const fail=(error,status=400)=>({body:{error},status});
   const admin=session.session_type==='admin',driver=session.session_type==='driver';
@@ -10,7 +10,7 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
   if(!driver&&!(admin&&await adminCan(session,'vehicleInspections')))return fail('沒有車輛檢查權限',403);
   if(driver&&!uuid(session.driver_id))return fail('SESSION_EXPIRED',401);
   const actor={id:admin?(session.is_super_admin?'super-admin':session.admin_user_id):session.driver_id,name:session.admin_name||'管理員',role:session.session_type};
-  const bucket=db.storage.from('vehicle-inspections');
+  const bucket=media?.bucket('vehicle-inspections')||db.storage.from('vehicle-inspections');
   const present=async data=>{
    if(!data?.photos)return data;
    const photos=data.photos,paths=photos.map(photo=>photo.storage_path);
@@ -24,6 +24,23 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
    return result.data;
   };
   try {
+   if(['inspection_edit_batch','inspection_export','inspection_purge'].includes(body.action)){
+    if(!admin)return fail('沒有管理權限',403);
+    if(body.action==='inspection_purge'){
+     if(!uuid(body.export_id)||body.confirmed!==true)return fail('請先下載並確認備份後再清理');
+     const prepared=await rpc('inspection_purge_export',{p_export:body.export_id,p_actor:actor,p_finish:false});
+     for(let i=0;i<prepared.paths.length;i+=50){const removed=await bucket.remove(prepared.paths.slice(i,i+50));if(removed.error)throw removed.error;}
+     return {body:{data:await rpc('inspection_purge_export',{p_export:body.export_id,p_actor:actor,p_finish:true})},status:200};
+    }
+    if(!uuid(body.batch_id))return fail('批次編號錯誤');
+    if(body.action==='inspection_edit_batch'){
+     if(!Number.isSafeInteger(body.revision)||body.confirmed!==true||!Array.isArray(body.add)||body.add.length>500||body.add.some(t=>!uuid(t.vehicle_id)||!uuid(t.driver_id))||!Array.isArray(body.cancel)||body.cancel.length>500||body.cancel.some(id=>!uuid(id)))return fail('請確認批次調整清單');
+     return {body:{data:await rpc('inspection_edit_batch',{p_batch:body.batch_id,p_revision:body.revision,p_add:body.add,p_cancel:body.cancel,p_actor:actor})},status:200};
+    }
+    const exported=await rpc('inspection_export_manifest',{p_batch:body.batch_id,p_actor:actor});const photos=exported.manifest.photos;
+    for(let i=0;i<photos.length;i+=100){const group=photos.slice(i,i+100),signed=await bucket.createSignedUrls(group.map(p=>p.storage_path),3600);if(signed.error)throw signed.error;for(let j=0;j<group.length;j++)group[j].url=signed.data[j]?.signedUrl||'';}
+    return {body:{data:exported},status:200};
+   }
    if(body.action==='inspection_batches'||body.action==='inspection_batch_action'){
     if(!admin)return fail('僅授權後台可管理檢查批次',403);
     if(body.action==='inspection_batches'){
@@ -48,7 +65,9 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
     if(new Set(body.targets.map(target=>target.vehicle_id+'/'+target.driver_id)).size!==body.targets.length)return fail('同一輛車與司機不可重複勾選');
     const date=String(body.due_on||''),parsed=new Date(date+'T00:00:00Z');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(parsed.getTime())||parsed.toISOString().slice(0,10)!==date)return fail('期限日期錯誤');
-    const data=await rpc('inspection_create',{p_request:body.request_id,p_title:body.title.trim(),p_instructions:body.instructions,p_due:new Date(date+'T23:59:59+08:00').toISOString(),p_targets:body.targets,p_actor:actor});
+    const kind=body.kind||'regular',required=kind==='regular'?inspectionSlots:body.required_slots?.length?body.required_slots:inspectionSlots;
+    if(!['regular','spot'].includes(kind)||!Array.isArray(required)||required.length>10||required.some(slot=>!inspectionSlots.includes(slot))||new Set(required).size!==required.length||typeof(body.location||'')!=='string'||(body.location||'').length>500)return fail('請確認抽檢位置與拍攝項目');
+    const data=await rpc('inspection_create_v2',{p_request:body.request_id,p_title:body.title.trim(),p_instructions:body.instructions,p_due:new Date(date+'T23:59:59+08:00').toISOString(),p_targets:body.targets,p_actor:actor,p_kind:kind,p_location:body.location||'',p_slots:required});
     return {body:{data},status:200};
    }
    if(!uuid(body.task_id)||!Number.isSafeInteger(body.revision)||body.revision<1)return fail('檢查資料版本錯誤，請重新整理');
@@ -65,16 +84,23 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
     const data=await rpc('inspection_submit',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_odometer:body.odometer,p_notes:body.notes,p_submit:body.action==='inspection_submit'});
     return {body:{data},status:200};
    }
-   if(!uuid(body.request_id)||!inspectionSlots.includes(body.slot)||typeof body.base64!=='string'||body.base64.length>2796204)return fail('請使用壓縮後 2 MB 以內的指定角度照片');
+   if(!uuid(body.request_id)||!inspectionSlots.includes(body.slot)||(!body.receipt&&body.action!=='inspection_photo_ticket'&&(typeof body.base64!=='string'||body.base64.length>2796204)))return fail('請使用壓縮後 2 MB 以內的指定角度照片');
    const task=await db.from('vehicle_inspection_tasks').select('*').eq('id',body.task_id).maybeSingle();
    if(task.error)throw task.error;
    if(!task.data||!(task.data.eligible_driver_ids||[task.data.driver_id]).includes(session.driver_id))return fail('找不到本人的車輛檢查',404);
    if(task.data.claimed_by&&task.data.claimed_by!==session.driver_id)return fail('同車司機已開始執行此檢查，無需重複拍攝',409);
-   let bytes;try{bytes=Uint8Array.from(atob(body.base64),char=>char.charCodeAt(0));}catch{return fail('照片內容無效');}
-   const jpeg=bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
+   if(body.action==='inspection_photo_ticket'){
+    if(!media)return fail('照片直傳服務尚未啟用',503);
+    if(Number(task.data.revision)!==body.revision||!['pending','draft','returned'].includes(task.data.status)||(task.data.required_slots&&!task.data.required_slots.includes(body.slot))||(task.data.status==='returned'&&!task.data.returned_slots.includes(body.slot)))return fail('此角度或檢查已鎖定，請重新整理',409);
+    return {body:await media.issue({bucket:'vehicle-inspections',path:body.task_id+'/'+body.request_id+'.jpg',driver_id:session.driver_id,task_id:body.task_id,request_id:body.request_id,slot:body.slot}),status:200};
+   }
+   const receipt=body.receipt?await media?.receipt(body.receipt,{bucket:'vehicle-inspections',driver_id:session.driver_id,task_id:body.task_id,request_id:body.request_id,slot:body.slot}):null;
+   if(body.receipt&&!receipt)return fail('照片直傳憑證無效',403);
+   let bytes;try{bytes=receipt?new Uint8Array():Uint8Array.from(atob(body.base64),char=>char.charCodeAt(0));}catch{return fail('照片內容無效');}
+   const jpeg=receipt?receipt.mime==='image/jpeg':bytes[0]===255&&bytes[1]===216&&bytes[2]===255;
    const png=[137,80,78,71,13,10,26,10].every((value,index)=>bytes[index]===value);
-   if(!bytes.length||bytes.length>2097152||!jpeg&&!png)return fail('請使用有效 JPG 或 PNG 照片');
-   const digest=Array.from(new Uint8Array(await cryptoApi.subtle.digest('SHA-256',bytes)),value=>value.toString(16).padStart(2,'0')).join('');
+   if(!receipt&&(!bytes.length||bytes.length>2097152||!jpeg&&!png))return fail('請使用有效 JPG 或 PNG 照片');
+   const digest=receipt?.sha||Array.from(new Uint8Array(await cryptoApi.subtle.digest('SHA-256',bytes)),value=>value.toString(16).padStart(2,'0')).join('');
    const existing=await db.from('vehicle_inspection_photos').select('*').eq('id',body.request_id).maybeSingle();
    if(existing.error)throw existing.error;
    if(existing.data) {
@@ -83,11 +109,12 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
    }
    if(Number(task.data.revision)!==body.revision)return fail('檢查資料已更新，請重新整理',409);
    if(!['pending','draft','returned'].includes(task.data.status))return fail('此檢查已送出或鎖定',409);
-   const path=body.task_id+'/'+body.request_id+(jpeg?'.jpg':'.png'),mime=jpeg?'image/jpeg':'image/png';
-   const uploaded=await bucket.upload(path,bytes,{contentType:mime,cacheControl:"600",upsert:false});if(uploaded.error)throw uploaded.error;
+   const logicalPath=body.task_id+'/'+body.request_id+(jpeg?'.jpg':'.png'),path=media?media.pathFor('vehicle-inspections',logicalPath):logicalPath,mime=jpeg?'image/jpeg':'image/png';
+   if(receipt&&receipt.path!==logicalPath)return fail('照片路徑錯誤',403);
+   if(!receipt){const uploaded=await bucket.upload(logicalPath,bytes,{contentType:mime,cacheControl:"600",upsert:false});if(uploaded.error)throw uploaded.error;}
    let data;
    try {
-    data=await rpc('inspection_save_photo',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_photo:{id:body.request_id,slot:body.slot,storage_path:path,name:safeName(body.name),mime,size:bytes.length,sha256:digest}});
+    data=await rpc('inspection_save_photo',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_photo:{id:body.request_id,slot:body.slot,storage_path:path,name:safeName(body.name),mime,size:receipt?.size||bytes.length,sha256:digest}});
    } catch(error) {
     // A lost response can follow a committed write: never delete a possibly saved photo.
     const check=await db.from('vehicle_inspection_photos').select('storage_path').eq('id',body.request_id).maybeSingle();

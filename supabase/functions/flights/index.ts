@@ -1,3 +1,4 @@
+import {compactBoardFeed} from './board-feed.mjs';
 const tokenUrl = "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
 const apiBase = "https://tdx.transportdata.tw/api/basic/v2/Air/FIDS/Airport";
 const taoyuanFlightCsvUrl = "https://odp.taoyuan-airport.com/dataset/2025102001?format=csv";
@@ -308,7 +309,7 @@ async function readTaoyuanRows() {
   const now = Date.now();
   if (taoyuanCache.rows.length && now - taoyuanCache.ts < cacheMs) return taoyuanCache.rows;
 
-  const response = await fetch(taoyuanFlightCsvUrl);
+  const response = await fetch(taoyuanFlightCsvUrl,{signal:AbortSignal.timeout(8000)});
   if (!response.ok) {
     if (taoyuanCache.rows.length && now - taoyuanCache.ts < staleCacheMs) return taoyuanCache.rows;
     throw new Error(`桃園機場航班資料讀取失敗 (${response.status})`);
@@ -492,7 +493,23 @@ Deno.serve(async (request) => {
     const source = sourceParam === "taoyuan" ? "taoyuan" : sourceParam === "kaohsiung" || airport === "KHH" ? "kaohsiung" : "tdx";
 
     if (source === "taoyuan") {
-      const rows = await readTaoyuanRows();
+      let rows,boardBackup=false;
+      try{rows = await readTaoyuanRows();}catch(error){
+        if(url.searchParams.get('board')!=='1')throw error;
+        boardBackup=true;
+        const backup=await readTdxRows('Arrival',await tdxToken(),'TPE');
+        rows=backup.map(row=>{
+          const flight=mapTdxFlight(row,'Arrival'),actual=flight.actualTime,arrived=!!actual&&Number.isFinite(Date.parse(actual))&&Date.parse(actual)<=Date.now(),cancelled=/取消|cancel/i.test(flight.status);
+          const estimated=arrived?actual:flight.estimatedTime||flight.scheduledTime;
+          return {'方向':'A','航空公司代碼':flight.flightNo.slice(0,2),'班次':flight.flightNo.slice(2),'航空公司中文':flight.airline,'往來地點中文':flight.city,'表訂日期':flight.scheduledTime.slice(0,10),'表訂時間':flight.scheduledTime.slice(11,19),'預計日期':estimated.slice(0,10),'預計時間':estimated.slice(11,19),'航廈':flight.terminal,'行李轉盤':flight.baggage,'備註':cancelled?'取消':arrived?'已到':/delay|延誤|延遲/i.test(flight.status)?'延遲抵達':'預計抵達','航班動態中文':arrived?'已降落':''};
+        });
+      }
+      if(url.searchParams.get('board')==='1'){
+        const payload=JSON.stringify({...compactBoardFeed(rows,boardBackup?Date.now():taoyuanCache.ts),source:boardBackup?'桃園機場（TDX備援）':'桃園機場'});
+        const compressed=new Blob([payload]).stream().pipeThrough(new CompressionStream('gzip'));
+        const bytes=await new Response(compressed).arrayBuffer();
+        return new Response(bytes,{headers:{...headers,'Content-Type':'application/json; charset=utf-8','Content-Encoding':'gzip','Content-Length':String(bytes.byteLength),'Cache-Control':'public, max-age=300','X-Feed-Bytes':String(bytes.byteLength)}});
+      }
       const flights = rows
         .filter((row) => row["方向"] === directionCode && cleanText(row["表訂日期"]).slice(0, 10) === targetDate)
         .filter((row) => matchTaoyuanFlight(row, query))

@@ -1,0 +1,26 @@
+const fs=require('fs'),path=require('path'),assert=require('node:assert/strict'),{randomUUID}=require('crypto');
+const create=require('./preview-benefits-db.cjs');
+async function run(){process.env.REPORTING_PREVIEW_DB='memory';const root=path.resolve(__dirname,'..'),folder=path.join(root,'.fleet-preview','benefits-test-'+process.pid),d=randomUUID(),other=randomUUID(),notice=randomUUID(),fixture={drivers:[{id:d,name:'測試司機'},{id:other,name:'另一司機'}],notifications:[{id:notice,driver_id:d,status:'pending'}],calendar:[]};
+ const preview=create({fixture,filesPath:folder}),admin={session_type:'admin',is_super_admin:true},driver={session_type:'driver',driver_id:d},otherDriver={session_type:'driver',driver_id:other};const api=(action,record={},session=admin)=>preview.handle({action,record,confirmed:true},session);
+ try{
+  assert.equal((await api('points_award',{driver_id:d,amount:100,reason:'優良服務',request_id:randomUUID()},driver)).status,403);
+  const award={driver_id:d,amount:100,reason:'優良服務',request_id:randomUUID()};assert.equal((await api('points_award',award)).status,200);assert.equal((await api('points_award',award)).status,200);assert.equal((await api('points_load',{},driver)).body.data.balance,100);
+  assert.equal((await api('points_award',{...award,amount:200})).status,409);
+  assert.equal((await api('reward_save',{name:'測試禮品',description:'測試',cost:60,stock:1,active:true})).status,200);const reward=(await api('points_load')).body.data.rewards[0];
+  const redeem={reward_id:reward.id,request_id:randomUUID()};assert.equal((await api('points_redeem',redeem,driver)).status,200);assert.equal((await api('points_redeem',redeem,driver)).status,200);assert.equal((await api('points_redeem',{...redeem,request_id:randomUUID()},driver)).status,409);assert.equal((await api('points_load',{},driver)).body.data.balance,40);
+  const processRecord={id:redeem.request_id,status:'cancelled'};assert.equal((await api('redemption_process',processRecord)).status,200);assert.equal((await api('redemption_process',processRecord)).status,200);assert.equal((await api('points_load',{},driver)).body.data.balance,100);assert.equal((await api('points_load')).body.data.rewards[0].stock,1);
+  assert.equal((await api('equipment_save',{code:'SEAT-001',kind:'seat'})).status,200);const item=(await api('equipment_load')).body.data.items[0];
+  let photoNumber=0;
+  const picture=async(purpose,ref,slot,who=driver)=>{const result=await preview.handle({action:'operation_photo',request_id:randomUUID(),reference_id:ref,purpose,slot,base64:Buffer.from([255,216,255,0,++photoNumber]).toString('base64')},who);assert.equal(result.status,200,JSON.stringify(result));return result.body.photo;};
+  const borrow={request_id:randomUUID(),item_id:item.id,photo_id:randomUUID()};assert.equal((await api('equipment_borrow',borrow,driver)).status,409);borrow.photo_id=(await picture('equipment_borrow',item.id,'borrow')).id;assert.equal((await api('equipment_borrow',borrow,driver)).status,200);assert.equal((await api('equipment_borrow',borrow,driver)).status,200);assert.equal((await api('equipment_borrow',{...borrow,request_id:randomUUID()},otherDriver)).status,409);
+  assert.equal((await api('equipment_return',{id:borrow.request_id,photo_id:borrow.photo_id},otherDriver)).status,403);const returned={id:borrow.request_id,photo_id:(await picture('equipment_return',borrow.request_id,'return')).id};assert.equal((await api('equipment_return',returned,driver)).status,200);assert.equal((await api('equipment_load')).body.data.items[0].available,true);
+  const photos=[];for(const slot of ['tire_fl','tire_fr','tire_rl','tire_rr','work_order'])photos.push((await picture('service',notice,slot)).id);
+  let result=await preview.api.rpc('hey_complete_service',{p_id:notice,p_driver:d,p_odometer:123456,p_photos:photos.slice(0,4)});assert(result.error,'five photos required');assert.equal((await preview.db.query('select status from maintenance_notifications where id=$1',[notice])).rows[0].status,'pending');
+  result=await preview.api.rpc('hey_complete_service',{p_id:notice,p_driver:other,p_odometer:123456,p_photos:photos});assert(result.error,'another driver cannot reuse photos');
+  result=await preview.api.rpc('hey_complete_service',{p_id:notice,p_driver:d,p_odometer:123456,p_photos:photos});assert(!result.error,result.error?.message);assert.equal(result.data.notification.status,'completed');assert.equal(result.data.notification.completed_odometer,123456);assert(result.data.notification.completed_at);
+  assert.equal((await preview.handle({action:'operation_photos',reference_id:notice},otherDriver)).body.photos.length,0);
+  assert.equal((await preview.handle({action:'operation_storage'},admin)).body.files.length,7);
+  console.log('PASS: audited point awards, duplicate prevention, atomic redemption/refund/stock; equipment exclusive borrow and photo-required return; five maintenance photos and ownership checks; private storage inventory.');
+ }finally{await preview.close();const resolved=path.resolve(folder);if(!resolved.startsWith(path.join(root,'.fleet-preview')+path.sep)||!resolved.endsWith('benefits-test-'+process.pid))throw Error('Unsafe cleanup');fs.rmSync(resolved,{recursive:true,force:true});}
+}
+run().catch(e=>{console.error(e);process.exitCode=1;});

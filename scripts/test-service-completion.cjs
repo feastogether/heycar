@@ -41,7 +41,8 @@ async function run(){
   const handler=createEmployeeWorkflowHandler({db:{rpc:async(name,args)=>({data:{name,args}})},adminCan:async()=>false});
   assert.equal((await handler({action:'sync_service_schedule',id:e},{session_type:'driver',driver_id:d})).status,403);
   assert.equal((await handler({action:'sync_service_schedule',id:e},{session_type:'admin',admin_user_id:'test'})).status,403);
-  const response=await handler({action:'complete_service_schedule',id:e,driver_id:other,odometer:100000},{session_type:'driver',driver_id:d});
+  assert.equal((await handler({action:'complete_service_schedule',id:e,odometer:100000},{session_type:'driver',driver_id:d})).status,400,'completion requires five photos');
+  const response=await handler({action:'complete_service_schedule',id:e,driver_id:other,odometer:100000,photos:[1,2,3,4,5].map(n=>'40000000-0000-4000-8000-'+String(n).padStart(12,'0'))},{session_type:'driver',driver_id:d});
   assert.equal(response.body.args.p_driver,d,'posted driver ID cannot impersonate another driver');
   assert.equal(profileIdentity({session_type:'admin',is_super_admin:true}).actor_id,'super-admin');
   assert(validAvatar('data:image/jpeg;base64,/9j/AA=='));assert(!validAvatar('data:image/svg+xml;base64,PHN2Zz4='));assert(!validAvatar('https://external.example/avatar.png'));assert(!validAvatar('data:image/jpeg;base64,ZmFrZQ=='));

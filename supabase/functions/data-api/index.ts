@@ -1,3 +1,5 @@
+import {createBenefitsHandler} from "./driver-benefits.mjs";
+import {createMediaStore} from "./media-store.mjs";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dealerInsuranceHistory, insuranceWrite } from "./insurance-workflow.mjs";
 import { createDriverReportingHandler } from "./driver-reporting.mjs";
@@ -18,7 +20,7 @@ const tables = [
   "drivers", "vehicles", "maintenance_records", "announcements", "announcement_reads",
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
-  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks", "driver_links",
+  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
   "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages",
@@ -36,6 +38,7 @@ const db = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
 );
 const storageBucket = "attachments";
+function operationalMediaStore(){return createMediaStore({db,secret:Deno.env.get('MEDIA_SIGNING_SECRET'),apiUrl:Deno.env.get('MEDIA_API_URL'),publicOrigin:Deno.env.get('MEDIA_PUBLIC_ORIGIN')});}
 const signedStorageUrlTtlSeconds = 60 * 60;
 
 const json = (body: unknown, status = 200) =>
@@ -229,7 +232,13 @@ async function getSession(req: Request) {
   return data || null;
 }
 
-async function loadDriverData(driverId: string) {
+function driverOwnsVehicle(vehicle:Record<string,any>,driver:Record<string,any>,day:string){
+  let history=vehicle.driver_history;try{if(typeof history==='string')history=JSON.parse(history);}catch{history=[];}
+  const active=(Array.isArray(history)?history:[]).filter(row=>String(row.driver_name||row.driver_id||'').trim()&&(!row.start_at||String(row.start_at).slice(0,10)<=day)&&(!row.end_at||String(row.end_at).slice(0,10)>=day));
+  if(active.length)return active.some(row=>String(row.driver_id||'')===String(driver.id)||row.driver_name&&row.driver_name===driver.name);
+  return vehicle.current_driver_id===driver.id||String(vehicle.assigned_driver_names||'').split('/').map(name=>name.trim()).includes(driver.name);
+}
+async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date())) {
   const { data: driver } = await db.from("drivers").select("*").eq("id", driverId).single();
   if (!driver) throw new Error("DRIVER_NOT_FOUND");
 
@@ -259,15 +268,16 @@ async function loadDriverData(driverId: string) {
     db.from("marquee_messages").select("*").eq("active", true),
     db.from("emergency_events").select("*").eq("active", true),
     db.from("feedbacks").select("*").eq("driver_id", driverId),
-    canSeeLinks ? db.from("driver_links").select("*").eq("active", true) : Promise.resolve({ data: [], error: null }),
+    Promise.resolve({ data: [], error: null }),
     db.from("driver_helper_articles").select("*").eq("active", true).order("sort_order", { ascending: true }).order("created_at", { ascending: false }),
     db.from("insurance_partners").select("id,name,partner_type,phone,active,frontend_permissions").eq("active", true),
-    db.from("dispatch_orders").select("*").eq("driver_id", driverId)
+    dispatchRows('dispatch_orders','*','driver_id',driverId,dispatchDate).then(data=>({data,error:null})),
+    db.from("vehicle_types").select("id,brand,model,photo_url")
   ]);
   const names = [
     "vehicles", "announcements", "announcement_reads", "maintenance_notifications",
     "personal_messages", "payment_notices", "calendar_events", "marquee_messages", "emergency_events", "feedbacks", "driver_links",
-    "driver_helper_articles", "insurance_partners", "dispatch_orders"
+    "driver_helper_articles", "insurance_partners", "dispatch_orders", "vehicle_types"
   ];
   queries.forEach((query, index) => {
     if (query.error) throw query.error;
@@ -281,7 +291,9 @@ async function loadDriverData(driverId: string) {
     }
     result[name] = query.data || [];
   });
-  return { data: result, user: driver };
+  const currentDay=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+  result.vehicles=(result.vehicles||[]).filter(vehicle=>driverOwnsVehicle(vehicle,driver,currentDay));
+  return { data: result, user: driver, dispatch_date:dispatchDate };
 }
 
 async function loadAdminChatGroups(userId: string) {
@@ -342,7 +354,7 @@ async function handleAdminGroupChat(body: Record<string, any>, session: Record<s
   return json({data});
 }
 
-async function loadAdminData(session: Record<string, unknown>, scope = "all") {
+async function loadAdminData(session: Record<string, unknown>, scope = "all", dispatchDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date())) {
   const result: Record<string, unknown[]> = {};
   const homeTables = ["admin_users", "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes"];
   const activeTables = tables.filter(table => table !== "maintenance_records");
@@ -433,7 +445,8 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all") {
       result[table] = [];
       return;
     }
-    if (["dispatch_orders", "maintenance_notifications", "maintenance_notification_batches"].includes(table)) {
+    if(table==='dispatch_orders'){result[table]=await dispatchRows(table,'*','','',dispatchDate);return;}
+    if (["maintenance_notifications", "maintenance_notification_batches"].includes(table)) {
       result[table] = await dispatchRows(table, "*");
       return;
     }
@@ -810,11 +823,12 @@ async function dispatchDealers() {
   return dispatchRows("insurance_partners", "id,name,partner_type,active", "partner_type", "dealer");
 }
 
-async function dispatchRows(table: string, columns: string, filterKey = "", filterValue = "") {
+async function dispatchRows(table: string, columns: string, filterKey = "", filterValue = "", reservationDate = "") {
   const rows: Record<string, any>[] = [];
   for (let offset = 0; ;) {
     let query = db.from(table).select(columns).order("id").range(offset, offset + 499);
     if (filterKey) query = query.eq(filterKey, filterValue);
+    if (reservationDate) query = query.eq('reservation_date',reservationDate);
     const page = await query;
     if (page.error) throw page.error;
     rows.push(...(page.data || []));
@@ -1612,11 +1626,13 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
+    if(/^(?:points_|reward_save$|redemption_process$|equipment_|operation_(?:photo|photo_ticket|photos|storage)$)/.test(String(body.action))){const result=await createBenefitsHandler({db,adminCan,media:operationalMediaStore()})(body,session);return json(result.body,result.status);}
+    if(body.table==="driver_links")return json({error:"連結管理已停用"},410);
     if (body.action === "vehicle_loan_action") {
       const result=await createLoanActionHandler({db})(body,session);return json(result.body,result.status);
     }
     if (String(body.action).startsWith("inspection_")) {
-      const result = await createInspectionHandler({db,adminCan})(body,session);
+      const result = await createInspectionHandler({db,adminCan,media:operationalMediaStore()})(body,session);
       return json(result.body,result.status);
     }
     if (["save_driver_onboarding", "complete_driver_onboarding"].includes(body.action)) {
@@ -1721,9 +1737,17 @@ Deno.serve(async (req) => {
       return json(await signStorageUrls({ user: data }));
     }
     if (body.action === "load") {
-      if (session.session_type === "admin") return json(await signStorageUrls(await loadAdminData(session, body.scope === "home" ? "home" : body.scope === "workspace" ? "workspace" : "all")));
+      const date=body.dispatch_date||new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+      if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date)))return json({error:'派趟日期格式錯誤'},400);
+      if (session.session_type === "admin") return json(await signStorageUrls({...await loadAdminData(session, body.scope === "home" ? "home" : body.scope === "workspace" ? "workspace" : "all",date),dispatch_date:date}));
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
-      return json(await signStorageUrls(await loadDriverData(session.driver_id)));
+      return json(await signStorageUrls(await loadDriverData(session.driver_id,date)));
+    }
+    if(body.action==='load_dispatch_day'){
+      const date=String(body.date||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date)))return json({error:'派趟日期格式錯誤'},400);
+      if(session.session_type==='admin'&&!await adminCan(session,'dispatchCenter')||!['admin','driver'].includes(String(session.session_type)))return json({error:'沒有派趟權限'},403);
+      const driver=session.session_type==='driver';
+      return json({orders:await dispatchRows('dispatch_orders','*',driver?'driver_id':'',driver?String(session.driver_id):'',date),date});
     }
     if (body.action === "assign_dispatch_driver") {
       if (session.session_type !== "partner") return json({ error: "僅車商可以指派司機" }, 403);
@@ -1843,10 +1867,14 @@ Deno.serve(async (req) => {
     if (body.action === "load_admin_chat") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);
       const myChatId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
+      const since=body.since?String(body.since):"";
+      if(since&&(!Number.isFinite(Date.parse(since))||Date.parse(since)>Date.now()+60000))return json({error:"無效的訊息時間"},400);
+      const snapshotAt=new Date().toISOString();
+      const messagesFor=(field:string)=>{let query=db.from("admin_chat_messages").select("*").eq(field,myChatId).order("created_at",{ascending:false}).limit(1000);if(since)query=query.gte("updated_at",new Date(Date.parse(since)-60000).toISOString());return query;};
       const [users, sent, received] = await Promise.all([
-        db.from("admin_users").select("id,name,active,extension,avatar_url,avatar_name").eq("active", true).order("name", { ascending: true }),
-        db.from("admin_chat_messages").select("*").eq("sender_id", myChatId).order("created_at", { ascending: true }),
-        db.from("admin_chat_messages").select("*").eq("receiver_id", myChatId).order("created_at", { ascending: true })
+        body.directory===false?Promise.resolve({data:null,error:null}):db.from("admin_users").select("id,name,active,extension,avatar_url,avatar_name").eq("active", true).order("name", { ascending: true }),
+        messagesFor("sender_id"),
+        messagesFor("receiver_id")
       ]);
       if (users.error) throw users.error;
       if (sent.error) throw sent.error;
@@ -1855,13 +1883,14 @@ Deno.serve(async (req) => {
       [...(sent.data || []), ...(received.data || [])].forEach((item) => byId.set(String(item.id), item));
       const messages = [...byId.values()].sort((a, b) => compactText(a.created_at).localeCompare(compactText(b.created_at)));
       const groups = await loadAdminChatGroups(myChatId);
+      const feedback = await adminCan(session,"feedbacks") ? await db.from("feedbacks").select("id",{count:"exact",head:true}).or("admin_reply.is.null,admin_reply.eq.") : {count:0};
       let groupMessages: {messages:Record<string,unknown>[],has_more:boolean} = { messages:[], has_more:false };
       const groupId = compactText(body.group_id);
       if (groupId) {
         if (!groups.some((group: any)=>group.id===groupId)) return json({error:"你不是這個群組的成員"},403);
         groupMessages = await loadAdminGroupMessages(groupId);
       }
-      return json(await signStorageUrls({ admin_users: users.data || [], admin_chat_messages: messages, admin_chat_groups:groups, group_id:groupId, group_messages:groupMessages.messages, group_has_more:groupMessages.has_more }));
+      return json(await signStorageUrls({ admin_users: users.data, admin_chat_messages: messages, snapshot_at:snapshotAt,incremental:!!since,admin_chat_groups:groups, feedback_count:feedback.count||0, group_id:groupId, group_messages:groupMessages.messages, group_has_more:groupMessages.has_more }));
     }
     if (body.action === "send_admin_chat_message") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);

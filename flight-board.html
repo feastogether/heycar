@@ -1,0 +1,10 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="strict-origin-when-cross-origin"><title>HEYCAR｜航班動態與華視新聞</title><link rel="stylesheet" href="/assets/flight-board.css?v=20261120-1"></head>
+<body>
+  <header class="board-header"><div class="board-brand"><b>HEY!CAR</b><span>桃園國際機場 · 抵達動態</span></div><div class="board-tools"><span id="boardStatus" role="status">正在連線</span><button id="enableAudio">啟用降落廣播</button><button id="fullScreen">全螢幕</button><button id="pairSettings" aria-label="電視配對設定">配對設定</button><time id="clock"></time></div></header>
+  <main class="board-layout"><section class="flights-column"><section class="tracked-panel"><header class="section-heading"><h1>司機追蹤航班</h1><span id="trackingCount">0 班</span></header><div id="trackedFlights" class="tracked-flights"><p class="empty">請先配對電視看板</p></div></section><section class="arrivals-panel"><header class="section-heading"><h2>即將抵達</h2><span id="updatedAt"></span></header><div class="arrivals-labels"><span>預計</span><span>航班／出發地</span><span>航廈</span><span>動態</span></div><div id="upcomingFlights"></div></section></section><aside class="news-column"><section id="liveNews" class="live-news"></section><section class="board-notes"><b>接機準備提醒</b><p>留意旅客出關與行李時間，聯繫客戶後再依現場指示出發。</p><small>機場資料約每 5 分鐘共用更新；實際狀態以機場公告為準。</small></section></aside></main>
+  <footer class="board-marquee"><b>公司訊息</b><div><span id="marqueeText">HEYCAR · 行車平安，服務用心。</span></div></footer>
+  <dialog id="pairDialog"><form method="dialog"><h2>電視看板配對</h2><p>請在已登入後台的電腦產生連結，再於電視瀏覽器開啟。連結有效 30 天，請妥善保管。</p><button type="button" id="createPair">產生電視連結</button><label>配對連結<input id="pairUrl" readonly aria-label="電視配對連結"></label><div class="pair-actions"><button type="button" id="copyPair">複製連結</button><button type="button" id="revokePair">停用此連結</button><button value="close">關閉</button></div><p id="pairError" role="status"></p></form></dialog>
+  <script type="module" src="/assets/flight-board.js?v=20261120-5"></script>
+</body></html>

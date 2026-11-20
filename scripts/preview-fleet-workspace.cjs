@@ -39,6 +39,8 @@ const reporting = require('./preview-reporting-db.cjs')(directory, process.argv.
 fixture.drivers ||= reporting.drivers;
 let loans;
 const getLoans=()=>loans ||= require("./preview-loans-db.cjs")(fixture);
+let benefits;
+const getBenefits=()=>benefits ||= require("./preview-benefits-db.cjs")({fixture,port,directory,filesPath:process.env.BENEFIT_PREVIEW_FILES||(process.env.REPORTING_PREVIEW_DB==='memory'?fixturePath+'.benefit-files':undefined)});
 let inspections;
 const getInspections=()=>inspections ||= require('./preview-inspections-db.cjs')({vehicles:fixture.vehicles,drivers:reporting.drivers,directory,port,filesPath:process.env.INSPECTION_PREVIEW_FILES||(process.env.REPORTING_PREVIEW_DB==='memory'?fixturePath+'.inspection-files':undefined)});
 const eligibleDrivers=reporting.drivers.filter(row=>row.dealer_partner_id===a.id&&['跑趟中','待上線'].includes(row.driver_status));
@@ -370,6 +372,7 @@ async function request(req, res) {
     res.writeHead(200, { "Content-Type": file.mime, "Content-Disposition": "attachment" });
     return res.end(file.bytes);
   }
+  if(req.method==='GET'&&url.pathname.startsWith('/__benefit_file/')){const file=benefits?.file(url.pathname.split('/').pop());if(!file)return send(res,{},404);res.writeHead(200,{'Content-Type':file.mime});return res.end(file.bytes);}
   if(req.method==='GET'&&url.pathname.startsWith('/__inspection_file/')){
     const file=inspections?.file(url.pathname.split('/').pop());if(!file)return send(res,{},404);
     res.writeHead(200,{'Content-Type':file.mime,'Cache-Control':'private, max-age=300','X-Content-Type-Options':'nosniff'});return res.end(file.bytes);
@@ -383,6 +386,7 @@ async function request(req, res) {
       if (raw.length > 14000000) return send(res, { error: "檔案過大" }, 413);
     }
     const { action, name, type, folder, base64 } = JSON.parse(raw || "{}");
+    if(action==="list")return send(res,{files:[],used_bytes:0,quota_bytes:10737418240});
     if (action !== "upload" || !String(folder || "").startsWith("vehicle-documents-") || typeof base64 !== "string") {
       return send(res, { error: "本機僅支援車輛文件預覽上傳" }, 400);
     }
@@ -404,6 +408,8 @@ async function request(req, res) {
       if (raw.length > 7200000) return send(res, {}, 413);
     }
     const body = JSON.parse(raw || "{}");
+    if(body.action==='load_dispatch_day'){if(!['driver','admin'].includes(session.session_type))return send(res,{error:'沒有權限'},403);const orders=(fixture.dispatch_orders||[]).filter(row=>String(row.reservation_date||'').slice(0,10)===body.date&&(session.session_type==='admin'||row.driver_id===session.driver_id));return send(res,{orders,date:body.date});}
+    const chat=require("./preview-chat.cjs")(body,session,fixture);if(chat){if(chat.status===200)persistFixture();return send(res,chat.body,chat.status);}
     if(body.action==='vehicle_loan_action'){const result=await getLoans().handle(body,session);if(result.status===200)persistFixture();return send(res,result.body,result.status);}
     if(body.table==='vehicle_loans'&&['insert','update','delete'].includes(body.action)){
       if(session.session_type!=='admin')return send(res,{error:'沒有租借權限'},403);
@@ -425,6 +431,8 @@ async function request(req, res) {
       if(!current)Object.assign(next,{status:'pending_approval',requested_by_admin_id:session.admin_user_id||null,requested_by_name:session.admin_name||'整合預覽',created_at:new Date().toISOString()});
       if(current)rows[rows.indexOf(current)]=next;else rows.push(next);persistFixture();return send(res,{data:next});
     }
+    if(require('../supabase/functions/data-api/driver-benefits.mjs').benefitActions.includes(body.action)){const result=await getBenefits().handle(body,session);if(body.action==='operation_storage'&&result.status===200){const inspections=getInspections();await inspections.sync();const rows=(await inspections.db.query("select p.storage_path as path,'vehicle-inspections' as bucket,t.plate_no||'／'||b.batch_no||'／'||p.name as name,p.size,p.uploaded_at as created_at,'車輛檢查' as source from vehicle_inspection_photos p join vehicle_inspection_tasks t on t.id=p.task_id join vehicle_inspection_batches b on b.id=t.batch_id where p.purged_at is null")).rows;const signed=await inspections.api.storage.from().createSignedUrls(rows.map(row=>row.path),600);rows.forEach((row,index)=>row.url=signed.data[index]?.signedUrl||'');result.body.files.push(...rows);}return send(res,result.body,result.status);}
+    if(body.action==='complete_service_schedule'){const result=await require('../supabase/functions/data-api/employee-workflow.mjs').createEmployeeWorkflowHandler({db:getBenefits().api,adminCan:async s=>s.is_super_admin})(body,session);if(result.status===200){Object.assign((fixture.notifications||[]).find(row=>row.id===body.id)||{},result.body.notification);if(result.body.event?.id)Object.assign(fixture.calendar.find(row=>row.id===result.body.event.id)||{},result.body.event);persistFixture();}return send(res,result.body,result.status);}
     if(String(body.action).startsWith('inspection_')){const result=await getInspections().handle(body,session);return send(res,result.body,result.status);}
     if(['save_driver_onboarding','complete_driver_onboarding'].includes(body.action)) {
       const {createOnboardingHandler}=require('../supabase/functions/data-api/onboarding-workflow.mjs');
@@ -615,6 +623,7 @@ async function request(req, res) {
       const actor=profileIdentity(session);if(!actor)return send(res,{error:'SESSION_EXPIRED'},401);
       const profiles=fixture.avatar_profiles ||= [];
       if(body.action === 'save_own_avatar') {
+        if(session.session_type==='driver')return send(res,{error:'司機頭像由管理後台設定'},403);
         if(!validAvatar(body.avatar_url))return send(res,{error:'請選擇有效照片'},400);
         const existing=profiles.find(row=>row.actor_type===actor.actor_type&&row.actor_id===actor.actor_id);
         if(existing)existing.avatar_url=body.avatar_url;else profiles.push({...actor,avatar_url:body.avatar_url});
@@ -623,13 +632,13 @@ async function request(req, res) {
       return send(res,{profiles:profiles.filter(row=>row.actor_type===actor.actor_type&&(actor.actor_type==='admin'||row.actor_id===actor.actor_id))});
     }
     if (body.action === "load") {
-      if (session.session_type === 'driver') return send(res, { data: { drivers: reporting.drivers.filter(row=>row.id===session.driver_id), insurance_partners: directory, maintenance_notifications: notifications.filter(row=>row.driver_id===session.driver_id), calendar_events: fixture.calendar.filter(row=>row.driver_id===session.driver_id) } });
+      if (session.session_type === 'driver') return send(res, { data: { drivers: reporting.drivers.filter(row=>row.id===session.driver_id), vehicles:fixture.vehicles.filter(v=>v.current_driver_id===session.driver_id||(v.driver_history||[]).some(h=>h.driver_id===session.driver_id)),vehicle_types:fixture.vehicle_types||[],insurance_partners: directory, marquee_messages:fixture.marquee_messages||[],feedbacks:(fixture.feedbacks||[]).filter(row=>row.driver_id===session.driver_id),maintenance_notifications: notifications.filter(row=>row.driver_id===session.driver_id), calendar_events: fixture.calendar.filter(row=>row.driver_id===session.driver_id) } });
       const partner = directory.find(item => item.id === session.partner_id);
       const dealer = partner?.partner_type === "dealer";
       const vehicles = dealer ? fixture.vehicles.filter(item => item.dealer_partner_id === partner.id) : fixture.vehicles;
       const requests = dealer ? insuranceCases.filter(item => item.dealer_partner_id === partner.id).map(sanitizeDealerInsuranceRequest) : insuranceCases;
       return send(res, {
-        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers, insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
+        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers,vehicle_types:fixture.vehicle_types||[],feedbacks:fixture.feedbacks||[],marquee_messages:fixture.marquee_messages||[],insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
           calendar_events: partner ? [] : fixture.calendar, vehicle_service_records: partner ? [] : fixture.baselines, maintenance_notifications: partner ? [] : notifications },
         ...(partner ? { partner } : { admin_profile: admin }),
       });

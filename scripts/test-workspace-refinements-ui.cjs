@@ -21,8 +21,8 @@ fixture.vehicles[1].current_driver_id=alternateDriver;
 fixture.vehicles[1].driver_history=[];
 fixture.drivers=[
  {id:driver,name:'測試司機一',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註',unknown_field:'保留'},updated_at:null},
- {id:alternateDriver,name:'測試司機二',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註'},updated_at:null},
- {id:'20000000-0000-4000-8000-000000000003',name:'其他車商司機',dealer_partner_id:other,driver_status:'待上線',updated_at:null}
+ {id:alternateDriver,name:'測試司機二',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'跑趟中',onboarding_progress:{notes:'原始進度備註'},updated_at:null},
+ {id:'20000000-0000-4000-8000-000000000003',name:'測試待上線司機',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註'},updated_at:null}
 ];
 async function main(){
  const dataFile=path.join(root,'.fleet-preview','qa-workspace-'+process.pid+'.json');fs.writeFileSync(dataFile,JSON.stringify(fixture));
@@ -79,7 +79,9 @@ async function main(){
   assert.equal(await page.locator('#modalForm input[name=driver_id]:checked').inputValue(),alternateDriver,'editing preserves the previously selected alternate driver');
   await page.locator('#modalForm [data-close-modal]').click();
   assert.equal((await api('load')).data.vehicles.find(row=>row.id===id(11)).current_driver_id,driver,'reassigning maintenance leaves vehicle driver unchanged');
-  const driverPage=await browser.newPage({viewport:{width:390,height:844}});await driverPage.goto(base+'/?review=driver2');await driverPage.locator('[data-view="maintenance"]').click();await driverPage.locator('[data-task-status$=":completed"]').click();await driverPage.locator('[data-dialog-confirm]').click();await driverPage.locator('.app-dialog-input').fill('100000');await driverPage.locator('[data-dialog-confirm]').click();
+  const driverPage=await browser.newPage({viewport:{width:390,height:844}});await driverPage.goto(base+'/?review=driver2');await driverPage.locator('[data-view="maintenance"]').click();await driverPage.locator('[data-task-status$=":completed"]').click();await driverPage.locator('.benefit-photo-modal [name=odometer]').fill('100000');
+  for(const [i,slot]of ['tire_fl','tire_fr','tire_rl','tire_rr','work_order'].entries()){const bytes=await driverPage.evaluate(index=>{const c=document.createElement('canvas');c.width=c.height=80;const x=c.getContext('2d');x.fillStyle='hsl('+(index*55)+',70%,50%)';x.fillRect(0,0,80,80);return c.toDataURL('image/jpeg').split(',')[1];},i);const saved=driverPage.waitForResponse(r=>r.url().endsWith('/__preview_api')&&r.request().postDataJSON()?.action==='operation_photo');await driverPage.locator('[data-benefit-photo='+slot+']').setInputFiles({name:slot+'.jpg',mimeType:'image/jpeg',buffer:Buffer.from(bytes,'base64')});assert.equal((await saved).status(),200);await driverPage.locator('[data-photo-tile='+slot+'] [data-photo-status]').filter({hasText:'已保存'}).waitFor();}
+  await driverPage.locator('.benefit-photo-modal [type=submit]').click();await driverPage.locator('.benefit-photo-modal').waitFor({state:'detached'});
   await driverPage.locator('[data-task-status$=":completed"]').waitFor({state:'hidden'});
   const loaded=(await api('load')).data;assert(loaded.calendar_events.find(row=>row.id===scheduled.id).completed_at);assert.equal(loaded.vehicle_service_records.length,1,'driver completion did not create history');
   await page.reload();await page.locator('[data-admin-view="serviceRecords"]').waitFor({state:'attached'});await nav('maintenanceManagement');await page.getByText('已完成・待工單',{exact:true}).first().waitFor();await nav('serviceRecords');await page.locator('[data-workorder-schedule="'+scheduled.id+'"]').click();await page.locator('#modalForm [name=complaint]').fill('定期保養');await page.locator('#modalForm [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
@@ -87,15 +89,15 @@ async function main(){
   assert.equal((await api('load')).data.vehicle_service_records.length,2);
   await page.reload();await page.locator('[data-admin-view="adminUsers"]').waitFor({state:'attached'});await nav('adminUsers');await page.locator('[data-modal="adminUser"][data-id]').click();assert(await permission.isChecked());
   await page.locator('#modalForm [data-close-modal]').click();
-  await page.setViewportSize({width:390,height:900});await nav('driverOnboarding');
-  await page.locator('[data-onboarding-close="'+alternateDriver+'"]').click();
+  await page.reload();await page.locator('[data-admin-view=driverOnboarding]').waitFor({state:'attached'});await page.setViewportSize({width:390,height:900});await nav('driverOnboarding');
+  await page.locator('[data-onboarding-close="'+'20000000-0000-4000-8000-000000000003'+'"]').click();
   assert.equal(await page.locator('[data-onboarding-close-form] [name="driver_status"]').inputValue(),'');
   assert(await page.locator('.onboarding-close-dialog').evaluate(el=>el.getBoundingClientRect().right<=innerWidth+1));
-  await page.locator('[data-onboarding-close-cancel]').click();assert.equal((await api('load')).data.drivers.find(row=>row.id===alternateDriver).driver_status,'待上線');
-  await page.locator('[data-onboarding-close="'+alternateDriver+'"]').click();
+  await page.locator('[data-onboarding-close-cancel]').click();assert.equal((await api('load')).data.drivers.find(row=>row.id==='20000000-0000-4000-8000-000000000003').driver_status,'待上線');
+  await page.locator('[data-onboarding-close="'+'20000000-0000-4000-8000-000000000003'+'"]').click();
   await page.locator('[data-onboarding-close-form] [name="driver_status"]').selectOption('跑趟中');
   await page.locator('[data-onboarding-close-form] [type="submit"]').click();await page.locator('.onboarding-row.is-completed').waitFor();
-  const finished=(await api('load')).data.drivers.find(row=>row.id===alternateDriver);assert.equal(finished.driver_status,'跑趟中');assert(finished.onboarding_completed_at);assert.equal(finished.onboarding_progress.notes,'原始進度備註');
+  const finished=(await api('load')).data.drivers.find(row=>row.id==='20000000-0000-4000-8000-000000000003');assert.equal(finished.driver_status,'跑趟中');assert(finished.onboarding_completed_at);assert.equal(finished.onboarding_progress.notes,'原始進度備註');
   await page.locator('[data-onboarding-filter="active"]').click();await page.locator('[data-modal="driverOnboarding"][data-id="'+driver+'"]').click();
   await page.locator('#modalForm [name="onboarding_completed_at"]').fill(today);await page.locator('#modalForm [type=submit]').click();
   assert.equal(await page.locator('.modal-backdrop:visible').count(),1,'status selection replaces the visible progress editor');
@@ -105,8 +107,8 @@ async function main(){
   assert(await page.locator('.onboarding-close-dialog').evaluate(el=>el.getBoundingClientRect().right<=innerWidth+1));
   await page.locator('[data-onboarding-close-form] [name="driver_status"]').selectOption('停派中');await page.locator('[data-onboarding-close-form] [type=submit]').click();await page.locator('#modalForm').waitFor({state:'hidden'});
   const stopped=(await api('load')).data.drivers.find(row=>row.id===driver);assert.equal(stopped.driver_status,'停派中');assert.equal(stopped.onboarding_progress.unknown_field,'保留');
-  const report=await api('load_driver_reporting',{month:today.slice(0,7)});assert(!report.data.rows.some(row=>row.driver_id===driver),'status change immediately updates reporting eligibility');assert(report.data.rows.some(row=>row.driver_id===alternateDriver));
+  const report=await api('load_driver_reporting',{month:today.slice(0,7)});assert(!report.data.rows.some(row=>row.driver_id===driver),'status change immediately updates reporting eligibility');assert(report.data.rows.some(row=>row.driver_id==='20000000-0000-4000-8000-000000000003'));
   assert.deepEqual(errors,[]);console.log('PASS: workspace permissions, responsive fleet UI, maintenance completion flow, onboarding status selection/cancellation, progress-editor closure and immediate reporting eligibility update.');
- }finally{if(browser)await browser.close();child.kill();await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));fs.unlinkSync(dataFile);}
+ }finally{if(browser)await browser.close();child.kill();await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));fs.unlinkSync(dataFile);const photoFolder=path.resolve(dataFile+'.benefit-files');if(!photoFolder.startsWith(path.join(root,'.fleet-preview')+path.sep)||!photoFolder.endsWith('qa-workspace-'+process.pid+'.json.benefit-files'))throw Error('Unsafe test cleanup');fs.rmSync(photoFolder,{recursive:true,force:true});}
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

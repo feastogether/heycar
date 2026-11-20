@@ -79,7 +79,7 @@ async function main() {
   reset(); database.dispatch_orders[0].status = 'cancelled'; assert.equal((await assignment()).status, 409);
   reset(); database.dispatch_orders[0].driver_name = '已有司機'; assert.equal((await assignment()).status, 409);
   reset(); race = true; assert.equal((await assignment()).status, 409);
-  reset(); database.dispatch_orders = Array.from({ length: 1101 }, (_, i) => ({ ...order, id: String(i), assigned_vendor: i % 2 ? '乙車商' : '甲車商' }));
+  reset(); database.dispatch_orders = Array.from({ length: 1101 }, (_, i) => ({ ...order, reservation_date:'2026-09-12', id: String(i), assigned_vendor: i % 2 ? '乙車商' : '甲車商' }));
   const loaded = await context.loadDealerDispatch('a');
   assert.equal(loaded.orders.length, 551);
   assert.equal(loaded.drivers.length, 1);
@@ -88,15 +88,20 @@ async function main() {
   context.tablePermission = { dispatch_orders: 'dispatchCenter' };
   context.adminCan = async () => true;
   vm.runInContext('async ' + functionSource(backend, 'loadAdminData'), context);
-  const adminData = await context.loadAdminData({ is_super_admin: true });
+  database.dispatch_orders.push({...order,id:'other-day',reservation_date:'2026-09-13'});
+  const adminData = await context.loadAdminData({ is_super_admin: true },'all','2026-09-12');
   assert.equal(adminData.data.dispatch_orders.length, 1101);
   rowCap = 73;
-  assert.equal((await context.loadAdminData({ is_super_admin: true })).data.dispatch_orders.length, 1101);
-  assert.equal((await context.loadDealerDispatch('a')).orders.length, 551);
+  assert.equal((await context.loadAdminData({ is_super_admin: true },'all','2026-09-12')).data.dispatch_orders.length, 1101);
+  assert.equal((await context.loadDealerDispatch('a')).orders.length, 552);
   rowCap = Infinity;
   context.adminCan = async () => false;
-  assert.equal((await context.loadAdminData({ is_super_admin: true })).data.dispatch_orders.length, 0);
+  assert.equal((await context.loadAdminData({ is_super_admin: true },'all','2026-09-12')).data.dispatch_orders.length, 0);
 
+  vm.runInContext(functionSource(backend,'driverOwnsVehicle'),context);
+  assert.equal(context.driverOwnsVehicle({current_driver_id:driver.id,driver_history:[{driver_id:'other',start_at:'2026-09-01'}]},driver,'2026-09-12'),false,'active history takes precedence over stale assignment');
+  assert.equal(context.driverOwnsVehicle({driver_history:[{driver_id:driver.id,start_at:'2026-09-01'},{driver_id:'other',start_at:'2026-09-01'}]},driver,'2026-09-12'),true,'both current shared drivers retain visibility');
+  assert.equal(context.driverOwnsVehicle({driver_history:[],assigned_driver_names:'王司機 / 另一人'},driver,'2026-09-12'),true);
   const front = vm.createContext({ state: { user: { name: '林嘉正', fleet_name: '亞菲得車隊' }, data: { dispatch_orders: [], drivers: [] } }, today: () => '2026-09-12', scheduleDispatchFlightMiniStatuses() {}, dispatchFlightStatusLabel: () => ({ text: '準點', className: 'ontime' }), dispatchOrderNeedsAttention: () => false, escapeHtml: value => String(value ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('"','&quot;'), normalizedText: value => String(value || '').trim().toUpperCase(), platformClass: () => 'canlead', dispatchDisplayDate: value => value, phoneMatches: (a,b) => a === b });
   front.dispatchFlightCacheKey = order => order.flight_no || '';
   front.window = { innerWidth: 390 };

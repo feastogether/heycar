@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $output = Join-Path $root "cloudflare-public"
+$resolvedOutput = [System.IO.Path]::GetFullPath($output)
+if ($resolvedOutput -ne [System.IO.Path]::GetFullPath((Join-Path $root 'cloudflare-public')) -or (Split-Path -Parent $resolvedOutput) -ne [System.IO.Path]::GetFullPath($root)) { throw 'Unsafe build output path' }
 
 if (Test-Path -LiteralPath $output) {
   Remove-Item -LiteralPath $output -Recurse -Force
@@ -9,6 +11,7 @@ if (Test-Path -LiteralPath $output) {
 
 New-Item -ItemType Directory -Path $output | Out-Null
 Copy-Item -LiteralPath (Join-Path $root "index.html") -Destination $output
+Copy-Item -LiteralPath (Join-Path $root "flight-board.html") -Destination $output
 Copy-Item -LiteralPath (Join-Path $root "app.js") -Destination $output
 if (Test-Path -LiteralPath (Join-Path $root "recruitment-pdf.js")) {
   Copy-Item -LiteralPath (Join-Path $root "recruitment-pdf.js") -Destination $output

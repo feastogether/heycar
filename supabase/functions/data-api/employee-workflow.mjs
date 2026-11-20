@@ -20,6 +20,7 @@ export function createEmployeeWorkflowHandler({db,adminCan}) {
     if(!actor) return fail('SESSION_EXPIRED',401);
     if(body.action==='load_avatar_profiles'||body.action==='save_own_avatar') {
       if(body.action==='save_own_avatar') {
+        if(session.session_type==='driver')return fail('司機頭像由管理後台設定',403);
         if(!validAvatar(body.avatar_url))return fail('請選擇有效照片，壓縮後須小於 135 KB');
         const {error}=await db.from('avatar_profiles').upsert({...actor,avatar_url:body.avatar_url,updated_at:new Date().toISOString()},{onConflict:'actor_type,actor_id'});
         if(error)return fail(error.message);
@@ -46,7 +47,8 @@ export function createEmployeeWorkflowHandler({db,adminCan}) {
     } else if(body.action==='complete_service_schedule') {
       if(session.session_type!=='driver')return fail('僅通知的司機可回報完成',403);
       if(typeof body.odometer!=='number'||!Number.isFinite(body.odometer)||body.odometer<0)return fail('請輸入有效的完成里程');
-      name='complete_vehicle_service_schedule';args={p_id:body.id,p_driver:session.driver_id,p_odometer:body.odometer};
+      if(!Array.isArray(body.photos)||body.photos.length!==5||body.photos.some(id=>!uuid(id)))return fail('請完成四顆輪胎及保養工單照片');
+      name='hey_complete_service';args={p_id:body.id,p_driver:session.driver_id,p_odometer:body.odometer,p_photos:body.photos};
     } else return fail('ACTION_NOT_ALLOWED',403);
     const {data,error}=await db.rpc(name,args);
     return error?fail(error.message,409):{body:data,status:200};

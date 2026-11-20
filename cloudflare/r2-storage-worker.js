@@ -1,3 +1,6 @@
+import { flightBoard } from './flight-board.js';
+import { operationalMedia } from './operational-media.js';
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "https://heycar.airvan.workers.dev",
   "Access-Control-Allow-Headers": "content-type, x-afide-session",
@@ -96,6 +99,7 @@ async function listAll(bucket, origin, signingSecret) {
   do {
     const page = await bucket.list({ limit: 1000, cursor, include: ["httpMetadata", "customMetadata"] });
     for (const item of page.objects) {
+      if (item.key.startsWith('_flight-board/')) continue;
       const signature = await signPath(signingSecret, item.key);
       files.push({
         path: item.key,
@@ -106,6 +110,7 @@ async function listAll(bucket, origin, signingSecret) {
         size: item.size,
         created_at: item.uploaded,
         content_type: item.httpMetadata?.contentType || "application/octet-stream",
+        managed: item.key.startsWith('photos/vehicle-inspections/') || item.key.startsWith('photos/driver-operations/'),
         url: `${origin}/files/${encodeURIComponent(item.key)}?sig=${signature}`
       });
     }
@@ -117,8 +122,10 @@ async function listAll(bucket, origin, signingSecret) {
 async function handleDownload(request, env, path) {
   const url = new URL(request.url);
   const signature = url.searchParams.get("sig") || "";
-  const expected = await signPath(env.FILE_SIGNING_SECRET, path);
-  if (!signature || signature !== expected) return json({ error: "INVALID_FILE_SIGNATURE" }, 403);
+  if (!/^[a-f0-9]{64}$/.test(signature || '')) return json({ error: "INVALID_FILE_SIGNATURE" }, 403);
+  const signingKey=await crypto.subtle.importKey('raw',new TextEncoder().encode(env.FILE_SIGNING_SECRET),{name:'HMAC',hash:'SHA-256'},false,['verify']);
+  const valid=await crypto.subtle.verify('HMAC',signingKey,Uint8Array.from(signature.match(/../g),value=>parseInt(value,16)),new TextEncoder().encode(path));
+  if (!valid) return json({ error: "INVALID_FILE_SIGNATURE" }, 403);
   const head = await env.ATTACHMENTS.head(path);
   if (!head) return json({ error: "FILE_NOT_FOUND" }, 404);
   const range = parseRangeHeader(request.headers.get("Range"), head.size);
@@ -176,6 +183,8 @@ export default {
     if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
     try {
       const url = new URL(request.url);
+      if (url.pathname === '/api/operational-media' || url.pathname === '/internal/operational-media') return await operationalMedia(request, env);
+      if (url.pathname === '/api/flight-board') return await flightBoard(request, env);
       if ((request.method === "GET" || request.method === "HEAD") && url.pathname.startsWith("/files/")) {
         return await handleDownload(request, env, decodeURIComponent(url.pathname.slice(7)));
       }
@@ -203,6 +212,7 @@ export default {
       if (body.action === "delete") {
         const paths = Array.isArray(body.paths) ? body.paths.map(String).filter(Boolean).slice(0, 100) : [];
         if (!paths.length) return json({ error: "NO_FILES_SELECTED" }, 400);
+        if (paths.some(path => path.startsWith('_flight-board/') || path.startsWith('photos/vehicle-inspections/') || path.startsWith('photos/driver-operations/'))) return json({ error: 'MANAGED_FILE' }, 403);
         await env.ATTACHMENTS.delete(paths);
         return json({ deleted: paths.length });
       }
