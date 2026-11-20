@@ -284,6 +284,8 @@
 
   featureIcons.vehicleInspections = featureIcons.myVehicle;
   const driverFrontendFeatures = [
+    ["heyPoints","HEY POINT 點數"],
+    ["equipmentLoans","用品租借"],
     ["vehicleInspections", "車輛檢查"],
     ["driverReporting", "司機報班"],
     ["dispatchCenter", "派趟中心"],
@@ -4361,47 +4363,13 @@
       </footer></article>`;
   }
 
-  function fleetForecastTable(rows) {
-    const services = [["maintenance", "保養"], ["tires", "調胎"]];
-    return `<div class="fleet-table-scroll fleet-forecast-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格">
-      <table class="fleet-data-table fleet-forecast-table fleet-two-tier">
-        <colgroup span="1"></colgroup><colgroup span="2"></colgroup><colgroup span="3"></colgroup><colgroup span="3"></colgroup><colgroup span="1"></colgroup>
-        <thead><tr>
-          <th scope="col" rowspan="2" class="fleet-frozen-column">車輛</th><th scope="colgroup" colspan="2">里程資料</th>
-          ${services.map(([kind, label]) => `<th scope="colgroup" colspan="3" data-kind="${kind}">${label}</th>`).join("")}
-          <th scope="col" rowspan="2">近七日實際行駛</th>
-        </tr><tr>
-          <th scope="col">平均里程</th><th scope="col">最近加油</th>
-          ${services.map(([kind]) => ["狀態／剩餘", "上次／目標", "建議日期／排程"].map(label => `<th scope="col" data-kind="${kind}">${label}</th>`).join("")).join("")}
-        </tr></thead><tbody>
-        ${rows.map(row => `<tr>
-          <th scope="row" class="fleet-frozen-column">
-            <button class="fleet-plate-link" data-fleet-go="fuel" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button>
-            ${row.driver ? `<small>${escapeHtml(row.driver)}</small>` : ""}
-            <small>${escapeHtml(row.model || "—")}</small>
-          </th>
-          <td data-label="平均里程">
-            <div class="fleet-cell-pair"><span>日均</span><strong>${fleetKm(row.avg_daily_km)}</strong></div>
-            <div class="fleet-cell-pair"><span>週均</span><strong>${fleetKm(row.avg_daily_km == null ? null : row.avg_daily_km * 7)}</strong></div>
-            <div class="fleet-cell-pair"><span>月均</span><strong>${fleetKm(row.avg_daily_km == null ? null : row.avg_daily_km * 30)}</strong></div>
-          </td>
-          <td data-label="最近加油"><strong>${fleetKm(row.last_fill_mileage)}</strong><small>${escapeHtml(row.last_fill_date || "尚無紀錄")}</small>
-            ${row.fuelIssue || row.staleFuel ? `<span class="fleet-status" data-tone="amber">${row.fuelIssue ? "里程可疑" : "加油資料過舊"}</span>` : ""}</td>
-          ${row.services.map(service => {
-            const label = calendarTypeName(service.kind);
-            const { forecast } = service;
-            return `<td data-label="${label} · 狀態／剩餘" data-kind="${service.kind}">
-              ${fleetServiceBadge(service)}<strong class="fleet-table-distance${forecast?.remaining < 0 ? " fleet-overdue" : ""}">${fleetServiceDistance(service)}</strong>
-            </td><td data-label="${label} · 上次／目標" data-kind="${service.kind}">
-              <small>上次 ${fleetServiceBaseline(service)}</small><div class="fleet-cell-pair"><span>目標</span><strong>${fleetKm(forecast?.target)}</strong></div>
-            </td><td data-label="${label} · 日期／操作" data-kind="${service.kind}" class="fleet-forecast-actions-cell">
-              ${fleetServiceScheduleNote(service)}
-              ${fleetServiceActions(row, service)}
-            </td>`;
-          }).join("")}
-          <td data-label="近七日實際行駛">${row.observed ? `<strong>${fleetKm(row.observed.km)}</strong><small>怠速 ${fleetDuration(row.observed.idle)}</small><small>${row.observed.days} 天有日報</small>` : "<small>無日報</small>"}
-            <button class="fleet-plate-link" data-fleet-go="idle" data-recent data-plate="${escapeHtml(row.plate)}">查看日報</button></td>
-        </tr>`).join("")}</tbody></table></div>`;
+  function fleetForecastTable(rows){
+    const number=value=>value==null?'—':Number(value).toLocaleString('zh-TW',{maximumFractionDigits:1});
+    const service=(row,kind)=>row.services.find(s=>s.kind===kind)||{kind};
+    const dateCell=s=>{const date=s.scheduled?.event_date||s.forecast?.date;return `<span class="forecast-date ${fleetServiceScheduleExpired(s)?'is-overdue':''}">${escapeHtml(date||'尚未登記')}${s.scheduled?' ▣':''}</span>`;};
+    const remaining=s=>`<strong class="${s.forecast?.remaining<0?'is-overdue':''}">${number(s.forecast?.remaining)}</strong>`;
+    const recordActions=s=>!adminCan('serviceRecords')?'':s.baselineSuspect&&s.last?.id?'<button class="ghost-btn" data-modal="serviceRecord" data-id="'+escapeHtml(s.last.id)+'">核對里程</button>':s.last?.completion_only?'<button class="ghost-btn" data-workorder-schedule="'+escapeHtml(s.last.service_schedule_id)+'">登打工單</button>':'';
+    return `<div class="fleet-table-scroll fleet-forecast-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格"><table class="fleet-data-table fleet-forecast-table forecast-ledger"><thead><tr>${['狀態','車牌','司機','平均日里程','平均週里程','平均月里程','最近加油里程','最近保養里程','上次保養','下次保養','保養剩餘里程','預計保養時間','上次調胎','下次調胎','調胎剩餘里程','預計調胎時間','操作'].map((label,i)=>`<th scope="col" ${i>=7&&i<=11?'data-kind="maintenance"':i>=12&&i<=15?'data-kind="tires"':''}>${label}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>{const m=service(row,'maintenance'),t=service(row,'tires');return `<tr><td class="forecast-status">${fleetServiceBadge(m)}${fleetServiceBadge(t)}</td><th scope="row"><button class="fleet-plate-link" data-fleet-go="fuel" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button></th><td class="forecast-driver">${escapeHtml(row.driver||'—')}</td><td class="km-daily">${number(row.avg_daily_km)}</td><td class="km-weekly">${number(row.avg_daily_km==null?null:row.avg_daily_km*7)}</td><td class="km-monthly">${number(row.avg_daily_km==null?null:row.avg_daily_km*30)}</td><td><strong>${number(row.last_fill_mileage)}</strong><small>${escapeHtml(row.last_fill_date||'尚無紀錄')}</small></td><td data-kind="maintenance"><strong>${number(m.last?.odometer)}</strong></td><td data-kind="maintenance">${escapeHtml(m.last?.service_date||'—')}</td><td data-kind="maintenance"><strong>${number(m.forecast?.target)}</strong></td><td data-kind="maintenance">${remaining(m)}</td><td data-kind="maintenance">${dateCell(m)}</td><td data-kind="tires"><strong>${number(t.last?.odometer)}</strong><small>${escapeHtml(t.last?.service_date||'—')}</small></td><td data-kind="tires"><strong>${number(t.forecast?.target)}</strong></td><td data-kind="tires">${remaining(t)}</td><td data-kind="tires">${dateCell(t)}</td><td class="forecast-table-actions">${(adminCan("calendar")?[m,t]:[]).map(s=>`<button class="ghost-btn" ${s.scheduled?`data-modal="calendarEvent" data-id="${escapeHtml(s.scheduled.id)}"`:`data-fleet-schedule="${escapeHtml(row.vehicle_id)}" data-kind="${s.kind}"`} title="${s.kind==='maintenance'?'保養':'調胎'}排程" aria-label="${s.kind==='maintenance'?'保養':'調胎'}排程">${s.kind==='maintenance'?'🛢':'◉'}</button>`).join('')}${[m,t].map(recordActions).join('')}</td></tr>`;}).join('')}</tbody></table></div>`;
   }
 
   function fleetForecastMetrics(rows) {
@@ -5526,8 +5494,11 @@
   function adminCan(permission) {
     if (state.adminProfile?.is_super_admin || state.adminProfile?.permissions?.all) return true;
     const permissions = state.adminProfile?.permissions || {};
-    if (permissions[permission]) return true;
+    if(permission==="fleetOperations"&&(permissions.maintenanceManagement||permissions.idleManagement))return true;
+    if(Object.hasOwn(permissions,permission))return permissions[permission]===true;
     const aliases = {
+      maintenanceManagement:["fleetOperations","calendar","maintenanceNotifications"],
+      idleManagement:["fleetOperations"],
       vehicleLoans: ["loans"],
       vehicleTypes: ["vehicles"],
       serviceRecords: ["service_records"],
@@ -5552,6 +5523,7 @@
   }
 
   const adminNavLabels = {
+    boardManagement: "看板管理",
     heyPoints: "點數管理",
     equipmentManagement: "安椅管理",
     vehicleInspections: "車輛檢查",
@@ -5598,7 +5570,7 @@
     ["員工辦公室", ["home"]],
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["heyPoints", "equipmentManagement", "drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
-    ["行控中心", ["dispatchCenter", "driverReporting", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
+    ["行控中心", ["boardManagement", "dispatchCenter", "driverReporting", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "vehicleInspections", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
   ];
@@ -5608,7 +5580,7 @@
   function adminPermissionCatalog() {
     return [["internalAnnouncements", "內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
       keys
-        .filter((key) => !["home", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor", "maintenanceManagement", "idleManagement"].includes(key))
+        .filter((key) => !["home", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
         .map((key) => [key, adminNavLabels[key] || key, department])
     ), ...["fleetOperations", "calendar", "maintenanceNotifications"].map(key => [key, adminNavLabels[key], "車輛事業"])];
   }
@@ -6112,13 +6084,14 @@
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
       ["driverReporting", "司機報班", "🗓️", "driverReporting"],
+      ["boardManagement","看板管理","📺","boardManagement"],
       ["heyPoints","點數管理","⭐","heyPoints"],
       ["equipmentManagement","安椅管理","💺","equipmentManagement"],
       ["vehicles", "車輛管理", "🚐", "vehicles"],
       ["vehicleInspections", "車輛檢查", "📷", "vehicleInspections"],
       ["fleetCases", "罰單管理", "🧾", "fleetCases"],
       ["maintenanceManagement", "保養管理", "🛠️", "maintenanceManagement"],
-      ["idleManagement", "怠速管理", "⏱️", "fleetOperations"],
+      ["idleManagement", "怠速管理", "⏱️", "idleManagement"],
       ["vehicleLoans", "車輛租借", "🔑", "vehicleLoans"],
       ["serviceRecords", "車輛履歷", "🚗", "serviceRecords"],
       ["insuranceCenter", "保險中心", "🛡️", "insuranceCenter"],
@@ -6137,7 +6110,7 @@
       ["emergencyEvents", "緊急事件", "🆘", "emergencyEvents"]
     ].filter(([key, , , permission]) => desktopMode
       ? (key === "vehicleLoans" || key === "mailManagement")
-      : (key === "maintenanceManagement" ? ["fleetOperations", "calendar", "maintenanceNotifications"].some(adminCan)
+      : (key === "maintenanceManagement" ? adminCan("maintenanceManagement")
         : key === "vehicleLoans" || !permission || adminCan(permission)));
     if (adminCan("loginSlogans") && !nav.some(([key]) => key === "loginSlogans")) {
       const marqueeIndex = nav.findIndex(([key]) => key === "marquee");
@@ -6161,6 +6134,7 @@
       maintenanceManagement: renderFleetOperations,
       idleManagement: renderFleetOperations,
       fleetPolicies: renderFleetOperations,
+      boardManagement: () => `<section id="boardManagementRoot"></section>`,
       heyPoints: benefitsPlaceholder,
       equipmentManagement: benefitsPlaceholder,
       vehicleLoans: adminVehicleLoans,
@@ -6205,6 +6179,7 @@
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
     if(state.adminView==="dispatchCenter")void refreshDispatchDay();
+    if(state.adminView==="boardManagement")window.HeycarBoardManagement.mount(document.getElementById("boardManagementRoot"),{token:state.apiSession,confirm:showConfirm});
     if(["heyPoints","equipmentManagement"].includes(state.adminView))mountBenefits(true,state.adminView==="heyPoints"?"points":"equipment");
     if (state.adminView === "vehicleInspections") mountVehicleInspections(false);
     if (state.adminView === "driverReporting") mountDriverReporting(false);
@@ -6474,7 +6449,9 @@
   }
 
   function adminPermissionEnabled(permissions, key) {
-    if (permissions?.[key]) return true;
+    if(Object.hasOwn(permissions||{},key))return permissions[key]===true;
+    if(key==="maintenanceManagement")return ["fleetOperations","calendar","maintenanceNotifications"].some(k=>permissions?.[k]);
+    if(key==="idleManagement")return !!permissions?.fleetOperations;
     const legacy = {
       vehicleLoans: "loans",
       vehicleTypes: "vehicles",
@@ -7136,7 +7113,7 @@
 
   function adminMarquee() {
     return `
-      <div class="section-head"><h2>跑馬燈號</h2><div class="inline-actions"><a class="ghost-btn" href="/flight-board" target="_blank" rel="noopener">電視航班／新聞看板</a><button class="primary-btn" data-modal="marqueeMessage">新增跑馬燈號</button></div></div>
+      <div class="section-head"><h2>跑馬燈號</h2><div class="inline-actions"><button class="primary-btn" data-modal="marqueeMessage">新增跑馬燈號</button></div></div>
       ${table(["通知內容", "狀態", "建立日期", "操作"], (state.data.marquee_messages || []).map((item) => [
         item.message || "",
         item.active === false ? `<span class="status returned">停用</span>` : `<span class="status done">啟用</span>`,
@@ -7801,7 +7778,7 @@
         record.target_fleets = formData.getAll("target_fleets").filter(Boolean);
       }
       if (tableName === "insurance_partners") {
-        record.frontend_permissions = Object.fromEntries(driverFrontendFeatures.map(([key]) => [key, formData.get(`frontend_${key}`) === "true"]));
+        record.frontend_permissions = { ...(item.frontend_permissions||{}),...Object.fromEntries(driverFrontendFeatures.map(([key]) => [key, formData.getAll(`frontend_${key}`).includes("true")]))};
         driverFrontendFeatures.forEach(([key]) => delete record[`frontend_${key}`]);
       }
       try {
@@ -7816,6 +7793,7 @@
         const normalizedRecord = type === "driverOnboarding"
           ? normalizeDriverOnboardingRecord(record)
           : normalizeRecord(tableName, record);
+        if(tableName==="admin_users")normalizedRecord.permissions={...(item.permissions||{}),...normalizedRecord.permissions};
         let updateOptions;
         if (tableName === "vehicle_loans") updateOptions = {loan_expected_updated_at:item?.updated_at ?? null};
         if (type === "vehicleFolder") updateOptions = { vehicle_files_expected_updated_at: item?.updated_at ?? null };
@@ -10125,7 +10103,7 @@
             ${flightDetailItems(flight, flight.direction || "arrival")}
           </div>
           <div class="flight-update">資料來源：${escapeHtml(flight.source || "TDX")} ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
-          ${state.user && !state.admin && !state.partner && flight.direction === "arrival" && flight.sourceType === "taoyuan" ? `<div class="flight-follow-actions"><button class="primary-btn" data-flight-follow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}">追蹤並顯示於電視</button><button class="ghost-btn" data-flight-unfollow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}">取消追蹤</button></div>` : ""}
+          ${state.user && !state.admin && !state.partner && flight.direction === "arrival" && flight.sourceType === "taoyuan" ? `<div class="flight-follow-actions"><button class="primary-btn" data-flight-follow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}">追蹤並顯示於電視</button></div>` : ""}
         </article>
       `).join("") : `<div class="empty">${escapeHtml(sourceName)}查無符合的航班。請確認日期、機場與班號是否正確。</div>`;
     } catch (error) {
@@ -10260,7 +10238,8 @@
       try {
         const response = await fetch('/api/flight-board', { method:'POST', headers:{'Content-Type':'application/json','x-afide-session':state.apiSession}, body:JSON.stringify({action:target.dataset.flightFollow?'follow':'unfollow',flight_no:target.dataset.flightFollow||target.dataset.flightUnfollow,date:target.dataset.flightDate}), signal:AbortSignal.timeout(25000) });
         const result = await response.json(); if (!response.ok) throw new Error(result.error || '追蹤失敗');
-        await showAlert(target.dataset.flightFollow?'已追蹤。航班抵達後，已配對並啟用廣播的電視會提醒。':'已取消此航班追蹤。','航班追蹤');
+        if(target.dataset.flightFollow){target.textContent="已追蹤 · 抵達後自動提醒";if(window.BroadcastChannel){const channel=new BroadcastChannel("heycar-flight-watches");channel.postMessage("changed");channel.close();}}
+        await showAlert(target.dataset.flightFollow?'已追蹤，數秒內顯示於看板。抵達廣播後三分鐘自動移除。':'已取消此航班追蹤。','航班追蹤');
       } catch(error) { await showAlert(error.message,'航班追蹤'); } finally { target.disabled=false; }
       return;
     }
@@ -11005,7 +10984,7 @@
       render();
     }
     if (target.dataset.adminView) {
-      if (!["home", "driverReporting", "vehicleInspections", "heyPoints", "equipmentManagement"].includes(target.dataset.adminView) && !adminFullDataReady) {
+      if (!["home", "driverReporting", "vehicleInspections", "heyPoints", "equipmentManagement", "boardManagement"].includes(target.dataset.adminView) && !adminFullDataReady) {
         try { await withAppLoading("正在載入功能資料", ensureAdminWorkspaceData); }
         catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
       }

@@ -37,11 +37,13 @@ class Bucket {
     assert.equal((await call({action:'snapshot'})).status,401);
     assert.equal((await call({action:'pair'},{'x-afide-session':'driver'})).status,403);
     pair=await call({action:'pair'},{'x-afide-session':'admin'});assert.equal(pair.status,200);
+    await call({action:'settings_save',settings:{revision:0,marquee:['電視專用跑馬燈'],announcements:[{id:'notice',title:'公司公告',content:'測試公告',active:true}]}},{'x-afide-session':'admin'});
     const follow={action:'follow',flight_no:'CI0001',date};
     assert.equal((await call(follow,{'x-afide-session':'driver'})).status,200);
     assert.equal((await call({...follow,driver_name:'偽造姓名'}, {'x-afide-session':'driver'})).status,200);
     assert.equal(sourceCalls,1,'shared feed cache');
-    let snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(snapshot.status,200);assert.equal(snapshot.data.watches.length,1);assert.equal(snapshot.data.watches[0].driverName,'合成司機');assert.equal(snapshot.data.marquee[0],'測試跑馬燈');
+    let snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(snapshot.status,200);assert.equal(snapshot.data.watches.length,1);assert.equal(snapshot.data.watches[0].driverName,'合成司機');assert.equal(snapshot.data.marquee[0],'電視專用跑馬燈');
+    const beforePulse=restCalls;const immediate=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(immediate.data.watches.length,1,'follow is visible on the next lightweight pulse');assert.equal(restCalls,beforePulse,'pulse only reads R2');assert.equal(sourceCalls,1,'pulse cannot download flight source');
     const before=restCalls;await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(restCalls,before,'paired TV refresh must not reread Supabase');
     await call({action:'unfollow',flight_no:'CI1',date},{'x-afide-session':'other'});snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches.length,1,'another driver cannot remove watch');
     const landed={...mapArrival({...pending,'備註':'已到'}),estimatedTime:new Date().toISOString()};
@@ -56,9 +58,9 @@ class Bucket {
     const base='http://127.0.0.1:'+server.address().port;browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage({viewport:{width:1920,height:1080}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
     await page.addInitScript(()=>{localStorage.setItem('heycar-board-token','a'.repeat(64));window.__news=[];window.YT={Player:class{constructor(el,options){this.options=options;this.frame=document.createElement('iframe');el.replaceWith(this.frame);window.__player=this;queueMicrotask(()=>options.events.onReady());}getIframe(){return this.frame;}mute(){window.__news.push('mute');}unMute(){window.__news.push('unmute');}playVideo(){}loadVideoById(){}destroy(){}}};window.AudioContext=class{currentTime=0;destination={};resume(){return Promise.resolve();}createOscillator(){return {frequency:{},connect(){return {connect(){}};},start(){},stop(){}};}createGain(){return {gain:{setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}};}};window.SpeechSynthesisUtterance=class{constructor(text){this.text=text;}};Object.defineProperty(window,'speechSynthesis',{value:{getVoices:()=>[],speak:u=>{window.__spoken=u.text;setTimeout(()=>u.onend(),10);},cancel(){}}});});
     const watch={id:'test-watch',flightNo:'CI1',driverName:'測試司機',createdAt:Date.now(),landedAt:Date.now(),flight:{airline:'測試航空',city:'東京',status:'已抵達'}};
-    await page.route('**/api/flight-board',route=>route.fulfill({json:{updated_at:new Date().toISOString(),flights:[mapArrival(pending)],watches:[watch],marquee:['安全駕駛'],news_video_id:'wM0g8EoUZ_E'}}));
+    await page.route('**/api/flight-board',route=>route.fulfill({json:{next_refresh_at:Date.now()+300000,updated_at:new Date().toISOString(),announcements:[{title:"公司公告",content:"測試公告"}],flights:[mapArrival(pending)],watches:[watch],marquee:['安全駕駛'],news_video_id:'wM0g8EoUZ_E'}}));
     await page.goto(base+'/flight-board#pair='+'a'.repeat(64));await page.locator('.news-video iframe').waitFor();assert.equal(new URL(page.url()).hash,'');assert.match(await page.locator('.news-video iframe').getAttribute('title'),/華視/);
-    await page.locator('[data-news-sound]').click();await page.locator('#enableAudio').click();await page.waitForFunction(()=>window.__spoken?.includes('測試司機'));await page.waitForTimeout(80);
+    await page.locator('[data-news-sound]').evaluate(el=>el.click());await page.locator('#enableAudio').click();await page.waitForFunction(()=>window.__spoken?.includes('測試司機'));await page.waitForTimeout(80);
     const calls=await page.evaluate(()=>window.__news);assert(calls.indexOf('unmute')>=0);assert.deepEqual(calls.slice(-2),['mute','unmute'],'news ducks for landing speech and restores selected sound');
     assert.equal(await page.locator('#marqueeText').textContent(),'安全駕駛');
     for(const width of [1920,1440,768,390]){await page.setViewportSize({width,height:1080});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'horizontal overflow '+width);}

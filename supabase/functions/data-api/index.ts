@@ -38,6 +38,7 @@ const db = createClient(
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || ""
 );
 const storageBucket = "attachments";
+async function driverBenefitsAccess(session,feature){const {data:driver,error}=await db.from('drivers').select('dealer_partner_id').eq('id',session.driver_id).single();if(error||!driver)return false;if(!driver.dealer_partner_id)return true;const {data:dealer,error:dealerError}=await db.from('insurance_partners').select('frontend_permissions').eq('id',driver.dealer_partner_id).single();if(dealerError)return false;return dealer?.frontend_permissions?.[feature]!==false;}
 function operationalMediaStore(){return createMediaStore({db,secret:Deno.env.get('MEDIA_SIGNING_SECRET'),apiUrl:Deno.env.get('MEDIA_API_URL'),publicOrigin:Deno.env.get('MEDIA_PUBLIC_ORIGIN')});}
 const signedStorageUrlTtlSeconds = 60 * 60;
 
@@ -488,7 +489,8 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
   const data = await adminPermissionProfiles.get(session);
   if (!data?.active) return false;
   const permissions = (data.permissions || {}) as Record<string, boolean>;
-  if (permissions[permission]) return true;
+  if(permission==="fleetOperations"&&(permissions.maintenanceManagement||permissions.idleManagement))return true;
+  if(Object.hasOwn(permissions,permission))return permissions[permission]===true;
   const aliases: Record<string, string[]> = {
     vehicleLoans: ["loans"],
     vehicleTypes: ["vehicles"],
@@ -1626,7 +1628,7 @@ Deno.serve(async (req) => {
 
     const session = await getSession(req);
     if (!session) return json({ error: "SESSION_EXPIRED" }, 401);
-    if(/^(?:points_|reward_save$|redemption_process$|equipment_|operation_(?:photo|photo_ticket|photos|storage)$)/.test(String(body.action))){const result=await createBenefitsHandler({db,adminCan,media:operationalMediaStore()})(body,session);return json(result.body,result.status);}
+    if(/^(?:points_|reward_save$|redemption_process$|equipment_|operation_(?:photo|photo_ticket|photos|storage)$)/.test(String(body.action))){const result=await createBenefitsHandler({db,adminCan,media:operationalMediaStore(),driverCan:driverBenefitsAccess})(body,session);return json(result.body,result.status);}
     if(body.table==="driver_links")return json({error:"連結管理已停用"},410);
     if (body.action === "vehicle_loan_action") {
       const result=await createLoanActionHandler({db})(body,session);return json(result.body,result.status);

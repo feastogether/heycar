@@ -494,7 +494,7 @@ Deno.serve(async (request) => {
 
     if (source === "taoyuan") {
       let rows,boardBackup=false;
-      try{rows = await readTaoyuanRows();}catch(error){
+      try{rows = await readTaoyuanRows();if(url.searchParams.get('board')==='1'&&Date.now()-taoyuanCache.ts>600000)throw Error('BOARD_SOURCE_STALE');}catch(error){
         if(url.searchParams.get('board')!=='1')throw error;
         boardBackup=true;
         const backup=await readTdxRows('Arrival',await tdxToken(),'TPE');

@@ -1,7 +1,7 @@
 const text=value=>String(value||'').trim().replace(/^null$/i,'');
 export function compactBoardFeed(rows,updated=Date.now(),now=Date.now()){
  const date=value=>new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date(value));
- const days=[date(now),date(now+86400000)];
+ const days=[date(now-86400000),date(now),date(now+86400000)];
  return {version:1,updated,rows:rows.filter(row=>row['方向']==='A'&&days.includes(text(row['表訂日期']).slice(0,10))).slice(0,3000).map(row=>[text(row['航空公司代碼'])+text(row['班次']),text(row['航空公司中文']),text(row['往來地點中文'])||text(row['往來地點英文']),text(row['表訂日期']).slice(0,10),text(row['表訂時間']).slice(0,8),text(row['預計日期']).slice(0,10),text(row['預計時間']).slice(0,8),text(row['航廈']),text(row['行李轉盤']),text(row['備註']),text(row['航班動態中文'])])};
 }
 export function expandBoardFeed(payload){

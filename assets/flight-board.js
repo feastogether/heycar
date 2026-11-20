@@ -6,8 +6,8 @@ const storage = { get(key, fallback='') { try { return localStorage.getItem(key)
 const fragment = new URLSearchParams(location.hash.slice(1));
 if (/^[a-f0-9]{64}$/.test(fragment.get('pair') || '')) storage.set('heycar-board-token', fragment.get('pair'));
 if (location.hash) history.replaceState(null, '', location.pathname + location.search);
-let token = storage.get('heycar-board-token'), news = null, audio = null, enabled = false, processing = false, busy = false, timer = null, pairId = '';
-let lastFeed = null; const watches = new Map(), queue = [];
+let token = storage.get('heycar-board-token'), news = null, audio = null, enabled = false, processing = false, busy = false, feedBusy = false, timer = null, pulseTimer = null;
+let lastFeed = null;const inFlight=new Set(); const watches = new Map(), queue = [];
 let done; try { done = new Map(JSON.parse(storage.get('heycar-board-announced','[]'))); } catch { done = new Map(); }
 const markDone = id => { done.set(id,Date.now()); done = new Map([...done].slice(-300)); storage.set('heycar-board-announced',JSON.stringify([...done])); };
 async function api(body, admin=false) {
@@ -15,25 +15,35 @@ async function api(body, admin=false) {
   const response = await fetch('/api/flight-board', { method:'POST', headers:{ 'Content-Type':'application/json', ...(admin ? {'x-afide-session':session.token || ''} : {'x-board-token':token}) }, body:JSON.stringify(body), signal:AbortSignal.timeout(25000) });
   const result = await response.json(); if (!response.ok) { const error = new Error(result.error || '看板無法連線'); error.status=response.status; throw error; } return result;
 }
-function renderTracked() {
-  const rows = [...watches.values()].filter(w => !w.hideAt || Date.now()<w.hideAt).sort((a,b) => Number(!!b.landedAt)-Number(!!a.landedAt) || a.createdAt-b.createdAt);
-  $('trackingCount').textContent = `${rows.length} 班`;
-  $('trackedFlights').innerHTML = rows.length ? rows.map(w => `<article class="tracked-flight ${w.landedAt?'landed':''}"><div class="track-top"><strong>${escape(w.flightNo)}</strong><span>${escape(w.landedAt?'已抵達':w.flight?.status || '等待更新')}</span></div><p>${escape(w.flight?.airline || '')} · ${escape(w.flight?.city || '桃園')}</p><footer><b>司機 ${escape(w.driverName)}</b><span>${w.landedAt?'請聯繫客戶':'預計 '+time(w.flight?.estimatedTime || w.flight?.scheduledTime)}</span></footer></article>`).join('') : '<p class="empty">目前沒有追蹤中的航班。司機可在航班查詢後點選追蹤。</p>';
+const logo=flight=>{const code=flight.airlineCode||String(flight.flightNo||'').slice(0,2);return /^[A-Z0-9]{2}$/.test(code)?`<img src="https://images.kiwi.com/airlines/64/${code}.png" alt="" onerror="this.hidden=true">`:'';};
+const phase=()=>Math.floor(Date.now()/8000);
+function renderTracked(){
+ const rows=[...watches.values()].filter(row=>!row.hideAt||Date.now()<row.hideAt),groups=new Map();for(const row of rows){const key=row.date+row.flightNo;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(row);}
+ for(const group of groups.values())group.sort((a,b)=>b.createdAt-a.createdAt);
+ const cards=[...groups.values()].sort((a,b)=>Number(!!b[0].landedAt)-Number(!!a[0].landedAt)||a[0].createdAt-b[0].createdAt),pages=Math.max(1,Math.ceil(cards.length/4)),recent=cards.findIndex(group=>Date.now()-group[0].createdAt<15000),page=recent>=0?Math.floor(recent/4):phase()%pages;
+ $('trackingCount').textContent=`${cards.length} 班 · ${rows.length} 位司機${pages>1?' · '+(page+1)+'/'+pages:''}`;
+ $('trackedFlights').innerHTML=cards.slice(page*4,page*4+4).map(group=>{const row=group[0],flight=row.flight||{flightNo:row.flightNo},eta=flight.estimatedTime||flight.scheduledTime,late=!row.landedAt&&Date.parse(eta)<Date.now(),namePage=Date.now()-group[0].createdAt<15000?0:phase()%Math.max(1,Math.ceil(group.length/4)),names=group.slice(namePage*4,namePage*4+4);return `<article class="tracked-flight ${row.landedAt?'landed':''}"><header>${logo(flight)}<strong>${escape(flight.flightNo||row.flightNo)}</strong><span>${row.landedAt?'已抵達':late?'等候機場更新':escape(flight.status||'追蹤中')}</span></header><p>${escape(flight.airline||'')} · ${escape(flight.city||'桃園')}</p><footer><time>${row.landedAt?'請聯繫客戶':late?'原預計 '+time(eta):'預計 '+time(eta)}</time><div class="tracked-drivers">${names.map(x=>'<b>'+escape(x.driverName)+'</b>').join('')}${group.length>4?'<small>共 '+group.length+' 位・輪播顯示</small>':''}</div></footer></article>`;}).join('')||'<div class="empty">目前沒有追蹤航班</div>';
 }
-function renderFeed(data) {
+function renderUpcoming(){
+ if(!lastFeed)return;const rows=(lastFeed.flights||[]).filter(f=>!f.landed&&!f.cancelled&&Date.parse(f.estimatedTime||f.scheduledTime)>=Date.now()),rowCount=Math.max(2,Math.min(8,Math.floor((innerHeight-$('upcomingFlights').getBoundingClientRect().top-80)/(innerWidth>=1800?74:66)))),pages=Math.max(1,Math.ceil(rows.length/rowCount)),page=phase()%pages;
+ $('upcomingFlights').innerHTML=rows.slice(page*rowCount,page*rowCount+rowCount).map(f=>`<div class="arrival-row"><time>${time(f.estimatedTime||f.scheduledTime)}</time><span class="arrival-airline">${logo(f)}<span><strong>${escape(f.airline||f.airlineCode||'航空公司')}</strong><small>${escape(f.flightNo)}</small></span></span><span>${escape(f.city)}</span><span>${escape(f.terminal||'—')}</span></div>`).join('')||'<p class="empty">等待下一批即將抵達航班資料</p>';
+ const notices=lastFeed.announcements||[],notice=notices[phase()%Math.max(1,notices.length)];$('announcementCount').textContent=notices.length>1?`${phase()%notices.length+1} / ${notices.length}`:'';$('companyAnnouncement').innerHTML=notice?'<h3>'+escape(notice.title)+'</h3><p>'+escape(notice.content)+'</p>':'<p class="empty">目前沒有公司公告</p>';
+}
+
+function renderFeed(patch) {
+  lastFeed={...lastFeed,...patch};const data=lastFeed;
   $('updatedAt').textContent = `更新 ${time(data.updated_at)}`;
-  $('upcomingFlights').innerHTML = data.flights.slice(0,10).map(f => `<div class="arrival-row"><time>${time(f.estimatedTime || f.scheduledTime)}</time><span><strong>${escape(f.flightNo)}</strong><small>${escape(f.city)}</small></span><span>${escape(f.terminal || '—')}</span><span class="status">${escape(f.status)}</span></div>`).join('') || '<p class="empty">目前沒有即將抵達的航班</p>';
-  $('marqueeText').textContent = data.marquee?.join('　｜　') || 'HEYCAR · 行車平安，服務用心。';
+  $('marqueeText').textContent = data.marquee?.join('　｜　') || '';
   if (!news) news = mountLiveNews($('liveNews'), {videoId:data.news_video_id});
   for (const row of data.watches) {
     if (row.tooOld) { markDone(row.id); continue; }
     const prior=watches.get(row.id); watches.set(row.id,{...row,hideAt:prior?.hideAt});
-    if (row.landedAt && !done.has(row.id) && !queue.some(w=>w.id===row.id)) queue.push(row);
+    if (row.landedAt && !done.has(row.id) && !inFlight.has(row.id)&&!queue.some(w=>w.id===row.id)) queue.push(row);
     if (row.landedAt && done.has(row.id) && !prior?.hideAt) watches.get(row.id).hideAt = done.get(row.id)+180000;
   }
   const currentIds=new Set(data.watches.map(w=>w.id));
   for (const [id,row] of watches) if ((!currentIds.has(id) && !row.hideAt) || (row.hideAt && Date.now()>=row.hideAt)) watches.delete(id);
-  renderTracked(); void announceNext();
+  renderTracked(); renderUpcoming(); void announceNext();
 }
 function chime() {
   const start=audio.currentTime;
@@ -42,8 +52,8 @@ function chime() {
 async function announceNext() {
   if (!enabled || processing || !queue.length) return;
   const watch=queue.shift(); if (done.has(watch.id)) return announceNext();
-  if (Date.now()-watch.landedAt>5*60000) { markDone(watch.id);return announceNext(); }
-  processing=true; news?.beginAnnouncement();
+  if (Date.now()-watch.landedAt>15*60000) { markDone(watch.id);return announceNext(); }
+  processing=true;inFlight.add(watch.id); news?.beginAnnouncement();
   try {
     await audio.resume(); chime(); await new Promise(resolve=>setTimeout(resolve,1300));
     const text=`${watch.flight?.airline || '航班'} ${watch.flightNo.replace(/([A-Z])/g,'$1 ')} 已抵達，請司機 ${watch.driverName} 準備聯繫客戶與出發。`;
@@ -54,24 +64,26 @@ async function announceNext() {
       utterance.onend=()=>{clearTimeout(timeout);resolve();};utterance.onerror=()=>{clearTimeout(timeout);reject(new Error('語音播放失敗，請確認電視的語音服務'));};speechSynthesis.speak(utterance);
     });
     markDone(watch.id); const local=watches.get(watch.id);if(local)local.hideAt=Date.now()+180000;
-  } catch(error) { enabled=false;queue.unshift(watch);$('enableAudio').textContent='重新啟用降落廣播';$('boardStatus').textContent=error.message; }
-  finally {news?.endAnnouncement();processing=false;renderTracked();if(enabled)void announceNext();}
+  } catch(error) { enabled=false;$('startOverlay').hidden=false;$('startMessage').textContent=error.message;queue.unshift(watch);$('enableAudio').textContent='重新啟用降落廣播';$('boardStatus').textContent=error.message; }
+  finally {inFlight.delete(watch.id);news?.endAnnouncement();processing=false;renderTracked();if(enabled)void announceNext();}
+}
+function connectionError(error){$('boardStatus').textContent=error.message;if(!news)news=mountLiveNews($('liveNews'));if(error.status===401){$('startMessage').textContent='請在後台「看板管理」取得有效連結';$('enableAudio').hidden=true;$('startOverlay').hidden=false;}}
+function connected(){ $('boardStatus').textContent=lastFeed.stale?'機場連線延遲，顯示上次資料':'已連線 · '+(lastFeed.source||'桃園機場'); }
+async function refreshSource(){
+ if(feedBusy)return;feedBusy=true;try{renderFeed(await api({action:'snapshot'}));connected();}catch(error){connectionError(error);}finally{feedBusy=false;}
 }
 async function refresh() {
-  if (busy || document.hidden || !navigator.onLine || !token) return;
+  if (busy || navigator.onLine===false || !token) return;
+  if(!lastFeed||!Array.isArray(lastFeed.flights)||Date.now()>=lastFeed.next_refresh_at)void refreshSource();
   busy=true;
-  try { lastFeed=await api({action:'snapshot'});renderFeed(lastFeed);$('boardStatus').textContent=lastFeed.stale?'機場連線延遲，顯示上次資料':'已連線 · '+(lastFeed.source||'桃園機場'); }
-  catch(error){$('boardStatus').textContent=error.message;if(!news)news=mountLiveNews($('liveNews'));if(error.status===401&&!$('pairDialog').open)$('pairDialog').showModal();}
+  try {renderFeed(await api({action:'pulse'}));connected();}
+  catch(error){connectionError(error);}
   finally{busy=false;}
 }
-$('enableAudio').onclick=async()=>{try{if(!window.speechSynthesis || !window.AudioContext)throw new Error('此瀏覽器不支援語音廣播');audio ||= new AudioContext();await audio.resume();enabled=true;$('enableAudio').textContent='降落廣播已啟用';$('enableAudio').setAttribute('aria-pressed','true');void announceNext();}catch(error){$('boardStatus').textContent=error.message;}};
-$('fullScreen').onclick=async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{$('boardStatus').textContent='請使用瀏覽器的全螢幕功能';}};
-$('pairSettings').onclick=()=>$('pairDialog').showModal();
-$('createPair').onclick=async()=>{const button=$('createPair');button.disabled=true;try{const data=await api({action:'pair'},true);pairId=data.id;$('pairUrl').value=`${location.origin}/flight-board#pair=${data.token}`;$('pairError').textContent='連結已產生，有效 30 天。電視僅能讀取看板。';}catch(error){$('pairError').textContent=error.message;}finally{button.disabled=false;}};
-$('copyPair').onclick=async()=>{try{if(!$('pairUrl').value)throw new Error('請先產生配對連結');await navigator.clipboard.writeText($('pairUrl').value);$('pairError').textContent='已複製';}catch{$('pairUrl').select();$('pairError').textContent='請複製上方連結';}};
-$('revokePair').onclick=async()=>{if(!pairId){$('pairError').textContent='請先產生本次連結';return;}try{await api({action:'revoke',id:pairId},true);$('pairUrl').value='';pairId='';$('pairError').textContent='連結已停用';}catch(error){$('pairError').textContent=error.message;}};
-function tick(){ $('clock').textContent=new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});renderTracked(); }
-tick();timer=setInterval(tick,1000);setInterval(()=>void refresh(),60000);
+$('enableAudio').onclick=async()=>{try{if(!window.speechSynthesis || !window.AudioContext)throw new Error('此瀏覽器不支援語音廣播');audio ||= new AudioContext();await audio.resume();enabled=true;$('startOverlay').hidden=true;void document.documentElement.requestFullscreen?.().catch(()=>{});$('enableAudio').textContent='降落廣播已啟用';$('enableAudio').setAttribute('aria-pressed','true');void announceNext();}catch(error){$('boardStatus').textContent=error.message;}};
+function tick(){const seconds=Math.max(0,Math.ceil(((lastFeed?.next_refresh_at||Date.now()+300000)-Date.now())/1000));$('refreshCountdown').textContent=seconds?String(Math.floor(seconds/60)).padStart(2,'0')+':'+String(seconds%60).padStart(2,'0')+' 後更新':'正在更新航班'; $('clock').textContent=new Date().toLocaleTimeString('zh-TW',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});renderTracked();renderUpcoming(); }
+tick();timer=setInterval(tick,1000);pulseTimer=setInterval(()=>void refresh(),5000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refresh();});window.addEventListener('online',()=>void refresh());
-window.addEventListener('pagehide',()=>{clearInterval(timer);news?.destroy();window.speechSynthesis?.cancel();});
-if(token)void refresh();else{$('boardStatus').textContent='請先配對電視看板';$('pairDialog').showModal();news=mountLiveNews($('liveNews'));}
+window.addEventListener('pagehide',()=>{clearInterval(timer);clearInterval(pulseTimer);channel?.close();news?.destroy();window.speechSynthesis?.cancel();});
+if(token)void refresh();else{$('startMessage').textContent='請在後台「看板管理」取得永久電視連結';$('enableAudio').hidden=true;news=mountLiveNews($('liveNews'));}
+const channel=window.BroadcastChannel?new BroadcastChannel('heycar-flight-watches'):null;if(channel)channel.onmessage=()=>void refresh();

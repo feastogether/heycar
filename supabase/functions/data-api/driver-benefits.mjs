@@ -1,11 +1,12 @@
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
-export const benefitActions=['points_load','points_award','reward_save','points_redeem','redemption_process','equipment_load','equipment_save','equipment_borrow','equipment_return','operation_photo','operation_photo_ticket','operation_photos','operation_storage'];
-export function createBenefitsHandler({db,adminCan,cryptoApi=globalThis.crypto,media=null}){
+export const benefitActions=['points_load','points_award','reward_save','points_redeem','redemption_process','equipment_load','equipment_save','equipment_remove','equipment_borrow','equipment_return','operation_photo','operation_photo_ticket','operation_photos','operation_storage'];
+export function createBenefitsHandler({db,adminCan,cryptoApi=globalThis.crypto,media=null,driverCan=async()=>true}){
  return async(body,session)=>{
   const fail=(error,status=400)=>({body:{error},status}),isAdmin=session.session_type==='admin',driver=session.session_type==='driver'?session.driver_id:null;
   if(!benefitActions.includes(body.action)||!isAdmin&&!uuid(driver))return fail('沒有功能權限',403);
   const points=/^(points_|reward_|redemption_)/.test(body.action),permission=points?'heyPoints':body.action==='operation_storage'?'storage':body.action==='operation_photos'?'maintenanceNotifications':'equipmentManagement';
   if(isAdmin&&body.action!=='operation_photos'&&!await adminCan(session,permission))return fail('沒有管理權限',403);
+  if(driver&&body.action!=='operation_photos'&&!await driverCan(session,points?'heyPoints':body.purpose==='service'?'maintenance':'equipmentLoans'))return fail('所屬車商未開放此功能',403);
   const actor={role:session.session_type,id:driver||(session.is_super_admin?'super-admin':session.admin_user_id),name:session.admin_name||'司機'};
   const rpc=async(name,args)=>{const result=await db.rpc(name,args);if(result.error)throw result.error;return result.data;};
   const sign=async rows=>{for(const bucketName of new Set(rows.map(row=>row.bucket||'driver-operations'))){const group=rows.filter(row=>(row.bucket||'driver-operations')===bucketName);for(let i=0;i<group.length;i+=100){const chunk=group.slice(i,i+100),result=await (media?.bucket(bucketName)||db.storage.from(bucketName)).createSignedUrls(chunk.map(row=>row.storage_path||row.path),600);if(result.error)throw result.error;chunk.forEach((row,j)=>row.url=result.data[j]?.signedUrl||'');}}return rows;};
@@ -18,6 +19,7 @@ export function createBenefitsHandler({db,adminCan,cryptoApi=globalThis.crypto,m
     if(!uuid(body.reference_id))return fail('照片關聯編號錯誤');
     if(isAdmin&&!await adminCan(session,'maintenanceNotifications')&&!await adminCan(session,'equipmentManagement'))return fail('沒有查看照片權限',403);
     const rows=await rpc('hey_photo_list',{p_reference:body.reference_id,p_driver:driver,p_admin:isAdmin});
+    for(const row of rows)if(driver&&!await driverCan(session,row.purpose==='service'?'maintenance':'equipmentLoans'))return fail('所屬車商未開放此功能',403);
     for(const row of rows)if(isAdmin&&!await adminCan(session,row.purpose==='service'?'maintenanceNotifications':'equipmentManagement'))return fail('沒有查看此類照片權限',403);
     return {body:{photos:await sign(rows)},status:200};
    }

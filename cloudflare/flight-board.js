@@ -1,3 +1,4 @@
+import {readBoardSettings,saveBoardSettings} from './board-settings.js';
 import {expandBoardFeed} from '../supabase/functions/flights/board-feed.mjs';
 const SOURCE = 'https://odp.taoyuan-airport.com/dataset/2025102001?format=csv';
 const PREFIX = '_flight-board/';
@@ -23,7 +24,7 @@ export function mapArrival(row) {
   const remark = clean(row['備註']), detail = clean(row['航班動態中文']);
   // An estimated arrival in the past is NOT evidence of landing.
   const landed = !/預計|預估/.test(remark) && (/^(已到|已抵達|抵達|降落|已降落)$/.test(remark) || /^(抵達機坪|已落地|已降落)$/.test(detail));
-  return { flightNo: flightKey(`${row['航空公司代碼']}${row['班次']}`), airline: row['航空公司中文'], city: row['往來地點中文'] || row['往來地點英文'], date: row['表訂日期']?.slice(0, 10), scheduledTime: stamp(row['表訂日期'], row['表訂時間']), estimatedTime: stamp(row['預計日期'], row['預計時間']), terminal: row['航廈'], baggage: row['行李轉盤'], status: landed ? '已抵達' : remark || detail || '預計抵達', landed, cancelled: /取消|CANCEL/i.test(`${remark} ${detail}`) };
+  return { airlineCode:clean(row['航空公司代碼']),flightNo: flightKey(`${row['航空公司代碼']}${row['班次']}`), airline: row['航空公司中文'], city: row['往來地點中文'] || row['往來地點英文'], date: row['表訂日期']?.slice(0, 10), scheduledTime: stamp(row['表訂日期'], row['表訂時間']), estimatedTime: stamp(row['預計日期'], row['預計時間']), terminal: row['航廈'], baggage: row['行李轉盤'], status: landed ? '已抵達' : remark || detail || '預計抵達', landed, cancelled: /取消|CANCEL/i.test(`${remark} ${detail}`) };
 }
 async function boundedText(response, limit) {
   if (!response.body) return '';
@@ -35,7 +36,8 @@ async function boundedText(response, limit) {
 async function arrivals(env) {
   const bucket = env.ATTACHMENTS, key = `${PREFIX}cache/arrivals.json`, cached = await bucket.get(key);
   const old = cached ? await cached.json() : null;
-  if (old && Date.now() - old.updated < 300000) return old;
+  if(old?.retry_at>Date.now())return {...old,stale:true};
+  if (old && Date.now() - (old.fetched_at||old.updated) < 300000) return old;
   try {
     let rows,updated=Date.now(),source='桃園機場';
     const stateKey=PREFIX+'cache/source-state.json',sourceState=await bucket.get(stateKey),state=sourceState?await sourceState.json():null;
@@ -44,16 +46,16 @@ async function arrivals(env) {
       catch{await bucket.put(stateKey,JSON.stringify({relayUntil:Date.now()+3600000}));}
     }
     if(!rows){
-      const relay=new URL('/functions/v1/flights?source=taoyuan&board=1',env.SUPABASE_URL);
-      const response=await fetch(relay,{signal:AbortSignal.timeout(15000),cf:{cacheTtl:300,cacheEverything:true}});
+      const relay=new URL('/functions/v1/flights?source=taoyuan&board=1&window='+Math.floor(Date.now()/300000),env.SUPABASE_URL);
+      const response=await fetch(relay,{signal:AbortSignal.timeout(15000),cf:{cacheTtl:0,cacheEverything:false}});
       if(!response.ok)throw Error('SOURCE_RELAY_HTTP_'+response.status);
       const payload=JSON.parse(await boundedText(response,1024*1024));rows=expandBoardFeed(payload);updated=payload.updated;if(payload.source==='桃園機場（TDX備援）')source=payload.source;
     }
     if (!rows.length || !Object.hasOwn(rows[0], '方向')) throw new Error('SOURCE_FORMAT_CHANGED');
-    const data = { updated,source,flights: rows.filter(r => !r['方向']||r['方向'] === 'A').map(mapArrival) };
+    const data = { updated,source,fetched_at:Date.now(),stale:Date.now()-updated>600000,flights: rows.filter(r => !r['方向']||r['方向'] === 'A').map(mapArrival) };
     try{await bucket.put(key, JSON.stringify(data), { onlyIf: cached ? { etagMatches: cached.etag } : { etagDoesNotMatch: '*' } });}catch{throw new Error('SOURCE_CACHE_WRITE');}
     return data;
-  } catch (error) { if (old && Date.now() - old.updated < 30 * 60000) return { ...old, stale: true }; throw error; }
+  } catch(error){if(old){const fallback={...old,stale:true,retry_at:Date.now()+60000};await bucket.put(key,JSON.stringify(fallback),{onlyIf:{etagMatches:cached.etag}});return fallback;}throw error;}
 }
 async function rest(env, table, params) {
   const url = new URL(`/rest/v1/${table}`, env.SUPABASE_URL); url.search = new URLSearchParams(params).toString();
@@ -71,16 +73,7 @@ async function canPair(actor, env) {
   if (actor.is_super_admin) return true;
   if (!actor.admin_user_id) return false;
   const profile = (await rest(env, 'admin_users', { id: `eq.${actor.admin_user_id}`, select: 'active,permissions', limit: '1' }))[0];
-  return profile?.active && (profile.permissions?.marquee || profile.permissions?.broadcasts || profile.permissions?.dispatchCenter);
-}
-async function marquee(env) {
-  const key = `${PREFIX}cache/marquee.json`, old = await env.ATTACHMENTS.get(key); const data = old ? await old.json() : null;
-  if (data && Date.now() - data.updated < 300000) return data.messages;
-  try {
-    const rows = await rest(env, 'marquee_messages', { select: 'message', active: 'eq.true', order: 'created_at.desc', limit: '20' });
-    const messages = rows.map(r => clean(r.message).slice(0, 1000)).filter(Boolean);
-    await env.ATTACHMENTS.put(key, JSON.stringify({ updated: Date.now(), messages })); return messages;
-  } catch { return data?.messages || []; }
+  return profile?.active && profile.permissions?.boardManagement===true;
 }
 async function listedWatches(bucket, date) {
   const objects = []; let cursor;
@@ -91,38 +84,44 @@ export async function flightBoard(request, env) {
   let stage='request';
   try {
     if (request.method !== 'POST') return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
-    const body = JSON.parse(await boundedText(request, 4096));
-    if (body.action === 'snapshot') {
+    const body = JSON.parse(await boundedText(request, 32768));
+    if (body.action === 'snapshot'||body.action==='pulse') {
       const token = request.headers.get('x-board-token') || '';
       if (!/^[a-f0-9]{64}$/.test(token)) return reply({ error: '請使用後台產生的電視配對連結' }, 401);
       const access = await env.ATTACHMENTS.get(`${PREFIX}access/${await hash(token)}.json`);
-      if (!access || (await access.json()).expires < Date.now()) return reply({ error: '電視配對已到期，請重新配對' }, 401);
-      stage='feed';const feed = await arrivals(env), date = day(), tomorrow = day(Date.now() + 86400000);
+      if (!access) return reply({ error: '電視連結已撤銷或無效，請重新取得連結' }, 401);
+      stage='feed';const cached=body.action==='pulse'?await env.ATTACHMENTS.get(PREFIX+'cache/arrivals.json'):null;const feed=body.action==='pulse'?(cached?await cached.json():{updated:0,fetched_at:0,flights:[]}):await arrivals(env), date = day(), tomorrow = day(Date.now() + 86400000);const settings=(await readBoardSettings(env.ATTACHMENTS)).data;
       stage='watch_list';
-      const objects = [...await listedWatches(env.ATTACHMENTS, date), ...await listedWatches(env.ATTACHMENTS, tomorrow)];
+      const objects = [...await listedWatches(env.ATTACHMENTS,day(Date.now()-86400000)),...await listedWatches(env.ATTACHMENTS, date), ...await listedWatches(env.ATTACHMENTS, tomorrow)];
       const watches = [];
       for (const obj of objects) {
         let watch; try { watch = JSON.parse(obj.customMetadata?.watch || '{}'); } catch { continue; }
-        if (!watch.id) continue;
+        if (!watch.id||Date.now()-watch.createdAt>48*3600000) continue;
         const flight = feed.flights.find(f => f.date === watch.date && f.flightNo === watch.flightNo);
-        if (flight?.landed && !watch.landedAt) {
-          const stamp = Date.parse(flight.estimatedTime || flight.scheduledTime);
-          watch.landedAt = Date.now(); watch.tooOld = Number.isFinite(stamp) && Date.now() - stamp > 15 * 60000;
+        if(flight?.cancelled)continue;
+        if (flight?.landed && !watch.landedAt&&!feed.stale&&Date.now()-feed.updated<600000) {
+          watch.landedAt = Date.now(); watch.tooOld=false;
           const saved = await env.ATTACHMENTS.put(obj.key, JSON.stringify(watch), { onlyIf: { etagMatches: obj.etag }, customMetadata: { watch: JSON.stringify(watch) } });
           if (!saved) { const fresh = await env.ATTACHMENTS.head(obj.key); try { watch = JSON.parse(fresh?.customMetadata?.watch || '{}'); } catch { continue; } }
         }
         if (watch.landedAt && Date.now() - watch.landedAt > 5 * 60000) continue;
         watches.push({ ...watch, flight: flight || null });
       }
-      return reply({ updated_at: new Date(feed.updated).toISOString(), source:feed.source||'桃園機場',stale: !!feed.stale, watches, flights: feed.flights.filter(f => [date, tomorrow].includes(f.date) && !f.landed && !f.cancelled && Date.parse(f.estimatedTime || f.scheduledTime) >= Date.now() - 3600000).sort((a,b) => Date.parse(a.estimatedTime || a.scheduledTime) - Date.parse(b.estimatedTime || b.scheduledTime)).slice(0, 20), marquee: await marquee(env), news_video_id: /^[\w-]{11}$/.test(env.CTS_LIVE_VIDEO_ID || '') ? env.CTS_LIVE_VIDEO_ID : 'wM0g8EoUZ_E' });
+      return reply({ updated_at: new Date(feed.updated).toISOString(), source:feed.source||'桃園機場',stale: !!feed.stale||Date.now()-feed.updated>600000,next_refresh_at:Math.max((feed.fetched_at||feed.updated)+300000,feed.retry_at||0),checked_at:new Date().toISOString(), watches, ...(body.action==='snapshot'?{flights: feed.flights.filter(f => [date, tomorrow].includes(f.date) && !f.landed && !f.cancelled && Date.parse(f.estimatedTime || f.scheduledTime) >= Date.now()).sort((a,b) => Date.parse(a.estimatedTime || a.scheduledTime) - Date.parse(b.estimatedTime || b.scheduledTime)).slice(0, 40)}:{}), marquee:settings.marquee,announcements:settings.announcements.filter(x=>x.active!==false), news_video_id: /^[\w-]{11}$/.test(env.CTS_LIVE_VIDEO_ID || '') ? env.CTS_LIVE_VIDEO_ID : 'wM0g8EoUZ_E' });
     }
     const actor = await session(request, env);
     if (!actor) return reply({ error: '請重新登入' }, 401);
+    if(['settings_get','settings_save','pair_list'].includes(body.action)){
+      if(!await canPair(actor,env))return reply({error:'沒有看板管理權限'},403);
+      if(body.action==='settings_get')return reply({settings:(await readBoardSettings(env.ATTACHMENTS)).data});
+      if(body.action==='settings_save'){const settings=await saveBoardSettings(env.ATTACHMENTS,body.settings,{id:actor.admin_user_id||'super-admin'});return settings?reply({settings}):reply({error:'設定已由其他人修改，請重新整理後再儲存'},409);}
+      const page=await env.ATTACHMENTS.list({prefix:PREFIX+'access/',limit:1000,include:['customMetadata']});return reply({pairs:page.objects.map(row=>({id:row.key.split('/').pop().replace('.json',''),name:row.customMetadata?.name||'電視看板',created_at:row.uploaded}))});
+    }
     if (body.action === 'pair') {
       if (!await canPair(actor, env)) return reply({ error: '沒有電視配對權限' }, 403);
       const token = crypto.randomUUID().replaceAll('-', '') + crypto.randomUUID().replaceAll('-', '');
-      const id = await hash(token); await env.ATTACHMENTS.put(`${PREFIX}access/${id}.json`, JSON.stringify({ expires: Date.now() + 30 * 86400000, actor_id: actor.admin_user_id || 'super-admin' }));
-      return reply({ token, id, expires_days: 30 });
+      const id = await hash(token); await env.ATTACHMENTS.put(`${PREFIX}access/${id}.json`, JSON.stringify({ expires:null,actor_id:actor.admin_user_id||'super-admin'}),{customMetadata:{name:clean(body.name||'電視看板').slice(0,80)}});
+      return reply({ token, id, expires_days: null });
     }
     if (body.action === 'revoke') {
       if (!await canPair(actor, env) || !/^[a-f0-9]{64}$/.test(body.id || '')) return reply({ error: 'ACTION_NOT_ALLOWED' }, 403);
@@ -141,5 +140,5 @@ export async function flightBoard(request, env) {
     const watch = { id, flightNo, date, driverName: clean(driver.name).slice(0, 60), createdAt: Date.now() };
     await env.ATTACHMENTS.put(key, JSON.stringify(watch), { onlyIf: { etagDoesNotMatch: '*' }, customMetadata: { watch: JSON.stringify(watch) } });
     return reply({ ok: true, id });
-  } catch(error) { const code=/^(SOURCE_[A-Z0-9_]+|RESPONSE_TOO_LARGE)$/.test(error?.message||'')?error.message:'BOARD_'+stage.toUpperCase();console.warn(JSON.stringify({event:'flight_board_error',code}));return reply({ error: '航班看板暫時無法連線，請稍後重試',code }, 503); }
+  } catch(error) {if(error?.message==='INVALID_SETTINGS')return reply({error:'請確認跑馬燈最多20則、每則500字；公告最多12則，標題100字、內容2000字。'},400); const code=/^(SOURCE_[A-Z0-9_]+|RESPONSE_TOO_LARGE)$/.test(error?.message||'')?error.message:'BOARD_'+stage.toUpperCase();console.warn(JSON.stringify({event:'flight_board_error',code}));return reply({ error: '航班看板暫時無法連線，請稍後重試',code }, 503); }
 }
