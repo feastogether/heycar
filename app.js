@@ -4936,7 +4936,7 @@
     const category = state.partnerDirectoryCategory || "all";
     const inCategory = (item, key) => key === "all" || (key === "insurance_company" ? isInsuranceCompanyPartner(item) : item.partner_type === key);
     const partners = all.filter(item => inCategory(item, category));
-    return `
+    return `<section class="partner-directory">
       <div class="section-head"><div><h2>廠商管理</h2><small>車商、保養廠、保險公司及保經資料</small></div><button class="primary-btn" data-modal="insurancePartner">新增合作單位</button></div>
       <div class="fleet-case-tabs partner-directory-tabs" aria-label="廠商類別">${categories.map(([key, label]) =>
         `<button class="ghost-btn" data-partner-category="${key}" aria-pressed="${category === key}">${label} <small>${all.filter(item => inCategory(item, key)).length}</small></button>`).join("")}</div>
@@ -4945,7 +4945,7 @@
           const initial = String(item.name || "?").trim().slice(0, 1);
           const status = isInsuranceCompanyPartner(item) ? "可選用" : item.active === false ? "停用" : "啟用";
           return `<article class="partner-card">
-            <div class="partner-logo-tile">${item.logo_url ? `<img src="${escapeHtml(item.logo_url)}" alt="${escapeHtml(item.name || "logo")}" onerror="this.closest('.partner-logo-tile').textContent='${escapeHtml(initial)}'">` : `<span>${escapeHtml(initial)}</span>`}</div>
+            <div class="partner-logo-tile">${item.logo_url ? `<img src="${escapeHtml(item.logo_url)}" alt="${escapeHtml(item.name || "logo")}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span hidden>${escapeHtml(initial)}</span>` : `<span>${escapeHtml(initial)}</span>`}</div>
             <div class="partner-card-body">
               <div class="partner-card-head">
                 <strong>${escapeHtml(item.name)}</strong>
@@ -4961,7 +4961,7 @@
             </div>
           </article>`;
         }).join("") : `<div class="empty">尚未建立合作單位</div>`}
-      </div>
+      </div></section>
     `;
   }
 
