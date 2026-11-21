@@ -59,7 +59,8 @@ function paintTicker(){
 }
 function renderTicker(){
  if(!lastFeed)return;const manual=(lastFeed.marquee||[]).flatMap(text=>{const chars=Array.from(text),chunks=[];for(let i=0;i<chars.length;i+=160)chunks.push({kind:'announcement',text:chars.slice(i,i+160).join('')});return chunks;}),weather=lastFeed.ticker_weather!==false?(briefing?.items||[]).filter(x=>x.kind==='weather'):[],stock=lastFeed.ticker_stock!==false?(briefing?.items||[]).filter(x=>x.kind==='stock'):[];
- const items=[];for(let i=0;i<Math.max(manual.length,weather.length,stock.length);i++){if(manual[i])items.push(manual[i]);if(weather[i])items.push(weather[i]);if(stock[i])items.push(stock[i]);}
+ const combinedWeather=weather.length?[{kind:'weather',text:weather.map(item=>item.text).join('　｜　')}]:[];
+ const items=[];for(let i=0;i<Math.max(manual.length,combinedWeather.length,stock.length);i++){if(manual[i])items.push(manual[i]);if(combinedWeather[i])items.push(combinedWeather[i]);if(stock[i])items.push(stock[i]);}
  if(briefing?.weather_delayed&&!weather.length&&lastFeed.ticker_weather!==false)items.push({kind:'info',text:'天氣資訊暫時無法取得，稍後自動重試'});
  if(briefing?.stock_delayed&&!stock.length&&lastFeed.ticker_stock!==false)items.push({kind:'info',text:'台股資訊暫時無法取得，稍後自動重試'});
  const nextKey=JSON.stringify(items);if(nextKey===tickerKey)return;tickerKey=nextKey;tickerItems=items;tickerIndex=0;paintTicker();

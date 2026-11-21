@@ -2535,7 +2535,7 @@
       return `車輛：${escapeHtml(vehicleName(item.vehicle_id))}`;
     }
     if (table === "payment_notices") {
-      return `金額：${Number(item.amount || 0).toLocaleString()}｜期限：${fmtDate(item.due_date)}`;
+      return `金額：${canShowTaskDetail(table,item)?Number(item.amount || 0).toLocaleString():"驗證後查看"}｜日期：${fmtDate(item.due_date)}`;
     }
     return `發送日期：${fmtDate(item.created_at)}`;
   }
@@ -7428,7 +7428,41 @@
     `;
   }
 
+  document.addEventListener('click',event=>{
+    const button=event.target.closest('[data-payment-page],[data-payment-reset]');if(!button||button.disabled)return;
+    if(button.hasAttribute('data-payment-reset'))paymentView={query:'',status:'',type:'',dealer:'',from:'',to:'',page:1};else paymentView.page=Number(button.dataset.paymentPage);
+    render();
+  });
+  let paymentView={query:'',status:'',type:'',dealer:'',from:'',to:'',page:1};
+  function adminPayments(){
+    const view=paymentView,drivers=new Map((state.data.drivers||[]).map(row=>[row.id,row]));
+    const types=[...new Set((state.data.payment_notices||[]).map(row=>row.fee_type).filter(Boolean))].sort();
+    const dealers=(state.data.insurance_partners||[]).filter(row=>row.partner_type==='dealer');
+    const rows=(state.data.payment_notices||[]).filter(row=>{
+      const driver=drivers.get(row.driver_id),date=String(row.due_date||'').slice(0,10);
+      const query=normalizedText([driverName(row.driver_id),driver?.phone,row.fee_type,row.content].join(' '));
+      return (!view.query||query.includes(normalizedText(view.query)))&&(!view.status||row.status===view.status)&&(!view.type||row.fee_type===view.type)&&(!view.dealer||driver?.dealer_partner_id===view.dealer)&&(!view.from||date&&date>=view.from)&&(!view.to||date&&date<=view.to);
+    }).sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||String(a.due_date||'9999').localeCompare(String(b.due_date||'9999'))||String(b.created_at).localeCompare(String(a.created_at)));
+    const pages=Math.max(1,Math.ceil(rows.length/50));view.page=Math.max(1,Math.min(pages,view.page));
+    const pending=rows.filter(row=>row.status==='pending'),amount=pending.reduce((sum,row)=>sum+Number(row.amount||0),0);
+    const opts=(values,value)=>values.map(([key,label])=>`<option value="${escapeHtml(key)}" ${value===key?'selected':''}>${escapeHtml(label)}</option>`).join('');
+    return `<section class="payments-workspace"><div class="section-head"><h2>費用管理</h2><button class="primary-btn" data-modal="paymentNotice">新增費用通知</button></div>
+      <form id="paymentSearchForm" class="payment-search"><input name="query" type="search" aria-label="搜尋費用" placeholder="姓名、手機、類型或內容" value="${escapeHtml(view.query)}">
+      <select name="dealer" aria-label="所屬車商">${opts([['','全部車商'],...dealers.map(row=>[row.id,row.name])],view.dealer)}</select>
+      <select name="type" aria-label="費用類型">${opts([['','全部類型'],...types.map(type=>[type,type])],view.type)}</select>
+      <select name="status" aria-label="費用狀態">${opts([['','全部狀態'],['pending','待確認'],['paid','已確認'],['returned','已退回']],view.status)}</select>
+      <label>日期起<input name="from" type="date" value="${escapeHtml(view.from)}"></label><label>日期迄<input name="to" type="date" value="${escapeHtml(view.to)}"></label>
+      <button class="ghost-btn" type="submit">篩選</button><button class="ghost-btn" type="button" data-payment-reset>重設</button></form>
+      <div class="payment-summary"><span>符合條件 <strong>${rows.length}</strong> 筆</span><span>待確認 <strong>${pending.length}</strong> 筆</span><span>待確認金額 <strong>NT$ ${amount.toLocaleString()}</strong></span><span class="payment-pagination"><span>${view.page} / ${pages}</span><button class="ghost-btn" data-payment-page="${view.page-1}" ${view.page===1?'disabled':''}>上一頁</button><button class="ghost-btn" data-payment-page="${view.page+1}" ${view.page===pages?'disabled':''}>下一頁</button></span></div>
+      ${table(['駕駛／車商','費用類型','金額','日期','內容','狀態','操作'],rows.slice((view.page-1)*50,view.page*50).map(row=>{
+        const driver=drivers.get(row.driver_id),dealer=dealers.find(item=>item.id===driver?.dealer_partner_id),overdue=row.status==='pending'&&row.fee_type!=='薪資'&&row.due_date&&String(row.due_date).slice(0,10)<today();
+        return [`<strong>${escapeHtml(driverName(row.driver_id))}</strong><small class="payment-dealer">${escapeHtml(dealer?.name||'未指定車商')}</small>`,escapeHtml(row.fee_type||'其他'),`<strong class="payment-amount">NT$ ${Number(row.amount||0).toLocaleString()}</strong>`,`${escapeHtml(fmtDate(row.due_date))}${overdue?'<small class="payment-overdue">逾期未確認</small>':''}`,`<div class="payment-content">${escapeHtml(row.content||'—')}</div>${attachmentLink(row)}`,statusBadge(row.status),rowActions('paymentNotice','payment_notices',row.id)];
+      }),'payment-table')}
+      <footer class="payment-pagination"><span>每頁 50 筆 · ${view.page} / ${pages}</span><button class="ghost-btn" data-payment-page="${view.page-1}" ${view.page===1?'disabled':''}>上一頁</button><button class="ghost-btn" data-payment-page="${view.page+1}" ${view.page===pages?'disabled':''}>下一頁</button></footer></section>`;
+  }
+
   function adminTaskManager(tableName, title) {
+    if(tableName==="payment_notices")return adminPayments();
     const modal = tableName === "maintenance_notifications" ? "maintenanceNotification" : tableName === "personal_messages" ? "personalMessage" : "paymentNotice";
     return `
       <div class="section-head"><h2>${title}</h2><div class="actions">${tableName === "maintenance_notifications" ? `<button class="ghost-btn" data-action="refresh-maintenance-batches">重新整理狀態</button><button class="ghost-btn" data-action="bulk-maintenance-notification">群發通知</button>` : ""}<button class="primary-btn" data-modal="${modal}">新增${title}</button></div></div>
@@ -9304,7 +9338,7 @@
 
   function paymentNoticeForm(p) {
     return driverSearchSelect(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
-      input("amount", "金額", p.amount, "number", true) + input("due_date", "繳費期限與發放日期", formDate(p.due_date), "date") +
+      input("amount", "金額（NT$）", p.amount, "number", true) + input("due_date", "繳費期限與發放日期", formDate(p.due_date), "date") +
       select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
       text("content", "繳費內容", p.content) + attachmentField(p) + (!p.id ? linePushCheckbox() : "");
   }
@@ -11249,6 +11283,12 @@
   });
 
   document.addEventListener("submit", async (e) => {
+    if(e.target.id==='paymentSearchForm'){
+      e.preventDefault();const values=Object.fromEntries(new FormData(e.target));
+      if(values.from&&values.to&&values.from>values.to){await showAlert('起日不能晚於迄日','日期範圍');return;}
+      paymentView={...values,query:String(values.query||'').trim(),page:1};render();return;
+    }
+
     if (e.target.id === "fleetReportSettingsSearch") {
       e.preventDefault();
       const query = new FormData(e.target).get("q");
