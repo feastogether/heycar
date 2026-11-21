@@ -1,0 +1,33 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),path=require('node:path'),http=require('node:http'),{chromium}=require('playwright');
+(async()=>{const root=path.resolve(__dirname,'..'),server=http.createServer((req,res)=>{const file=path.resolve(root,'.'+(req.url.split('?')[0]==='/flight-board'?'/flight-board.html':req.url.split('?')[0]));if(!file.startsWith(root+path.sep)){res.writeHead(403);res.end();return;}try{res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));}catch{res.writeHead(404);res.end();}});await new Promise(r=>server.listen(0,'127.0.0.1',r));let browser;
+try{browser=await chromium.launch({channel:'msedge',headless:true});const page=await browser.newPage({viewport:{width:1920,height:1080}}),errors=[];page.on('pageerror',e=>errors.push(e.message));const initial=Date.now();await page.clock.install({time:new Date(initial)});
+    await page.addInitScript(()=>{localStorage.setItem('heycar-board-token','a'.repeat(64));window.__news=[];window.YT={Player:class{constructor(el,options){this.options=options;this.frame=document.createElement('iframe');el.replaceWith(this.frame);window.__player=this;queueMicrotask(()=>options.events.onReady());}getIframe(){return this.frame;}mute(){window.__news.push('mute');}unMute(){window.__news.push('unmute');}playVideo(){}loadVideoById(){}destroy(){}}};window.AudioContext=class{currentTime=0;destination={};resume(){return Promise.resolve();}createOscillator(){return {frequency:{},connect(){return {connect(){}};},start(){},stop(){}};}createGain(){return {gain:{setValueAtTime(){},linearRampToValueAtTime(){},exponentialRampToValueAtTime(){}},connect(){}};}};window.SpeechSynthesisUtterance=class{constructor(text){this.text=text;}};Object.defineProperty(window,'speechSynthesis',{value:{getVoices:()=>[],speak:u=>{window.__spoken=u.text;window.__speechCount=(window.__speechCount||0)+1;setTimeout(()=>u.onend(),10);},cancel(){}}});});
+
+let cancelledAt=null;
+const eta=initial+9*3600000;
+await page.route('**/api/flight-board',async route=>{
+ const now=await page.evaluate(()=>Date.now());
+ await route.fulfill({json:{updated_at:new Date(now).toISOString(),next_refresh_at:now+300000,watches:[{id:'cancel-watch',date:'2026-11-21',flightNo:'CI702',driverName:'合成司機',createdAt:initial,landedAt:null,cancelledAt,flight:{airline:'測試航空',flightNo:'CI702',terminal:'T2',estimatedTime:new Date(eta).toISOString(),status:cancelledAt?'取消':'預計抵達',cancelled:!!cancelledAt}}],flights:[],marquee:[],announcements:[]}});
+});
+await page.goto('http://127.0.0.1:'+server.address().port+'/flight-board');
+await page.waitForFunction(()=>document.querySelector('#trackingCount').textContent.includes('0 班'));
+await page.clock.fastForward(3600001);await page.clock.runFor(5100);
+await page.waitForFunction(()=>document.querySelector('#trackingCount').textContent.includes('1 班'));
+cancelledAt=await page.evaluate(()=>Date.now());await page.clock.runFor(5100);
+await page.waitForFunction(()=>document.querySelector('.tracked-flight.cancelled'));
+assert.match(await page.locator('.tracked-flight.cancelled').textContent(),/航班取消/);
+assert.equal(await page.locator('.cancel-border path').count(),1);
+await page.locator('#enableAudio').click();await page.clock.runFor(3000);
+await page.waitForFunction(()=>window.__spoken?.includes('航班已取消'));
+const spoken=await page.evaluate(()=>window.__spoken);assert.match(spoken,/C，I，七，零，二/);assert.doesNotMatch(spoken,/已抵達|準備聯繫客戶與出發/);
+await page.clock.runFor(90000);
+const arc=await page.locator('.cancel-border path').getAttribute('d');
+assert(/^M(?:5[0-9]|4[0-9])(?:\.\d+)? 99 L99 99 L99 1 L50 1$/.test(arc),arc);
+fs.mkdirSync(path.join(root,'.fleet-preview'),{recursive:true});await page.screenshot({path:path.join(root,'.fleet-preview','nov21-cancelled-flight.png'),fullPage:true});
+assert.equal(await page.evaluate(()=>window.__speechCount),1,'repeated polls do not replay cancellation');
+await page.clock.runFor(92000);assert.equal(await page.locator('.tracked-flight').count(),0,'card disappears three minutes after broadcast');
+cancelledAt=(await page.evaluate(()=>Date.now()))-16*60000;
+await page.clock.runFor(15100);assert.equal(await page.locator('.tracked-flight').count(),0,'old unplayed alerts remain hidden on subsequent polls');
+assert.equal(await page.evaluate(()=>window.__speechCount),1,'old alerts must not be spoken');
+assert.deepEqual(errors,[]);console.log('PASS: eight-hour entry, cancellation speech once, counterclockwise half-border, automatic three-minute removal');
+}finally{await browser?.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exitCode=1;});

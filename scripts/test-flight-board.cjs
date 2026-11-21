@@ -19,6 +19,7 @@ class Bucket {
   assert.equal(parseCsv('\uFEFFa,b\r\n"a,b","c""d"\r\n')[0].b,'c"d');
   const date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
   const pending={'方向':'A','航空公司代碼':'CI','班次':'0001','航空公司中文':'測試航空','表訂日期':date+'+08:00','表訂時間':'23:50:00+08:00','預計日期':date+'+08:00','預計時間':'23:45:00+08:00','航班動態中文':'預計已抵達','往來地點中文':'測試城市','航廈':'T2'};
+  pending['預計時間']=new Date(Date.now()+3600000).toLocaleTimeString('en-GB',{timeZone:'Asia/Taipei',hour12:false})+'+08:00';
   assert.equal(mapArrival(pending).landed,false);assert.equal(mapArrival({...pending,'備註':'已到','航班動態中文':'抵達機坪'}).landed,true);
   const bucket=new Bucket(),env={ATTACHMENTS:bucket,SUPABASE_URL:'https://fixture.invalid',MEDIA_SIGNING_SECRET:'synthetic-board-test-key-only',SUPABASE_SERVICE_ROLE_KEY:'synthetic-test-only'};
   const originalFetch=global.fetch;let restCalls=0,sourceCalls=0;
@@ -50,6 +51,18 @@ class Bucket {
     await bucket.put('_flight-board/cache/arrivals.json',JSON.stringify({updated:Date.now(),flights:[landed]}));
     snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert(snapshot.data.watches[0].landedAt);const first=snapshot.data.watches[0].landedAt;
     snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches[0].landedAt,first,'landing event persists across TVs');
+    const setFeed=flight=>bucket.put('_flight-board/cache/arrivals.json',JSON.stringify({updated:Date.now(),fetched_at:Date.now(),flights:flight?[flight]:[]}));
+    await setFeed({...landed,landed:false,estimatedTime:new Date(Date.now()+9*3600000).toISOString()});
+    snapshot=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches.length,0,'future flights wait outside eight-hour window');
+    const cancellation={...landed,landed:false,cancelled:true,status:'取消'};
+    await bucket.put('_flight-board/cache/arrivals.json',JSON.stringify({updated:Date.now(),fetched_at:Date.now(),stale:true,flights:[cancellation]}));
+    snapshot=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches.length,0,'stale cancellation cannot create an alert');
+    await setFeed(cancellation);snapshot=await call({action:'pulse'},{'x-board-token':pair.data.token});
+    assert(snapshot.data.watches[0].cancelledAt,'confirmed cancellation is delivered to TV');
+    const cancelledAt=snapshot.data.watches[0].cancelledAt;
+    snapshot=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches[0].cancelledAt,cancelledAt,'same event has stable identity');
+    await setFeed(null);snapshot=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches[0].cancelledAt,cancelledAt,'cancellation survives removal from airport feed');
+    await setFeed({...landed,landed:false,cancelled:false});snapshot=await call({action:'pulse'},{'x-board-token':pair.data.token});assert(!snapshot.data.watches[0].cancelledAt,'explicit reinstatement clears cancellation');
     await call({action:'revoke',id:pair.data.id},{'x-afide-session':'admin'});assert.equal((await call({action:'snapshot'},{'x-board-token':pair.data.token})).status,401);
   }finally{global.fetch=originalFetch;}
   const server=http.createServer((req,res)=>{const url=new URL(req.url,'http://fixture');const file=path.resolve(root,'.'+(url.pathname==='/flight-board'?'/flight-board.html':url.pathname));if(!file.startsWith(root+path.sep)){res.writeHead(403);res.end();return;}try{res.setHeader('Content-Type',file.endsWith('.js')?'text/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(file));}catch{res.writeHead(404);res.end();}});

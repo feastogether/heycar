@@ -1,0 +1,23 @@
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
+(async () => {
+  const { spokenFlightNumber, spokenTerminal, arrivalAnnouncement, flightAnnouncement, announcementKey, withinTrackingWindow } = await import(pathToFileURL(path.resolve(__dirname, '../assets/flight-announcement.js')));
+  assert.equal(spokenFlightNumber('CI702'), 'C，I，七，零，二');
+  assert.equal(spokenFlightNumber('5J0310'), '五，J，零，三，一，零');
+  for (const value of ['T2', '2', '二', '第二航廈', 'Terminal 2']) assert.equal(spokenTerminal(value), '第二航廈');
+  for (const value of ['', null, '—', '高雄', 'T3']) assert.equal(spokenTerminal(value), '');
+  const watch = { flightNo: 'CI702', driverName: '測試司機', flight: { airline: '測試航空', terminal: 'T1' } };
+  assert.match(arrivalAnnouncement(watch), /已抵達桃園機場第一航廈/);
+  assert.match(arrivalAnnouncement(watch), /C，I，七，零，二/);
+  assert.doesNotMatch(arrivalAnnouncement({ ...watch, flight: {} }), /航廈|undefined|null/);
+  const cancelled={...watch,id:'test',cancelledAt:123};
+  assert.match(flightAnnouncement(cancelled),/航班已取消/);
+  assert.doesNotMatch(flightAnnouncement(cancelled),/已抵達|準備聯繫客戶與出發/);
+  assert.notEqual(announcementKey(cancelled),announcementKey({...cancelled,cancelledAt:null}));
+  const now=Date.now(),future={flight:{estimatedTime:new Date(now+8*3600000).toISOString()}};
+  assert(withinTrackingWindow(future,now));
+  assert(!withinTrackingWindow(future,now-1));
+  assert(!withinTrackingWindow({flight:{}},now));
+  console.log('Flight number pronunciation and terminal announcement tests passed');
+})();

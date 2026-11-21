@@ -101,14 +101,28 @@ export async function flightBoard(request, env) {
       for (const obj of objects) {
         let watch; try { watch = JSON.parse(obj.customMetadata?.watch || '{}'); } catch { continue; }
         if (!watch.id||Date.now()-watch.createdAt>48*3600000) continue;
-        const flight = feed.flights.find(f => f.date === watch.date && f.flightNo === watch.flightNo);
-        if(flight?.cancelled)continue;
-        if (flight?.landed && !watch.landedAt&&!feed.stale&&Date.now()-feed.updated<600000) {
+        let flight = feed.flights.find(f => f.date === watch.date && f.flightNo === watch.flightNo);
+        const flightTime=Date.parse(flight?.estimatedTime||flight?.scheduledTime);
+        if(Number.isFinite(flightTime)&&flightTime>Date.now()+8*3600000)continue;
+        if(flight?.cancelled&&!watch.cancelledAt&&!feed.stale&&Date.now()-feed.updated<600000){
+          watch.cancelledAt=Date.now();watch.cancelledFlight=flight;
+          const saved=await env.ATTACHMENTS.put(obj.key,JSON.stringify(watch),{onlyIf:{etagMatches:obj.etag},customMetadata:{watch:JSON.stringify(watch)}});
+          if(!saved){const fresh=await env.ATTACHMENTS.head(obj.key);try{watch=JSON.parse(fresh?.customMetadata?.watch||'{}');}catch{continue;}}
+        }
+        if(watch.cancelledAt&&flight&&!flight.cancelled&&!feed.stale&&Date.now()-feed.updated<600000){
+          delete watch.cancelledAt;delete watch.cancelledFlight;
+          const saved=await env.ATTACHMENTS.put(obj.key,JSON.stringify(watch),{onlyIf:{etagMatches:obj.etag},customMetadata:{watch:JSON.stringify(watch)}});
+          if(!saved)continue;
+        }
+        flight ||= watch.cancelledFlight;
+        // A stale source must not trigger a new cancellation or landing announcement.
+        if(flight?.cancelled&&!watch.cancelledAt)continue;
+        if (!watch.cancelledAt&&flight?.landed && !watch.landedAt&&!feed.stale&&Date.now()-feed.updated<600000) {
           watch.landedAt = Date.now(); watch.tooOld=false;
           const saved = await env.ATTACHMENTS.put(obj.key, JSON.stringify(watch), { onlyIf: { etagMatches: obj.etag }, customMetadata: { watch: JSON.stringify(watch) } });
           if (!saved) { const fresh = await env.ATTACHMENTS.head(obj.key); try { watch = JSON.parse(fresh?.customMetadata?.watch || '{}'); } catch { continue; } }
         }
-        if (watch.landedAt && Date.now() - watch.landedAt > 5 * 60000) continue;
+        if (!watch.cancelledAt&&watch.landedAt && Date.now() - watch.landedAt > 5 * 60000) continue;
         watches.push({ ...watch, flight: flight || null });
       }
       return reply({ updated_at: new Date(feed.updated).toISOString(), source:feed.source||'桃園機場',stale: !!feed.stale||Date.now()-feed.updated>600000,next_refresh_at:Math.max((feed.fetched_at||feed.updated)+300000,feed.retry_at||0),checked_at:new Date().toISOString(), watches, ...(body.action==='snapshot'?{flights: feed.flights.filter(f => [date, tomorrow].includes(f.date) && !f.landed && !f.cancelled && Date.parse(f.estimatedTime || f.scheduledTime) >= Date.now()).sort((a,b) => Date.parse(a.estimatedTime || a.scheduledTime) - Date.parse(b.estimatedTime || b.scheduledTime)).slice(0, 40)}:{}), marquee:settings.marquee,ticker_weather:settings.ticker_weather!==false,ticker_stock:settings.ticker_stock!==false,announcements:settings.announcements.filter(x=>x.active!==false), news_video_id: /^[\w-]{11}$/.test(env.CTS_LIVE_VIDEO_ID || '') ? env.CTS_LIVE_VIDEO_ID : 'wM0g8EoUZ_E' });
