@@ -131,7 +131,7 @@
 
   function ensureOptionalLibrary(name) {
     const libraries = {
-      office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-3"],
+      office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261121-3"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261121-3"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261121-3"],
@@ -5897,9 +5897,9 @@
 
   function mountOfficeTodos(){
     const root=document.getElementById('officeTodosRoot'),identity=state.apiSession;if(!root)return;
-    root.innerHTML='<section class="staff-card"><h2>待我處理</h2><p class="empty" role="status">正在整理待辦…</p></section>';
+    root.innerHTML='<button class="office-todo-count" type="button" disabled aria-label="正在取得待辦數量"><span>待我處理</span><strong>…</strong></button>';
     ensureOptionalLibrary('office').then(()=>{if(root.isConnected&&state.apiSession===identity)window.HeycarOfficeTodos.mount(root,{api:apiRequest,identity,escapeHtml});}).catch(error=>{
-      if(!root.isConnected)return;root.innerHTML='<section class="staff-card"><h2>待我處理</h2><p class="error" role="alert">'+escapeHtml(error.message)+'</p><button class="ghost-btn" type="button">重試</button></section>';root.querySelector('button').onclick=mountOfficeTodos;
+      if(!root.isConnected)return;root.innerHTML='<button class="office-todo-count" type="button" aria-label="待辦載入失敗，點選重試" title="'+escapeHtml(error.message)+'"><span>待我處理</span><strong>—</strong></button>';root.querySelector('button').onclick=mountOfficeTodos;
     });
   }
   function adminHome() {
@@ -5911,8 +5911,7 @@
     people.sort((a,b) => Number(b.id === me) - Number(a.id === me));
     const dateLabel = new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long" }).format(new Date());
     return `<div class="staff-home">
-      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><aside class="staff-office-weather"><div class="staff-weather-heading"><strong>台中市北區</strong><span>${escapeHtml(dateLabel)}</span></div><div data-office-weather>${officeWeatherMarkup()}</div></aside></header>
-      <section id="officeTodosRoot"></section>
+      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-welcome-widgets"><section id="officeTodosRoot"></section><aside class="staff-office-weather"><div class="staff-weather-heading"><strong>台中市北區</strong><span>${escapeHtml(dateLabel)}</span></div><div data-office-weather>${officeWeatherMarkup()}</div></aside></div></header>
       <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點自己留小紙條，點同事開啟對話</p></div></div>
         <div class="staff-people-list">${people.map(staffPersonMarkup).join("")}</div>
       </section>

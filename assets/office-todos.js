@@ -4,7 +4,9 @@
   if(!cache||cache.identity!==identity)cache={identity,at:0,data:null,error:'',pending:null};
   const mine=cache;
   function paint(){if(!root.isConnected||cache!==mine)return;const groups=mine.data?.groups||[];
-   root.innerHTML='<section class="staff-card office-todos"><div class="staff-section-head"><h2>待我處理</h2><button class="ghost-btn" type="button" data-office-refresh aria-label="重新整理待辦" title="重新整理">↻</button></div>'+(mine.data&&mine.error?'<p role="alert" class="error">待辦更新失敗：'+escape(mine.error)+'</p>':'')+(!mine.data?'<p class="empty" role="status">'+escape(mine.error||'正在整理待辦…')+'</p>':!groups.length?'<p class="empty">目前沒有待處理事項</p>':'<div class="office-todo-groups">'+groups.map(group=>'<article><header><strong>'+escape(group.title)+'</strong><b>'+Number(group.count)+'</b></header><div>'+group.items.map(item=>'<div class="office-todo-item '+escape(item.urgency)+'"><span><strong>'+escape(item.label)+'</strong><small>'+escape(item.reason)+'</small></span><time>'+escape(item.date||'')+(item.urgency==='overdue'?' · 已逾期':item.urgency==='today'?' · 今天到期':'')+'</time></div>').join('')+'</div><button class="ghost-btn" data-admin-view="'+escape(group.view)+'">前往處理</button></article>').join('')+'</div>')+'</section>';
+   const total=groups.reduce((sum,group)=>sum+Number(group.count||0),0),label=mine.error?'待辦更新失敗，點選重試':'待我處理 '+total+' 件，點選更新';
+   root.innerHTML='<button type="button" class="office-todo-count" data-office-refresh aria-label="'+escape(label)+'" title="'+escape(label)+'"><span>待我處理</span><strong data-office-total aria-live="polite">'+(mine.data?total:mine.error?'—':'…')+'</strong>'+(mine.error?'<span class="office-count-status" role="alert">'+escape(mine.error)+'</span>':'')+'</button>';
+
   }
   async function load(force=false){
    if(mine.pending){await mine.pending;paint();return;}
