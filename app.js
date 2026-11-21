@@ -122,9 +122,8 @@
   let satelliteMap = null;
   let satelliteMarkerLayer = null;
   let satelliteLeafletPromise = null;
-  let adminFullDataReady = false;
-  let adminFullDataPromise = null;
-  let adminWarmupScheduled = false;
+  let workspaceSession="",adminNavigation=0;
+  const workspaceReady=new Set(),workspacePending=new Map();
   let officeWeatherPromise = null;
   let officeWeatherData = null;
   let officeWeatherFailedAt = 0;
@@ -132,6 +131,13 @@
 
   function ensureOptionalLibrary(name) {
     const libraries = {
+      office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-3"],
+      payments:["HeycarPayments","./assets/admin-payments.js?v=20261121-3"],
+      benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261121-3"],
+      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261121-3"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261121-3"],
+      archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
+      board:["HeycarBoardManagement","./assets/board-management.js?v=20261120-9"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
       screenshot: ["html2canvas", "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"],
       ocr: ["Tesseract", "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"],
@@ -853,13 +859,16 @@
     state.error = "";
     if (hasApi && state.apiSession) {
       const session = state.apiSession;
-      const scope = state.admin && options.homeOnly ? "home" : state.admin && options.workspaceOnly ? "workspace" : "all";
+      const view=options.homeOnly?'home':options.view||state.adminView||'home';
+      const scope = state.admin ? (options.homeOnly||view==='home'?'home':'view') : 'all';
       const date=state.admin?state.dispatchAdminDateFilter||today():state.dispatchDateFilter||today();
-      const result = await apiRequest("load", { scope,dispatch_date:date });
+      const result = await apiRequest("load", { scope,view,dispatch_date:date });
       if (session !== state.apiSession) return;
-      state.data = scope === "workspace" ? { ...state.data, ...result.data } : { ...emptyData(), ...result.data };
-      if (state.admin && scope !== "home") adminFullDataReady = true;
-      if(result.dispatch_date)dispatchDayLoaded=state.apiSession+":"+(state.admin?"admin":"driver")+":"+result.dispatch_date;
+      if(state.admin&&workspaceSession!==session)state.data=emptyData();
+      for(const table of result.partial_tables||[]){const old=new Map((state.data[table]||[]).map(row=>[row.id,row]));result.data[table]=(result.data[table]||[]).map(row=>({...old.get(row.id),...row}));if(table==='drivers'){workspaceReady.delete('drivers');workspaceReady.delete('driverOnboarding');}}
+      state.data = ["workspace","view","home"].includes(scope) && state.admin ? { ...state.data, ...result.data } : { ...emptyData(), ...result.data };
+      if(state.admin){if(workspaceSession!==session){workspaceSession=session;workspaceReady.clear();workspacePending.clear();}workspaceReady.add(view);}
+      if(result.dispatch_date&&Object.hasOwn(result.data||{},'dispatch_orders'))dispatchDayLoaded=state.apiSession+":"+(state.admin?"admin":"driver")+":"+result.dispatch_date;
       if (result.user) state.user = result.user;
       if (result.partner) state.partner = result.partner;
       if (result.admin_profile) state.adminProfile = result.admin_profile;
@@ -872,15 +881,19 @@
     state.data = emptyData();
   }
 
-  function ensureAdminWorkspaceData() {
-    if (!state.admin || !state.apiSession || adminFullDataReady) return Promise.resolve();
-    if (!adminFullDataPromise) {
-      adminFullDataPromise = loadAll({ workspaceOnly: true }).finally(() => { adminFullDataPromise = null; });
+  function ensureAdminWorkspaceData(view=state.adminView||'home') {
+    if(!state.admin||!state.apiSession)return Promise.resolve();
+    if(workspaceSession!==state.apiSession){workspaceSession=state.apiSession;workspaceReady.clear();workspacePending.clear();}
+    if(workspaceReady.has(view))return Promise.resolve();
+    if(!workspacePending.has(view)){
+      const pending=loadAll({view,workspaceOnly:true}).finally(()=>{if(workspacePending.get(view)===pending)workspacePending.delete(view);});
+      workspacePending.set(view,pending);
     }
-    return adminFullDataPromise;
+    return workspacePending.get(view);
   }
 
   async function insert(table, record) {
+    if(table==='payment_notices')window.HeycarPayments?.invalidate();
     const item = { id: uid(), created_at: now(), ...record };
     if (hasApi && state.apiSession) {
       const result = await apiRequest("insert", { table, record: item });
@@ -897,6 +910,7 @@
   }
 
   async function update(table, id, patch, options = {}) {
+    if(table==='payment_notices')window.HeycarPayments?.invalidate();
     const item = { ...patch, updated_at: now() };
     if (hasApi && state.apiSession) {
       const { data } = await apiRequest("update", { table, id, record: item, ...options });
@@ -978,6 +992,7 @@
   }
 
   async function remove(table, id) {
+    if(table==='payment_notices')window.HeycarPayments?.invalidate();
     if (!await showConfirm("確定要刪除這筆資料嗎？")) return;
     if (hasApi && state.apiSession) await apiRequest("delete", { table, id });
     state.data[table] = state.data[table].filter((row) => row.id !== id);
@@ -1568,6 +1583,17 @@
     return await supabaseStorageRequest("upload", { name, type: file.type, folder, base64 });
   }
 
+  let featureRenderPending=null,workspaceRenderPending=null;
+  function requiredFeatureLibraries(){
+    const view=state.admin?state.adminView:state.partner?state.partnerView:state.view;
+    const names=[];
+    if(view==='payments'&&state.admin)names.push(['payments','HeycarPayments']);
+    if(['heyPoints','equipmentManagement','equipmentLoans','maintenance','maintenanceManagement','serviceRecords','calendar','storage'].includes(view))names.push(['inspections','HeycarVehicleInspections'],['benefits','HeycarBenefits']);
+    if(view==='vehicleInspections')names.push(['inspections','HeycarVehicleInspections'],['archive','HeycarArchive']);
+    if(view==='driverReporting')names.push(['reporting','HeycarDriverReporting']);
+    if(view==='boardManagement')names.push(['board','HeycarBoardManagement']);
+    return names.filter(([,global])=>!window[global]);
+  }
   function render() {
     if (isHiringPath()) {
       renderHiringPage();
@@ -1579,6 +1605,17 @@
         dispatchRefreshTimer = null;
       }
       renderLogin();
+      return;
+    }
+    if(state.admin&&hasApi&&!workspaceReady.has(state.adminView||'home')){
+      renderBootLoading('正在載入功能資料…');
+      if(!workspaceRenderPending)workspaceRenderPending=ensureAdminWorkspaceData(state.adminView||'home').then(()=>{workspaceRenderPending=null;render();}).catch(async error=>{workspaceRenderPending=null;state.adminView='home';if(workspaceReady.has('home'))render();else renderBootLoading('功能資料暫時無法取得，請重新整理');await showAlert(error.message,'載入失敗');});
+      return;
+    }
+    const missing=requiredFeatureLibraries();
+    if(missing.length){
+      renderBootLoading('正在載入功能…');
+      if(!featureRenderPending)featureRenderPending=Promise.all(missing.map(([name])=>ensureOptionalLibrary(name))).then(()=>{featureRenderPending=null;render();}).catch(async error=>{featureRenderPending=null;if(state.admin)state.adminView='home';else if(state.partner)state.partnerView='fleetCases';else state.view='home';render();await showAlert(error.message,'功能載入失敗');});
       return;
     }
     void ensureOwnAvatar();
@@ -5858,6 +5895,13 @@
     </section>`;
   }
 
+  function mountOfficeTodos(){
+    const root=document.getElementById('officeTodosRoot'),identity=state.apiSession;if(!root)return;
+    root.innerHTML='<section class="staff-card"><h2>待我處理</h2><p class="empty" role="status">正在整理待辦…</p></section>';
+    ensureOptionalLibrary('office').then(()=>{if(root.isConnected&&state.apiSession===identity)window.HeycarOfficeTodos.mount(root,{api:apiRequest,identity,escapeHtml});}).catch(error=>{
+      if(!root.isConnected)return;root.innerHTML='<section class="staff-card"><h2>待我處理</h2><p class="error" role="alert">'+escapeHtml(error.message)+'</p><button class="ghost-btn" type="button">重試</button></section>';root.querySelector('button').onclick=mountOfficeTodos;
+    });
+  }
   function adminHome() {
     const announcements = [...(state.data.staff_announcements || [])].sort((a, b) => Number(b.pinned) - Number(a.pinned) || String(b.created_at).localeCompare(String(a.created_at)));
     const people = (state.data.admin_users || []).filter(user => user.active !== false);
@@ -5868,6 +5912,7 @@
     const dateLabel = new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long" }).format(new Date());
     return `<div class="staff-home">
       <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><aside class="staff-office-weather"><div class="staff-weather-heading"><strong>台中市北區</strong><span>${escapeHtml(dateLabel)}</span></div><div data-office-weather>${officeWeatherMarkup()}</div></aside></header>
+      <section id="officeTodosRoot"></section>
       <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點自己留小紙條，點同事開啟對話</p></div></div>
         <div class="staff-people-list">${people.map(staffPersonMarkup).join("")}</div>
       </section>
@@ -6142,6 +6187,8 @@
     const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
+    if(state.adminView==='home')mountOfficeTodos();
+    if(state.adminView==='payments')window.HeycarPayments.mount(document.getElementById('paymentsRoot'),{api:apiRequest,identity:state.apiSession,escapeHtml,fmtDate,table,statusBadge,rowActions,attachmentLink,today,alert:showAlert,onRows:rows=>{state.data.payment_notices=rows;}});
     if(state.adminView==="dispatchCenter")void refreshDispatchDay();
     if(state.adminView==="boardManagement")window.HeycarBoardManagement.mount(document.getElementById("boardManagementRoot"),{token:state.apiSession,confirm:showConfirm});
     if(["heyPoints","equipmentManagement"].includes(state.adminView))mountBenefits(true,state.adminView==="heyPoints"?"points":"equipment");
@@ -7428,39 +7475,7 @@
     `;
   }
 
-  document.addEventListener('click',event=>{
-    const button=event.target.closest('[data-payment-page],[data-payment-reset]');if(!button||button.disabled)return;
-    if(button.hasAttribute('data-payment-reset'))paymentView={query:'',status:'',type:'',dealer:'',from:'',to:'',page:1};else paymentView.page=Number(button.dataset.paymentPage);
-    render();
-  });
-  let paymentView={query:'',status:'',type:'',dealer:'',from:'',to:'',page:1};
-  function adminPayments(){
-    const view=paymentView,drivers=new Map((state.data.drivers||[]).map(row=>[row.id,row]));
-    const types=[...new Set((state.data.payment_notices||[]).map(row=>row.fee_type).filter(Boolean))].sort();
-    const dealers=(state.data.insurance_partners||[]).filter(row=>row.partner_type==='dealer');
-    const rows=(state.data.payment_notices||[]).filter(row=>{
-      const driver=drivers.get(row.driver_id),date=String(row.due_date||'').slice(0,10);
-      const query=normalizedText([driverName(row.driver_id),driver?.phone,row.fee_type,row.content].join(' '));
-      return (!view.query||query.includes(normalizedText(view.query)))&&(!view.status||row.status===view.status)&&(!view.type||row.fee_type===view.type)&&(!view.dealer||driver?.dealer_partner_id===view.dealer)&&(!view.from||date&&date>=view.from)&&(!view.to||date&&date<=view.to);
-    }).sort((a,b)=>Number(b.status==='pending')-Number(a.status==='pending')||String(a.due_date||'9999').localeCompare(String(b.due_date||'9999'))||String(b.created_at).localeCompare(String(a.created_at)));
-    const pages=Math.max(1,Math.ceil(rows.length/50));view.page=Math.max(1,Math.min(pages,view.page));
-    const pending=rows.filter(row=>row.status==='pending'),amount=pending.reduce((sum,row)=>sum+Number(row.amount||0),0);
-    const opts=(values,value)=>values.map(([key,label])=>`<option value="${escapeHtml(key)}" ${value===key?'selected':''}>${escapeHtml(label)}</option>`).join('');
-    return `<section class="payments-workspace"><div class="section-head"><h2>費用管理</h2><button class="primary-btn" data-modal="paymentNotice">新增費用通知</button></div>
-      <form id="paymentSearchForm" class="payment-search"><input name="query" type="search" aria-label="搜尋費用" placeholder="姓名、手機、類型或內容" value="${escapeHtml(view.query)}">
-      <select name="dealer" aria-label="所屬車商">${opts([['','全部車商'],...dealers.map(row=>[row.id,row.name])],view.dealer)}</select>
-      <select name="type" aria-label="費用類型">${opts([['','全部類型'],...types.map(type=>[type,type])],view.type)}</select>
-      <select name="status" aria-label="費用狀態">${opts([['','全部狀態'],['pending','待確認'],['paid','已確認'],['returned','已退回']],view.status)}</select>
-      <label>日期起<input name="from" type="date" value="${escapeHtml(view.from)}"></label><label>日期迄<input name="to" type="date" value="${escapeHtml(view.to)}"></label>
-      <button class="ghost-btn" type="submit">篩選</button><button class="ghost-btn" type="button" data-payment-reset>重設</button></form>
-      <div class="payment-summary"><span>符合條件 <strong>${rows.length}</strong> 筆</span><span>待確認 <strong>${pending.length}</strong> 筆</span><span>待確認金額 <strong>NT$ ${amount.toLocaleString()}</strong></span><span class="payment-pagination"><span>${view.page} / ${pages}</span><button class="ghost-btn" data-payment-page="${view.page-1}" ${view.page===1?'disabled':''}>上一頁</button><button class="ghost-btn" data-payment-page="${view.page+1}" ${view.page===pages?'disabled':''}>下一頁</button></span></div>
-      ${table(['駕駛／車商','費用類型','金額','日期','內容','狀態','操作'],rows.slice((view.page-1)*50,view.page*50).map(row=>{
-        const driver=drivers.get(row.driver_id),dealer=dealers.find(item=>item.id===driver?.dealer_partner_id),overdue=row.status==='pending'&&row.fee_type!=='薪資'&&row.due_date&&String(row.due_date).slice(0,10)<today();
-        return [`<strong>${escapeHtml(driverName(row.driver_id))}</strong><small class="payment-dealer">${escapeHtml(dealer?.name||'未指定車商')}</small>`,escapeHtml(row.fee_type||'其他'),`<strong class="payment-amount">NT$ ${Number(row.amount||0).toLocaleString()}</strong>`,`${escapeHtml(fmtDate(row.due_date))}${overdue?'<small class="payment-overdue">逾期未確認</small>':''}`,`<div class="payment-content">${escapeHtml(row.content||'—')}</div>${attachmentLink(row)}`,statusBadge(row.status),rowActions('paymentNotice','payment_notices',row.id)];
-      }),'payment-table')}
-      <footer class="payment-pagination"><span>每頁 50 筆 · ${view.page} / ${pages}</span><button class="ghost-btn" data-payment-page="${view.page-1}" ${view.page===1?'disabled':''}>上一頁</button><button class="ghost-btn" data-payment-page="${view.page+1}" ${view.page===pages?'disabled':''}>下一頁</button></footer></section>`;
-  }
-
+  function adminPayments(){return '<section id="paymentsRoot"></section>';}
   function adminTaskManager(tableName, title) {
     if(tableName==="payment_notices")return adminPayments();
     const modal = tableName === "maintenance_notifications" ? "maintenanceNotification" : tableName === "personal_messages" ? "personalMessage" : "paymentNotice";
@@ -7612,7 +7627,12 @@
     return `<div class="actions"><button class="soft-btn" data-modal="${modal}" data-id="${id}">編輯</button><button class="danger-btn" data-delete="${tableName}:${id}">刪除</button></div>`;
   }
 
-  function openModal(type, id, preset = {}) {
+  async function openModal(type, id, preset = {}) {
+    if(hasApi&&state.admin&&id&&['driver','vehicle','vehicleFolder'].includes(type)){
+      const table=type==='driver'?'drivers':'vehicles',identity=state.apiSession;
+      try{const result=await apiRequest('workspace_record',{table,id});if(state.apiSession!==identity)return;const index=state.data[table].findIndex(row=>row.id===id);if(index<0)state.data[table].push(result.data);else state.data[table][index]=result.data;}
+      catch(error){await showAlert(error.message,'無法讀取完整資料');return;}
+    }
     if (["staffAnnouncement", "staffCalendarEvent"].includes(type) && (!state.admin || !adminCan(type === "staffAnnouncement" ? "internalAnnouncements" : "internalCalendar"))) {
       showAlert("你有閱覽權限；發布或編輯請聯繫管理員開啟權限。", "需要編輯權限");
       return;
@@ -8138,7 +8158,7 @@
       record.active = record.active === "true";
       record.sort_order = Number(record.sort_order || 0);
     }
-    if (tableName === "payment_notices") record.amount = Number(record.amount || 0);
+    if (tableName === "payment_notices") { record.amount = Number(record.amount || 0); blankToNull(record,["due_date","driver_id"]); }
     if (tableName === "maintenance_records") {
       record.cost = Number(record.cost || 0);
       record.mileage = Number(record.mileage || 0);
@@ -9337,10 +9357,7 @@
 
 
   function paymentNoticeForm(p) {
-    return driverSearchSelect(p.driver_id) + select("fee_type", "費用類型", p.fee_type || "罰單", [["罰單", "罰單"], ["通行費", "通行費"], ["薪資", "薪資"], ["牌照稅", "牌照稅"], ["燃料稅", "燃料稅"], ["其他欠費", "其他欠費"], ["代扣費用", "代扣費用"], ["靠行費", "靠行費"]]) +
-      input("amount", "金額（NT$）", p.amount, "number", true) + input("due_date", "繳費期限與發放日期", formDate(p.due_date), "date") +
-      select("status", "狀態", p.status || "pending", [["pending", "待處理"], ["paid", "已確認"], ["returned", "已退回"]]) +
-      text("content", "繳費內容", p.content) + attachmentField(p) + (!p.id ? linePushCheckbox() : "");
+    return window.HeycarPayments.form(p,{escapeHtml,select,input,text,attachmentField,linePushCheckbox,formDate});
   }
 
   function currentMaintenanceDriver(vehicle = {}) {
@@ -9821,9 +9838,6 @@
   }
 
   async function handleLogin(value) {
-    adminFullDataReady = false;
-    adminFullDataPromise = null;
-    adminWarmupScheduled = false;
     state.error = "";
     state.loginLoading = true;
     const loginValue = String(value || "").trim();
@@ -10991,10 +11005,12 @@
       render();
     }
     if (target.dataset.adminView) {
-      if (!["home", "driverReporting", "vehicleInspections", "heyPoints", "equipmentManagement", "boardManagement"].includes(target.dataset.adminView) && !adminFullDataReady) {
-        try { await withAppLoading("正在載入功能資料", ensureAdminWorkspaceData); }
+      const navigation=++adminNavigation;
+      if (!["home", "driverReporting", "vehicleInspections", "heyPoints", "equipmentManagement", "boardManagement"].includes(target.dataset.adminView)) {
+        try { await withAppLoading("正在載入功能資料", ()=>ensureAdminWorkspaceData(target.dataset.adminView)); }
         catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
       }
+      if(navigation!==adminNavigation)return;
       state.adminView = target.dataset.adminView;
       if (state.adminView === "dispatchCenter") resetDispatchFilters();
       if (window.matchMedia("(max-width: 1199px)").matches) {
@@ -11283,12 +11299,6 @@
   });
 
   document.addEventListener("submit", async (e) => {
-    if(e.target.id==='paymentSearchForm'){
-      e.preventDefault();const values=Object.fromEntries(new FormData(e.target));
-      if(values.from&&values.to&&values.from>values.to){await showAlert('起日不能晚於迄日','日期範圍');return;}
-      paymentView={...values,query:String(values.query||'').trim(),page:1};render();return;
-    }
-
     if (e.target.id === "fleetReportSettingsSearch") {
       e.preventDefault();
       const query = new FormData(e.target).get("q");

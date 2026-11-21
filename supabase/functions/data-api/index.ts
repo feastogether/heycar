@@ -1,3 +1,4 @@
+import {workspaceViews,createWorkspaceQueryHandler} from './workspace-query.mjs';
 import {createBenefitsHandler} from "./driver-benefits.mjs";
 import {createMediaStore} from "./media-store.mjs";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -355,11 +356,11 @@ async function handleAdminGroupChat(body: Record<string, any>, session: Record<s
   return json({data});
 }
 
-async function loadAdminData(session: Record<string, unknown>, scope = "all", dispatchDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date())) {
+async function loadAdminData(session: Record<string, unknown>, scope = "all", dispatchDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date()), view = "home") {
   const result: Record<string, unknown[]> = {};
-  const homeTables = ["admin_users", "admin_chat_messages", "staff_announcements", "staff_calendar_events", "staff_notes"];
+  const homeTables = ["admin_users","staff_announcements","staff_calendar_events","staff_notes"];
   const activeTables = tables.filter(table => table !== "maintenance_records");
-  const selectedTables = scope === "home" ? activeTables.filter(table => homeTables.includes(table)) : scope === "workspace" ? activeTables.filter(table => !homeTables.includes(table)) : activeTables;
+  const selectedTables = scope === "view" ? activeTables.filter(table => (workspaceViews[view]||[]).includes(table)) : scope === "home" ? activeTables.filter(table => homeTables.includes(table)) : scope === "workspace" ? activeTables.filter(table => !homeTables.includes(table)) : activeTables;
   await Promise.all(selectedTables.map(async (table) => {
     const permission = tablePermission[table];
     if (["staff_announcements", "staff_calendar_events", "staff_notes"].includes(table)) {
@@ -446,6 +447,7 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
       result[table] = [];
       return;
     }
+    if(scope==='view'&&table==='drivers'&&!['drivers','driverOnboarding'].includes(view)){result[table]=await dispatchRows(table,'id,name,phone,dealer_partner_id,fleet_name,driver_status,login_enabled,residence_city,service_area,region,group_name,updated_at');return;}
     if(table==='dispatch_orders'){result[table]=await dispatchRows(table,'*','','',dispatchDate);return;}
     if (["maintenance_notifications", "maintenance_notification_batches"].includes(table)) {
       result[table] = await dispatchRows(table, "*");
@@ -471,7 +473,7 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
     if (!data?.active) throw new Error("ADMIN_DISABLED");
     adminProfile = { ...adminProfile, ...data, is_super_admin: false };
   }
-  return { data: result, admin_profile: adminProfile };
+  return { data: result, admin_profile: adminProfile,partial_tables:scope==='view'&&!["drivers","driverOnboarding"].includes(view)&&Object.hasOwn(result,"drivers")?["drivers"]:[] };
 }
 
 const adminPermissionProfiles = new WeakMap<object, Promise<Record<string, unknown> | null>>();
@@ -1738,10 +1740,16 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json(await signStorageUrls({ user: data }));
     }
+    if(['payment_page','office_todos','workspace_record'].includes(body.action)){
+      const workspaceResult=await createWorkspaceQueryHandler({db,adminCan,sign:signStorageUrls})(body,session);
+      return json(workspaceResult.body,workspaceResult.status);
+    }
     if (body.action === "load") {
+      if(body.scope==='view'&&!Object.hasOwn(workspaceViews,String(body.view||'')))return json({error:'UNKNOWN_WORKSPACE_VIEW'},400);
+
       const date=body.dispatch_date||new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
       if(typeof date!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date)))return json({error:'派趟日期格式錯誤'},400);
-      if (session.session_type === "admin") return json(await signStorageUrls({...await loadAdminData(session, body.scope === "home" ? "home" : body.scope === "workspace" ? "workspace" : "all",date),dispatch_date:date}));
+      if (session.session_type === "admin") return json(await signStorageUrls({...await loadAdminData(session, body.scope === "view" ? "view" : body.scope === "home" ? "home" : body.scope === "workspace" ? "workspace" : "all",date,String(body.view||"home")),dispatch_date:date}));
       if (session.session_type === "partner") return json(await signStorageUrls(await loadPartnerData(session.partner_id)));
       return json(await signStorageUrls(await loadDriverData(session.driver_id,date)));
     }

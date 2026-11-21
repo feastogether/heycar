@@ -357,6 +357,11 @@ function previewConfig(role) {
     + "document.body.insertAdjacentHTML('afterbegin'," + JSON.stringify(style + nav + '<aside class="local-fleet-preview"><span>報班獨立示範（非正式司機）</span><a href="/?review=driver">司機一</a><a href="/?review=driver2">司機二</a><a href="/?review=otherdriver">其他車商司機</a></aside>') + ");";
 }
 
+let officeQueries;
+async function officeQuery(body,session){
+ if(!officeQueries)officeQueries=require('./preview-office-db.cjs')(fixture);
+ return require('../supabase/functions/data-api/workspace-query.mjs').createWorkspaceQueryHandler({db:officeQueries,adminCan:async(session,permission)=>session.is_super_admin===true||session.permissions?.[permission]===true})(body,session);
+}
 async function request(req, res) {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -557,7 +562,7 @@ async function request(req, res) {
     if (body.action === "load_maintenance_notifications" && session.session_type === "admin") {
       return send(res, { data: { maintenance_notifications: notifications, maintenance_notification_batches: [] } });
     }
-    const writable = { calendar_events: fixture.calendar, vehicle_service_records: fixture.baselines, insurance_partners: directory,
+    const writable = { payment_notices:fixture.payment_notices||=[], calendar_events: fixture.calendar, vehicle_service_records: fixture.baselines, insurance_partners: directory,
       maintenance_notifications: notifications, admin_users: staffUsers };
     if (Object.hasOwn(writable, body.table) && ["insert", "update", "delete"].includes(body.action)) {
       if (session.session_type !== "admin") return send(res, { error: "ADMIN_PERMISSION_DENIED" }, 403);
@@ -631,17 +636,22 @@ async function request(req, res) {
       }
       return send(res,{profiles:profiles.filter(row=>row.actor_type===actor.actor_type&&(actor.actor_type==='admin'||row.actor_id===actor.actor_id))});
     }
+    if(body.action==='workspace_record'){if(!session.is_super_admin||!['drivers','vehicles'].includes(body.table))return send(res,{error:'ADMIN_PERMISSION_DENIED'},403);const row=(body.table==='drivers'?fixture.drivers:fixture.vehicles).find(row=>row.id===body.id);return row?send(res,{data:row}):send(res,{error:'NOT_FOUND'},404);}
+    if(['payment_page','office_todos'].includes(body.action)){const result=await officeQuery(body,session);return send(res,result.body,result.status);}
     if (body.action === "load") {
       if (session.session_type === 'driver') return send(res, { data: { drivers: reporting.drivers.filter(row=>row.id===session.driver_id), vehicles:fixture.vehicles.filter(v=>v.current_driver_id===session.driver_id||(v.driver_history||[]).some(h=>h.driver_id===session.driver_id)),vehicle_types:fixture.vehicle_types||[],insurance_partners: directory, marquee_messages:fixture.marquee_messages||[],feedbacks:(fixture.feedbacks||[]).filter(row=>row.driver_id===session.driver_id),maintenance_notifications: notifications.filter(row=>row.driver_id===session.driver_id), calendar_events: fixture.calendar.filter(row=>row.driver_id===session.driver_id) } });
       const partner = directory.find(item => item.id === session.partner_id);
       const dealer = partner?.partner_type === "dealer";
       const vehicles = dealer ? fixture.vehicles.filter(item => item.dealer_partner_id === partner.id) : fixture.vehicles;
       const requests = dealer ? insuranceCases.filter(item => item.dealer_partner_id === partner.id).map(sanitizeDealerInsuranceRequest) : insuranceCases;
-      return send(res, {
+      const response = {
         data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers,vehicle_types:fixture.vehicle_types||[],feedbacks:fixture.feedbacks||[],marquee_messages:fixture.marquee_messages||[],insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
           calendar_events: partner ? [] : fixture.calendar, vehicle_service_records: partner ? [] : fixture.baselines, maintenance_notifications: partner ? [] : notifications },
         ...(partner ? { partner } : { admin_profile: admin }),
-      });
+      };
+      if(session.session_type==='admin'&&['home','view'].includes(body.scope)){const views=require('../supabase/functions/data-api/workspace-query.mjs').workspaceViews;const selected=views[body.scope==='home'?'home':body.view]||[];response.data=Object.fromEntries(Object.entries(response.data).filter(([table])=>selected.includes(table)));}
+      if(body.scope==='view'&&!['drivers','driverOnboarding'].includes(body.view)&&response.data.drivers){response.data.drivers=response.data.drivers.map(row=>Object.fromEntries(['id','name','phone','dealer_partner_id','fleet_name','driver_status','updated_at'].map(key=>[key,row[key]])));response.partial_tables=['drivers'];}
+      return send(res,response);
     }
     return send(res, {error:"本機預覽尚未支援此操作"},400);
   }
