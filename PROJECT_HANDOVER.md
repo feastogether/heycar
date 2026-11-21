@@ -2,6 +2,10 @@
 
 檢查日期：2026-11-21（Asia/Taipei）。供另一個 ChatGPT Business 帳號的 Codex 在既有系統上接續開發；本文件不包含密碼、登入代碼、Token、服務金鑰、Session 或實際人員／車輛資料。
 
+## 2026-11-21 員工、部門與統一卡片（優先閱讀）
+
+見 [員工部門管理](docs/staff-departments-20261121.md)。權限管理更名員工管理，保留 adminUsers 鍵；新增部門／職稱 CRUD 與部門權限，既有人員預設 personal 不改原權限。部門繼承是獨立模式，後端 effectiveStaffPermissions 執行，個人設定保留。已有員工使用的部門／職稱禁止刪除；其餘 soft delete、revision、員工 expected_updated_at 與 audit。migration 20261121030000 已部署，不能再修改此檔假裝正式同步；發布交易確認原 65 表既有欄位內容不變。前端 32f7684d-6acc-4820-8b89-031fae1e1695，data-api version 91。部門 UI 按需載入；廠商卡片統一高度及資訊位置。Google Drive／Gmail OAuth 尚未接通；可整合的評估見文件，不可宣稱已授權讀取。
+
 ## 2026-11-21 廠商管理排版修正（優先閱讀）
 
 廠商卡片聯絡資訊及操作按鈕在窄螢幕會超出卡片可見區，長電話／備註未斷行。新增 partner-directory 範圍樣式：自適應網格、固定 Logo 欄、可換行完整名稱、狀態固定、資訊與按鈕不溢出；Logo 失敗以安全的文字節點回退。Edge／WebKit 的 320／390／768／1024／1440px、分類切換與編輯入口測試通過。只修改前端，沒有資料庫／API 變更。

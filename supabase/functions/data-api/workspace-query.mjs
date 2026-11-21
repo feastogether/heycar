@@ -9,7 +9,7 @@ export const workspaceViews={
  fleetCases:['insurance_partners','vehicles','drivers'],fleetPolicies:['vehicles','insurance_partners'],
  insuranceCenter:[...vehicle,'insurance_requests'],insurancePartners:['insurance_partners'],
  vehicleLoans:[...vehicle,'vehicle_loans','key_access_codes'],payments:[],
- adminUsers:['admin_users'],loginHistory:[],storage:[],trafficMonitor:[],satelliteMonitor:['vehicles','drivers'],
+ adminUsers:['admin_users','staff_departments','staff_job_titles'],loginHistory:[],storage:[],trafficMonitor:[],satelliteMonitor:['vehicles','drivers'],
  announcements:['announcements','announcement_reads','insurance_partners'],personalMessages:['personal_messages','drivers'],
  feedbacks:['feedbacks','drivers'],driverHelperArticles:['driver_helper_articles'],marquee:['marquee_messages'],loginSlogans:['login_slogans'],emergencyEvents:['emergency_events'],
  mailManagement:['mail_recipients','mail_shipments'],bom:['bom_parts','bom_packages'],hiringManagement:['hiring_pages','hiring_applications'],

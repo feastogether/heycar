@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict'),fs=require('fs'),vm=require('vm'),{stripTypeScriptTypes}=require('node:module'),{fixture:source,id}=require('./test-local-fixture.cjs');
+(async()=>{const fixture=structuredClone(source),staff=require('./preview-staff-db.cjs')(fixture),root={session_type:'admin',is_super_admin:true,admin_user_id:'super-admin',name:'合成測試'},employee={session_type:'admin',admin_user_id:id(50)};try{await staff.ready;const initial=(await staff.db.query("select to_jsonb(t) as data from admin_users t")).rows[0].data;
+ const call=(action,record,extra={},session=root)=>staff.handle({action,record,...extra},session),ok=async(action,record,extra={})=>{const result=await call(action,record,extra);assert.equal(result.status,200,JSON.stringify(result.body));return result.body.data;};
+ assert.equal((await call('department_save',{name:'非法',permissions:{}},{},employee)).status,403);
+ assert.equal((await call('department_save',{name:'提升權限',permissions:{super:true}})).status,400);
+ let department=await ok('department_save',{name:'營運部',permissions:{vehicles:true,drivers:false,vehicleInspections:true}}),title=await ok('title_save',{name:'督導',department_id:department.id});
+ const other=await ok('department_save',{name:'行政部',permissions:{}});
+ assert.equal((await call('update',{department_id:other.id,job_title_id:title.id},{table:'admin_users',id:initial.id,staff_expected_updated_at:initial.updated_at})).status,400,'cross department title rejected');
+ let user=await ok('update',{department_id:department.id,job_title_id:title.id,permission_mode:'department'},{table:'admin_users',id:initial.id,staff_expected_updated_at:initial.updated_at});
+ assert.deepEqual(user.permissions,initial.permissions);assert.equal(user.extension,initial.extension);assert.equal(user.name,initial.name);
+ assert.equal((await call('update',{name:'stale overwrite'},{table:'admin_users',id:user.id,staff_expected_updated_at:initial.updated_at})).status,409);
+ assert.equal((await call('department_delete',department)).status,400,'used department blocked');assert.equal((await call('title_delete',title)).status,400,'used title blocked');
+ const src=stripTypeScriptTypes(fs.readFileSync('supabase/functions/data-api/index.ts','utf8')),start=src.indexOf('async function effectiveStaffPermissions('),end=src.indexOf('\nasync function eupServletCall(',start);
+ const directory={from(table){let target;const query={select(){return query;},eq(key,value){if(key==='id')target=value;return query;},is(){return query;},async single(){return {data:fixture.staff_users.find(row=>row.id===target)};},async maybeSingle(){return {data:fixture.staff_departments.find(row=>row.id===target)}}};return query;}};
+ const context=vm.createContext({db:directory});vm.runInContext(src.slice(start,end),context);
+ assert.equal(await context.adminCan({...employee},'vehicles'),true);assert.equal(await context.adminCan({...employee},'drivers'),false);assert.equal(await context.adminCan({...employee},'vehicleInspections'),true);assert.equal(await context.adminCan({...employee},'super'),false);
+ department=await ok('department_save',{...department,permissions:{vehicles:false,drivers:true}});assert.equal(await context.adminCan({...employee},'vehicles'),false,'new request sees department change');assert.equal((await call('department_save',{...department,revision:1})).status,409);
+ user=await ok('update',{permission_mode:'personal',department_id:null,job_title_id:null},{table:'admin_users',id:user.id,staff_expected_updated_at:user.updated_at});assert.deepEqual(user.permissions,initial.permissions);assert.equal(await context.adminCan({...employee},'fleetOperations'),false);
+ await ok('title_delete',title);await ok('department_delete',department);await ok('department_delete',other);
+ const audit=(await staff.db.query('select * from staff_structure_audit')).rows;assert(audit.length>=8);assert(!JSON.stringify(audit).includes('login_code_hash'));assert(!JSON.stringify(audit).includes('extension'));
+ for(const role of ['anon','authenticated']){await staff.db.exec('set role '+role);await assert.rejects(staff.db.query("select staff_structure_action('department_save','{}','{}')"));await assert.rejects(staff.db.query("select staff_employee_save(null,'{}',null,'{}')"));await staff.db.exec('reset role');}
+ console.log('PASS: department/title CRUD, root-only access, inheritance enforced by actual adminCan, personal permissions preserved, stale writes, cross-department validation, used deletion blocked, sanitized audit and anonymous RPC denial');
+ }finally{await staff.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

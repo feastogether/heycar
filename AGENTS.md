@@ -51,6 +51,9 @@
 - 首頁待辦只用天氣左邊的同尺寸小框顯示名稱與總數，不展開明細；點擊只刷新數字。待辦按現有權限與業務狀態產生，不能自動改案件或臆造負責人；已繳待核對不當作繳款逾期，保養完成待補工單不自動寫履歷。
 - 選用功能 JS 經 ensureOptionalLibrary 去重／延後載入，保留失敗重試；新增依賴必須同時檢查首次開啟、直接連結及手機。首次首頁不得預載檢查、報班、點數等不相干模組。
 
+- 員工管理沿用 adminUsers 相容鍵，僅最高管理員可管理員工／部門／職稱。既有 personal 權限不因分部門而覆蓋；department 模式只沿用部門，不與個人權限 OR 合併；後端必須與登入 profile 使用同一 effectiveStaffPermissions。部門／職稱 soft delete、有員工使用時禁止刪除、revision CAS、員工 expected_updated_at、欄位白名單與 audit 不得移除；audit 不存登入碼雜湊、extension 或頭像原始內容。
+- Google Drive／Gmail 尚未設定 OAuth；ChatGPT 的連接器不等於 HEYCAR 已授權。若新增同步，先取件核對、增量及局部寫入，Google tokens 只留後端 Secret，不可覆蓋車輛駕駛／文件資料。
+
 ## 5. 測試與發布
 
 - 純文件修改做檔案／連結／敏感資料／diff 檢查；功能修改跑對應單元、權限、資料保護與必要瀏覽器流程，無需無限重跑已通過項目。

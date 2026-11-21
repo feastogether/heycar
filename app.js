@@ -131,6 +131,7 @@
 
   function ensureOptionalLibrary(name) {
     const libraries = {
+      staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261121-6"],
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261121-3"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261121-3"],
@@ -1587,6 +1588,7 @@
   function requiredFeatureLibraries(){
     const view=state.admin?state.adminView:state.partner?state.partnerView:state.view;
     const names=[];
+    if(view==='adminUsers'&&state.admin)names.push(['staff','HeycarStaffManagement']);
     if(view==='payments'&&state.admin)names.push(['payments','HeycarPayments']);
     if(['heyPoints','equipmentManagement','equipmentLoans','maintenance','maintenanceManagement','serviceRecords','calendar','storage'].includes(view))names.push(['inspections','HeycarVehicleInspections'],['benefits','HeycarBenefits']);
     if(view==='vehicleInspections')names.push(['inspections','HeycarVehicleInspections'],['archive','HeycarArchive']);
@@ -4948,15 +4950,15 @@
             <div class="partner-logo-tile">${item.logo_url ? `<img src="${escapeHtml(item.logo_url)}" alt="${escapeHtml(item.name || "logo")}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span hidden>${escapeHtml(initial)}</span>` : `<span>${escapeHtml(initial)}</span>`}</div>
             <div class="partner-card-body">
               <div class="partner-card-head">
-                <strong>${escapeHtml(item.name)}</strong>
+                <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
                 <span class="status ${item.active === false ? "returned" : "done"}">${status}</span>
               </div>
               <div class="partner-card-meta">
-                <span>${partnerTypeName(item.partner_type)}</span>
-                <span>${escapeHtml(item.contact_name || "未填聯絡人")}</span>
-                <span>${escapeHtml(item.phone || "未填電話")}</span>
+                <span class="partner-kind">${partnerTypeName(item.partner_type)}</span>
+                <span title="${escapeHtml(item.contact_name||'')}">聯絡人：${escapeHtml(item.contact_name || "未填寫")}</span>
+                <span title="${escapeHtml(item.phone||'')}">電話：${escapeHtml(item.phone || "未填寫")}</span>
               </div>
-              ${item.notes ? `<p>${escapeHtml(item.notes)}</p>` : ""}
+              <p class="partner-notes" title="${escapeHtml(item.notes||'')}">${escapeHtml(item.notes||"尚無備註")}</p>
               ${rowActions("insurancePartner", "insurance_partners", item.id)}
             </div>
           </article>`;
@@ -5532,7 +5534,7 @@
     home: "首頁",
     internalAnnouncements: "內部公告發布",
     internalCalendar: "員工行事曆編輯",
-    adminUsers: "權限管理",
+    adminUsers: "員工管理",
     drivers: "駕駛管理",
     vehicles: "車輛管理",
     fleetCases: "罰單管理",
@@ -6083,7 +6085,7 @@
     const sidebarOuterScroll = document.querySelector(".admin-sidebar")?.scrollTop || 0;
     const nav = [
       ["home", "首頁", "🏠", ""],
-      ["adminUsers", "權限管理", "🔐", "super"],
+      ["adminUsers", "員工管理", "👥", "super"],
       ["loginHistory", "登入紀錄", "🕘", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
@@ -6187,6 +6189,7 @@
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
     if(state.adminView==='home')mountOfficeTodos();
+    if(state.adminView==='adminUsers')window.HeycarStaffManagement.mount(document.getElementById('staffDepartmentsRoot'),{data:state.data,api:apiRequest,catalog:adminPermissionCatalog(),enabled:adminPermissionEnabled,confirm:showConfirm,alert:showAlert,onReload:async()=>{workspaceReady.delete('adminUsers');await ensureAdminWorkspaceData('adminUsers');render();}});
     if(state.adminView==='payments')window.HeycarPayments.mount(document.getElementById('paymentsRoot'),{api:apiRequest,identity:state.apiSession,escapeHtml,fmtDate,table,statusBadge,rowActions,attachmentLink,today,alert:showAlert,onRows:rows=>{state.data.payment_notices=rows;}});
     if(state.adminView==="dispatchCenter")void refreshDispatchDay();
     if(state.adminView==="boardManagement")window.HeycarBoardManagement.mount(document.getElementById("boardManagementRoot"),{token:state.apiSession,confirm:showConfirm});
@@ -6380,10 +6383,12 @@
     const users = state.data.admin_users || [];
     const catalog = adminPermissionCatalog();
     return `
-      <div class="section-head"><div><h2>權限管理</h2><small>一般內部帳號無法查看或編輯本頁</small></div><button class="primary-btn" data-modal="adminUser">新增內部帳號</button></div>
+      <div class="section-head"><div><h2>員工管理</h2><small>管理員工、部門、職稱與功能權限</small></div><button class="primary-btn" data-modal="adminUser">新增員工</button></div>
+      <div class="staff-management-tabs"><button class="ghost-btn" data-staff-tab="employees" aria-pressed="true">員工管理</button><button class="ghost-btn" data-staff-tab="departments" aria-pressed="false">部門管理</button></div><section id="staffDepartmentsRoot" hidden></section><section data-staff-employees>
       <div class="access-card-grid">
         ${users.length ? users.map((item) => {
-          const permissions = item.permissions || {};
+          const department=(state.data.staff_departments||[]).find(row=>row.id===item.department_id),title=(state.data.staff_job_titles||[]).find(row=>row.id===item.job_title_id);
+          const permissions = item.permission_mode==='department'?(department?.permissions||{}):item.permissions || {};
           const enabled = catalog.filter(([key]) => adminPermissionEnabled(permissions, key));
           return `<article class="access-card">
             ${staffAvatar(item)}
@@ -6393,12 +6398,12 @@
                 <span class="status ${item.active === false ? "returned" : "done"}">${item.active === false ? "停用" : "啟用"}</span>
               </div>
               <small>${item.active === false ? "禁止登入" : "允許登入"} · 分機 ${escapeHtml(item.extension || "未設定")}</small>
-              <p class="access-summary">${enabled.length ? `已開啟 ${enabled.length} 個功能：${enabled.slice(0, 4).map(([, label]) => label).join("、")}${enabled.length > 4 ? "..." : ""}` : "尚未開啟功能權限"}</p>
+              <p class="staff-membership">${escapeHtml(department?.name||"未分部門")}${title?" · "+escapeHtml(title.name):""}<span>${item.permission_mode==="department"?"沿用部門權限":"個人權限"}</span></p><p class="access-summary">${enabled.length ? `已開啟 ${enabled.length} 個功能：${enabled.slice(0, 4).map(([, label]) => label).join("、")}${enabled.length > 4 ? "..." : ""}` : "尚未開啟功能權限"}</p>
               ${rowActions("adminUser", "admin_users", item.id)}
             </div>
           </article>`;
         }).join("") : `<div class="empty">尚未建立一般內部帳號</div>`}
-      </div>
+      </div></section>
     `;
   }
 
@@ -7639,7 +7644,7 @@
     const map = {
       staffAnnouncement: ["內部公告", "staff_announcements", staffAnnouncementForm],
       staffCalendarEvent: ["員工行程", "staff_calendar_events", staffCalendarEventForm],
-      adminUser: ["內部帳號", "admin_users", adminUserForm],
+      adminUser: ["員工資料", "admin_users", adminUserForm],
       driver: ["駕駛", "drivers", driverForm],
       driverOnboarding: ["上線進度", "drivers", driverOnboardingForm],
       vehicleType: ["車種", "vehicle_types", vehicleTypeForm],
@@ -7810,8 +7815,12 @@
         const normalizedRecord = type === "driverOnboarding"
           ? normalizeDriverOnboardingRecord(record)
           : normalizeRecord(tableName, record);
-        if(tableName==="admin_users")normalizedRecord.permissions={...(item.permissions||{}),...normalizedRecord.permissions};
+        if(tableName==="admin_users"){
+          normalizedRecord.permissions=normalizedRecord.permission_mode==='department'?(item.permissions||{}):{...(item.permissions||{}),...normalizedRecord.permissions};
+          normalizedRecord.department_id=normalizedRecord.department_id||null;normalizedRecord.job_title_id=normalizedRecord.job_title_id||null;
+        }
         let updateOptions;
+        if(tableName==="admin_users")updateOptions={staff_expected_updated_at:item.updated_at};
         if (tableName === "vehicle_loans") updateOptions = {loan_expected_updated_at:item?.updated_at ?? null};
         if (type === "vehicleFolder") updateOptions = { vehicle_files_expected_updated_at: item?.updated_at ?? null };
         if (initialVehicleFields) {
@@ -8002,7 +8011,7 @@
       record.active = record.active === "true";
       const permissionKeys = adminPermissionCatalog().map(([key]) => key);
       record.permissions = Object.fromEntries(permissionKeys.map((key) => [key, record[`permission_${key}`] === "true"]));
-      Object.keys(record).filter((key) => key.startsWith("permission_")).forEach((key) => delete record[key]);
+      Object.keys(record).filter((key) => key.startsWith("permission_")&&key!=="permission_mode").forEach((key) => delete record[key]);
     }
     if (tableName === "staff_announcements") {
       record.pinned = record.pinned === "true" || record.pinned === true;
@@ -9068,9 +9077,12 @@
       + `<div class="field"><label>分機</label><small>自動使用登入代碼，修改登入代碼後會同步更新。</small></div>`
       + `<div class="field full staff-avatar-upload"><label>夥伴頭像</label><div class="staff-avatar-upload-row"><span data-staff-avatar-preview>${staffAvatar(item)}</span><div><input type="file" accept="image/png,image/jpeg,image/webp" data-staff-avatar-upload><small data-staff-avatar-status>上傳照片，首頁會以圓形頭像顯示</small><button type="button" class="staff-text-btn" data-staff-avatar-clear>移除照片</button></div></div><input type="hidden" name="avatar_url" value="${escapeHtml(item.avatar_url || "")}"><input type="hidden" name="avatar_name" value="${escapeHtml(item.avatar_name || "")}"></div>`
       + checkbox("active", "允許登入", item.active !== false)
-      + `<div class="form-section-title field full">功能權限</div>`
+      + select("department_id","部門",item.department_id||"",[["","未分部門"],...(state.data.staff_departments||[]).filter(row=>!row.deleted_at).map(row=>[row.id,row.name])])
+      + select("job_title_id","職稱",item.job_title_id||"",[["","未設職稱"],...(state.data.staff_job_titles||[]).filter(row=>!row.deleted_at&&row.department_id===item.department_id).map(row=>[row.id,row.name])])
+      + select("permission_mode","權限來源",item.permission_mode||"personal",[["personal","個人設定"],["department","沿用部門權限"]])
+      + `<div class="field"><small>沿用部門後，使用該部門的功能權限；原個人設定會保留。</small></div><div data-staff-personal-permissions class="field full" ${item.permission_mode==='department'?'hidden':''}><div class="form-section-title">功能權限</div>`
       + `<div class="permission-section field full"><h4>員工首頁</h4><small>所有內部員工皆可閱讀，以下權限控制發布與編輯。</small><div class="permission-form-grid">${checkbox("permission_internalAnnouncements", "內部公告發布", Boolean(permissions.internalAnnouncements))}${checkbox("permission_internalCalendar", "員工行事曆編輯", Boolean(permissions.internalCalendar))}</div></div>`
-      + permissionSections;
+      + permissionSections + "</div>";
   }
 
   function vehiclePlatePicker(item, label = "選擇車輛") {

@@ -1,3 +1,4 @@
+import {createStaffManagementHandler} from './staff-management.mjs';
 import {workspaceViews,createWorkspaceQueryHandler} from './workspace-query.mjs';
 import {createBenefitsHandler} from "./driver-benefits.mjs";
 import {createMediaStore} from "./media-store.mjs";
@@ -21,7 +22,7 @@ const tables = [
   "drivers", "vehicles", "maintenance_records", "announcements", "announcement_reads",
   "maintenance_notifications", "personal_messages", "payment_notices", "calendar_events",
   "marquee_messages", "emergency_events", "insurance_partners", "insurance_requests",
-  "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks",
+  "staff_departments", "staff_job_titles", "admin_users", "vehicle_loans", "vehicle_service_records", "feedbacks",
   "driver_helper_articles", "login_slogans", "vehicle_types", "bom_parts", "bom_packages",
   "login_audit_logs", "key_access_codes", "mail_recipients", "mail_shipments",
   "hiring_pages", "hiring_applications", "dispatch_orders", "admin_chat_messages",
@@ -379,6 +380,10 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
       result[table] = data || [];
       return;
     }
+    if (["staff_departments","staff_job_titles"].includes(table)) {
+      if(!session.is_super_admin){result[table]=[];return;}
+      const {data,error}=await db.from(table).select('*').is('deleted_at',null).order('name');if(error)throw error;result[table]=data||[];return;
+    }
     if (table === "login_audit_logs" && !session.is_super_admin) {
       result[table] = [];
       return;
@@ -469,13 +474,19 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
     permissions: session.is_super_admin ? { all: true } : {}
   };
   if (!session.is_super_admin && session.admin_user_id) {
-    const { data } = await db.from("admin_users").select("id,name,active,permissions,extension,avatar_url,avatar_name").eq("id", session.admin_user_id).single();
+    const { data } = await db.from("admin_users").select("id,name,active,permissions,extension,avatar_url,avatar_name,department_id,job_title_id,permission_mode").eq("id", session.admin_user_id).single();
     if (!data?.active) throw new Error("ADMIN_DISABLED");
-    adminProfile = { ...adminProfile, ...data, is_super_admin: false };
+    adminProfile = { ...adminProfile, ...data, permissions:await effectiveStaffPermissions(data), is_super_admin: false };
   }
   return { data: result, admin_profile: adminProfile,partial_tables:scope==='view'&&!["drivers","driverOnboarding"].includes(view)&&Object.hasOwn(result,"drivers")?["drivers"]:[] };
 }
 
+async function effectiveStaffPermissions(profile:Record<string,unknown>) {
+  if(profile.permission_mode!=="department")return profile.permissions||{};
+  if(!profile.department_id)return {};
+  const {data,error}=await db.from('staff_departments').select('permissions').eq('id',profile.department_id).is('deleted_at',null).maybeSingle();if(error)throw error;
+  return data?.permissions||{};
+}
 const adminPermissionProfiles = new WeakMap<object, Promise<Record<string, unknown> | null>>();
 
 async function adminCan(session: Record<string, unknown>, permission: string) {
@@ -483,9 +494,9 @@ async function adminCan(session: Record<string, unknown>, permission: string) {
   if (!session.admin_user_id) return false;
   if (!adminPermissionProfiles.has(session)) {
     adminPermissionProfiles.set(session, (async () => {
-      const { data, error } = await db.from("admin_users").select("active,permissions").eq("id", session.admin_user_id).single();
+      const { data, error } = await db.from("admin_users").select("active,permissions,department_id,permission_mode").eq("id", session.admin_user_id).single();
       if (error) throw error;
-      return data;
+      return data ? {...data,permissions:await effectiveStaffPermissions(data)} : null;
     })());
   }
   const data = await adminPermissionProfiles.get(session);
@@ -1539,7 +1550,7 @@ Deno.serve(async (req) => {
       }
       const codeHash = await hashCode(loginCode);
       const { data: adminUser, error } = await db.from("admin_users")
-        .select("id,name,active,permissions,extension,avatar_url,avatar_name").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
+        .select("id,name,active,permissions,extension,avatar_url,avatar_name,department_id,job_title_id,permission_mode").eq("login_code_hash", codeHash).eq("active", true).maybeSingle();
       if (error) throw error;
       if (!adminUser) { await recordFailedLogin(req,"admin","登入代碼無法驗證"); return json({ error: "ADMIN_LOGIN_FAILED" }, 401); }
       if (adminUser.extension !== loginCode) {
@@ -1557,7 +1568,7 @@ Deno.serve(async (req) => {
       const sessionData = await createSession("admin", adminUser.id, { name: adminUser.name });
       return json(await signStorageUrls({
         ...sessionData,
-        admin_profile: { ...adminUser, is_super_admin: false }
+        admin_profile: { ...adminUser, permissions:await effectiveStaffPermissions(adminUser), is_super_admin: false }
       }));
     }
     if (body.action === "login_partner") {
@@ -1740,6 +1751,11 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json(await signStorageUrls({ user: data }));
     }
+    if(['department_save','department_delete','title_save','title_delete'].includes(body.action)||(['insert','update'].includes(body.action)&&body.table==='admin_users')){
+      if(session.session_type!=='admin'||!session.is_super_admin)return json({error:'ADMIN_PERMISSION_DENIED'},403);
+      const result=await createStaffManagementHandler({db,hashCode,normalizeLoginCode})(body,session);return json(await signStorageUrls(result.body),result.status);
+    }
+    if(['staff_departments','staff_job_titles','staff_structure_audit'].includes(body.table))return json({error:'請使用部門管理操作'},403);
     if(['payment_page','office_todos','workspace_record'].includes(body.action)){
       const workspaceResult=await createWorkspaceQueryHandler({db,adminCan,sign:signStorageUrls})(body,session);
       return json(workspaceResult.body,workspaceResult.status);

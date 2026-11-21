@@ -7,6 +7,7 @@ const fs=require('fs'),path=require('path'),assert=require('node:assert/strict')
   for(const width of [320,390,768,1024,1440]){
    await page.setViewportSize({width,height:960});
    const bounds=await page.evaluate(()=>({overflow:document.documentElement.scrollWidth>innerWidth+1,bad:[...document.querySelectorAll('.partner-card,.partner-card-meta,.partner-card .actions')].filter(el=>el.getBoundingClientRect().right>innerWidth+1).map(el=>el.className)}));
+   const heights=await page.locator('.partner-card').evaluateAll(cards=>cards.map(card=>Math.round(card.getBoundingClientRect().height)));assert(Math.max(...heights)-Math.min(...heights)<=1,'uniform card heights '+width+' '+heights);
    assert(!bounds.overflow&&bounds.bad.length===0,'partner layout '+width+' '+JSON.stringify(bounds));
    if(width===390)await page.screenshot({path:path.join(root,'.fleet-preview/partners-mobile.png'),fullPage:true});
   }

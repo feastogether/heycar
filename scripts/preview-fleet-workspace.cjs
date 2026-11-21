@@ -357,6 +357,8 @@ function previewConfig(role) {
     + "document.body.insertAdjacentHTML('afterbegin'," + JSON.stringify(style + nav + '<aside class="local-fleet-preview"><span>報班獨立示範（非正式司機）</span><a href="/?review=driver">司機一</a><a href="/?review=driver2">司機二</a><a href="/?review=otherdriver">其他車商司機</a></aside>') + ");";
 }
 
+let staffQueries;
+function getStaff(){return staffQueries||=require("./preview-staff-db.cjs")(fixture);}
 let officeQueries;
 async function officeQuery(body,session){
  if(!officeQueries)officeQueries=require('./preview-office-db.cjs')(fixture);
@@ -413,6 +415,8 @@ async function request(req, res) {
       if (raw.length > 7200000) return send(res, {}, 413);
     }
     const body = JSON.parse(raw || "{}");
+    if(['department_save','department_delete','title_save','title_delete'].includes(body.action)||(['insert','update'].includes(body.action)&&body.table==='admin_users')){const result=await getStaff().handle(body,session);if(result.status===200)persistFixture();return send(res,result.body,result.status);}
+
     if(body.action==='load_dispatch_day'){if(!['driver','admin'].includes(session.session_type))return send(res,{error:'沒有權限'},403);const orders=(fixture.dispatch_orders||[]).filter(row=>String(row.reservation_date||'').slice(0,10)===body.date&&(session.session_type==='admin'||row.driver_id===session.driver_id));return send(res,{orders,date:body.date});}
     const chat=require("./preview-chat.cjs")(body,session,fixture);if(chat){if(chat.status===200)persistFixture();return send(res,chat.body,chat.status);}
     if(body.action==='vehicle_loan_action'){const result=await getLoans().handle(body,session);if(result.status===200)persistFixture();return send(res,result.body,result.status);}
@@ -639,13 +643,14 @@ async function request(req, res) {
     if(body.action==='workspace_record'){if(!session.is_super_admin||!['drivers','vehicles'].includes(body.table))return send(res,{error:'ADMIN_PERMISSION_DENIED'},403);const row=(body.table==='drivers'?fixture.drivers:fixture.vehicles).find(row=>row.id===body.id);return row?send(res,{data:row}):send(res,{error:'NOT_FOUND'},404);}
     if(['payment_page','office_todos'].includes(body.action)){const result=await officeQuery(body,session);return send(res,result.body,result.status);}
     if (body.action === "load") {
+      if(body.view==='adminUsers')await getStaff().ready;
       if (session.session_type === 'driver') return send(res, { data: { drivers: reporting.drivers.filter(row=>row.id===session.driver_id), vehicles:fixture.vehicles.filter(v=>v.current_driver_id===session.driver_id||(v.driver_history||[]).some(h=>h.driver_id===session.driver_id)),vehicle_types:fixture.vehicle_types||[],insurance_partners: directory, marquee_messages:fixture.marquee_messages||[],feedbacks:(fixture.feedbacks||[]).filter(row=>row.driver_id===session.driver_id),maintenance_notifications: notifications.filter(row=>row.driver_id===session.driver_id), calendar_events: fixture.calendar.filter(row=>row.driver_id===session.driver_id) } });
       const partner = directory.find(item => item.id === session.partner_id);
       const dealer = partner?.partner_type === "dealer";
       const vehicles = dealer ? fixture.vehicles.filter(item => item.dealer_partner_id === partner.id) : fixture.vehicles;
       const requests = dealer ? insuranceCases.filter(item => item.dealer_partner_id === partner.id).map(sanitizeDealerInsuranceRequest) : insuranceCases;
       const response = {
-        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers,vehicle_types:fixture.vehicle_types||[],feedbacks:fixture.feedbacks||[],marquee_messages:fixture.marquee_messages||[],insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
+        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers,staff_departments:fixture.staff_departments||[],staff_job_titles:fixture.staff_job_titles||[],vehicle_types:fixture.vehicle_types||[],feedbacks:fixture.feedbacks||[],marquee_messages:fixture.marquee_messages||[],insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
           calendar_events: partner ? [] : fixture.calendar, vehicle_service_records: partner ? [] : fixture.baselines, maintenance_notifications: partner ? [] : notifications },
         ...(partner ? { partner } : { admin_profile: admin }),
       };
