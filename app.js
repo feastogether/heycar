@@ -136,7 +136,7 @@
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-8"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-9"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -8924,7 +8924,7 @@
       ${select("guide_license", "導遊證", d.guide_license || "", [["", "未設定"], ["有", "有"], ["無", "無"]])}
       <div class="form-section-title field full">聯絡與個人資料</div>
       ${select("dealer_partner_id", "所屬車商", d.dealer_partner_id || "", dealerPartnerOptions(d.dealer_partner_id || ""))}
-      <div class="field"><label>區域</label><select name="region" required><option value="">請選擇區域</option>${["北部","中部","南部","花東","其他"].map(region=>`<option ${d.region===region?"selected":""}>${region}</option>`).join("")}</select>${d.region&&!["北部","中部","南部","花東","其他"].includes(d.region)?`<small>原區域：${escapeHtml(d.region)}，請選擇標準區域。</small>`:""}</div>
+      <div class="field"><label>區域</label><select name="region" required><option value="">請選擇區域</option>${["北部","中部","南部","花東","其他"].map(region=>`<option ${d.region===region?"selected":""}>${region}</option>`).join("")}</select></div>
       ${input("group_name", "編組", d.group_name)}
       ${select("driver_status", "狀態", d.driver_status || "待上線", [["跑趟中", "跑趟中"], ["停派中", "停派中"], ["待上線", "待上線"], ["已離職", "已離職"], ["留停中", "留停中"], ["其他", "其他"]])}
       ${input("service_shift", "服務時段", d.service_shift)}
