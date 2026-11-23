@@ -1,0 +1,12 @@
+const fs=require('fs'),assert=require('node:assert/strict'),{randomUUID}=require('crypto'),{PGlite}=require('../.fleet-preview/node_modules/@electric-sql/pglite');
+(async()=>{const db=new PGlite(),active=randomUUID(),retired=randomUUID(),tables=['vehicles','calendar_events','maintenance_notifications','personal_messages','payment_notices','dispatch_orders','vehicle_loans','vehicle_inspection_tasks','driver_roster_shifts'];try{
+await db.exec('create table drivers(id uuid primary key,name text,driver_status text);');await db.query('insert into drivers values($1,$2,$3),($4,$5,$6)',[active,'在職','跑趟中',retired,'離職','已離職']);
+for(const table of tables)await db.exec(`create table ${table}(id uuid primary key,driver_id uuid,current_driver_id uuid,driver_history jsonb,eligible_driver_ids uuid[],notes text);`);
+const sql=fs.readFileSync('supabase/migrations/20261123040000_driver_selection_and_missing_work_order.sql','utf8');await db.exec(sql.slice(0,sql.indexOf('create or replace function public.inspection_handover_directory')));
+const existing=[];for(const table of tables){await assert.rejects(db.query(`insert into ${table}(id,driver_id)values($1,$2)`,[randomUUID(),retired]),/已離職/);const id=randomUUID();await db.query(`insert into ${table}(id,driver_id)values($1,$2)`,[id,active]);existing.push([table,id]);}
+await assert.rejects(db.query('insert into vehicles(id,current_driver_id)values($1,$2)',[randomUUID(),retired]),/已離職/);
+await assert.rejects(db.query('insert into vehicles(id,driver_history)values($1,$2)',[randomUUID(),JSON.stringify([{driver_id:retired,end_at:''}])]),/已離職/);
+await assert.rejects(db.query('insert into vehicle_inspection_tasks(id,driver_id,eligible_driver_ids)values($1,$2,$3)',[randomUUID(),active,[active,retired]]),/已離職/);
+await db.query("update drivers set driver_status='已離職'where id=$1",[active]);for(const [table,id]of existing){await db.query(`update ${table} set notes='保留原歷史關聯'where id=$1`,[id]);await assert.rejects(db.query(`update ${table} set driver_id=$1 where id=$2`,[retired,id]),/已離職/);assert.equal((await db.query(`select driver_id from ${table} where id=$1`,[id])).rows[0].driver_id,active);}
+console.log('PASS: nine assignment surfaces reject newly selected departed drivers, including vehicle current/history and shared inspection participants; existing historical references remain editable and unchanged');
+}finally{await db.close();}})().catch(error=>{console.error(error);process.exitCode=1;});

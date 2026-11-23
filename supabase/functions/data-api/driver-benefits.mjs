@@ -21,7 +21,7 @@ export function createBenefitsHandler({db,adminCan,cryptoApi=globalThis.crypto,m
     const rows=await rpc('hey_photo_list',{p_reference:body.reference_id,p_driver:driver,p_admin:isAdmin});
     for(const row of rows)if(driver&&!await driverCan(session,row.purpose==='service'?'maintenance':'equipmentLoans'))return fail('所屬車商未開放此功能',403);
     for(const row of rows)if(isAdmin&&!await adminCan(session,row.purpose==='service'?'maintenanceNotifications':'equipmentManagement'))return fail('沒有查看此類照片權限',403);
-    return {body:{photos:await sign(rows)},status:200};
+    const pending=rows.some(row=>row.purpose==='service')?await rpc('service_work_order_status',{p_reference:body.reference_id,p_driver:driver,p_admin:isAdmin}):false;return {body:{photos:await sign(rows),work_order_pending:pending},status:200};
    }
    if(body.action==='operation_photo'||body.action==='operation_photo_ticket'){
     if(!driver)return fail('僅司機可上傳作業照片',403);
@@ -50,8 +50,8 @@ export function createBenefitsHandler({db,adminCan,cryptoApi=globalThis.crypto,m
    const data=body.record||{};
    if(typeof data!=='object'||Array.isArray(data)||JSON.stringify(data).length>6000)return fail('操作資料錯誤');
    if(!['points_load','equipment_load'].includes(body.action)&&body.confirmed!==true)return fail('請先確認操作');
-   const result=await rpc('hey_operations',{p_action:body.action,p_data:data,p_driver:driver,p_actor:actor,p_admin:isAdmin});
-   return {body:{data:result},status:200};
+   if(body.action==='points_award')await rpc('driver_selection_check',{p_ids:[data.driver_id]});const result=await rpc('hey_operations',{p_action:body.action,p_data:data,p_driver:driver,p_actor:actor,p_admin:isAdmin});
+   if(body.action==='points_load'&&isAdmin){const directory=await rpc('selectable_driver_directory',{}),ids=new Set(directory.map(d=>d.id));result.accounts=(result.accounts||[]).map(row=>({...row,selectable:ids.has(row.driver_id)}));}return {body:{data:result},status:200};
   }catch(error){return fail(error.message||'作業處理失敗',/權限|本人|僅司機/.test(error.message||'')?403:/42P01|42883|PGRST202/.test(error.code||'')?503:409);}
  };
 }

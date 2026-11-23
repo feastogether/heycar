@@ -432,7 +432,7 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
     if (permission && !(await adminCan(session, permission))) {
       if (["vehicles", "drivers", "insurance_partners"].includes(table) &&
           ((await adminCan(session, "maintenanceNotifications")) || (await adminCan(session, "calendar")))) {
-        const columns = table === "vehicles" ? "id,plate_no,dealer_partner_id,fleet_name,fuel_type,show_maintenance_report,show_idle_report" : table === "drivers" ? "id,name" : "id,name,partner_type,active";
+        const columns = table === "vehicles" ? "id,plate_no,dealer_partner_id,fleet_name,fuel_type,show_maintenance_report,show_idle_report" : table === "drivers" ? "id,name,driver_status" : "id,name,partner_type,active";
         result[table] = await dispatchRows(table, columns);
         return;
       }
@@ -760,7 +760,7 @@ function maintenanceBroadcastPlan(input: Record<string, any>, vehicles: Record<s
     const driverIds = Array.isArray(history) && history.length
       ? history.filter(item=>(!item.start_at || String(item.start_at).slice(0,10)<=date) && (!item.end_at || String(item.end_at).slice(0,10)>=date)).map(item=>String(item.driver_id || "")).filter(Boolean)
       : vehicle.current_driver_id ? [String(vehicle.current_driver_id)] : [];
-    const active = [...new Set(driverIds)].map(id=>byDriver.get(id)).filter(driver=>driver && !["已離職","留停中"].includes(driver.driver_status));
+    const active = [...new Set(driverIds)].map(id=>byDriver.get(id)).filter(driver=>driver && !["已離職","離職","留停中"].includes(driver.driver_status));
     const applicable = kinds.filter(kind=>kind !== "diesel" || /柴油|diesel/i.test(String(vehicle.fuel_type || "")));
     if (!applicable.length) continue;
     if (!active.length) { skipped.push(String(vehicle.plate_no)); continue; }
@@ -1259,7 +1259,7 @@ function dispatchImportDriver(record: Record<string, unknown>, dealers: Record<s
   const dealerId = dispatchDealerId(record, dealers);
   const name = normalizedText(record.driver_name);
   const phone = compactText(record.driver_phone).replace(/\D/g, "");
-  const matches = name ? drivers.filter(driver =>
+  const matches = name ? drivers.filter(driver => !["已離職","離職"].includes(String(driver.driver_status||"").trim())&&
     normalizedText(driver.name) === name &&
     (!dealerId || driver.dealer_partner_id === dealerId) &&
     (!phone || compactText(driver.phone).replace(/\D/g, "") === phone)
@@ -1269,7 +1269,7 @@ function dispatchImportDriver(record: Record<string, unknown>, dealers: Record<s
 
 async function loadDealerDispatch(partnerId: string) {
   const dealers = await dispatchDealers();
-  const drivers = await dispatchRows("drivers", "id,name,phone,dealer_partner_id", "dealer_partner_id", partnerId);
+  const drivers = await dispatchRows("drivers", "id,name,phone,dealer_partner_id,driver_status", "dealer_partner_id", partnerId);
   const orders: Record<string, unknown>[] = [];
   // Read in pages so orders after Supabase's default row limit are not lost.
   for (let offset = 0; ;) {
@@ -1279,7 +1279,7 @@ async function loadDealerDispatch(partnerId: string) {
     if (!page.data?.length) break;
     offset += page.data.length;
   }
-  return { drivers: drivers || [], orders };
+  return { drivers: (drivers || []).filter(driver=>!["已離職","離職"].includes(String(driver.driver_status||"").trim())), orders };
 }
 
 async function loadPartnerData(partnerId: string) {
@@ -1671,7 +1671,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return data ? json({ ok: true }) : json({ error: "此資料已核對，請重新整理" }, 409);
     }
-    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting", "admin_edit_driver_reporting", "save_driver_roster_note", "driver_roster_stamp"].includes(body.action)) {
+    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting", "admin_edit_driver_reporting", "save_driver_roster_note", "driver_roster_stamp","save_driver_roster_shift","admin_set_driver_leave"].includes(body.action)) {
       const response = await createDriverReportingHandler({ db, adminCan })(body, session);
       return json(response.body, response.status);
     }

@@ -20,6 +20,7 @@ module.exports=function createInspectionsPreview({vehicles,drivers,directory,por
   if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_batches'and column_name='batch_no'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261118020000_inspection_batch_management.sql'),'utf8'));
   if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_tasks'and column_name='required_slots'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261120010000_inspection_spot_edit_export.sql'),'utf8'));
   if(!(await db.query("select 1 from information_schema.columns where table_name='vehicle_inspection_photos'and column_name='damage_description'")).rows.length)await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261123020000_handover_inspections.sql'),'utf8'));
+ await db.exec("alter table drivers add column if not exists phone text");const selection=fs.readFileSync(path.join(root,'supabase/migrations/20261123040000_driver_selection_and_missing_work_order.sql'),'utf8');const dirStart=selection.indexOf('create or replace function public.inspection_handover_directory'),dirEnd=selection.indexOf('$$;',dirStart)+3;await db.exec(selection.slice(dirStart,dirEnd));
  })();
  const seen=new Map();
  async function sync(){await ready;

@@ -13,7 +13,7 @@ export const workspaceViews={
  announcements:['announcements','announcement_reads','insurance_partners'],personalMessages:['personal_messages','drivers'],
  feedbacks:['feedbacks','drivers'],driverHelperArticles:['driver_helper_articles'],marquee:['marquee_messages'],loginSlogans:['login_slogans'],emergencyEvents:['emergency_events'],
  mailManagement:['mail_recipients','mail_shipments'],bom:['bom_parts','bom_packages'],hiringManagement:['hiring_pages','hiring_applications'],
- heyPoints:[],equipmentManagement:[],vehicleInspections:[],driverReporting:[],boardManagement:[]
+ heyPoints:[],equipmentManagement:[],vehicleInspections:[],driverReporting:[],driverRoster:[],boardManagement:[]
 };
 export function createWorkspaceQueryHandler({db,adminCan,sign=async value=>value}){
  return async(body,session)=>{
@@ -35,7 +35,7 @@ export function createWorkspaceQueryHandler({db,adminCan,sign=async value=>value
   if(!filters||Array.isArray(filters)||typeof filters!=='object'||!Number.isInteger(page)||page<1||page>100000||keys.some(key=>typeof(filters[key]??'')!=='string'||String(filters[key]||'').length>(key==='query'?120:100)))return fail('INVALID_PAYMENT_FILTER');
   if(!['','pending','paid','returned'].includes(filters.status||'')||filters.dealer&&!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(filters.dealer)||['from','to'].some(key=>filters[key]&&(!/^\d{4}-\d{2}-\d{2}$/.test(filters[key])||!Number.isFinite(Date.parse(filters[key]+'T00:00:00Z'))||new Date(filters[key]+'T00:00:00Z').toISOString().slice(0,10)!==filters[key]))||filters.from&&filters.to&&filters.from>filters.to)return fail('INVALID_PAYMENT_FILTER');
   const safe=Object.fromEntries(keys.map(key=>[key,String(filters[key]||'').trim()]));
-  const result=await db.rpc('office_payment_page',{p_filters:safe,p_page:page,p_directory:body.directory===true});if(result.error)throw result.error;
+  const result=await db.rpc('office_payment_page',{p_filters:safe,p_page:page,p_directory:body.directory===true});if(result.error)throw result.error;if(body.directory===true){const directory=await db.rpc('driver_selection_directory',{});if(directory.error)throw directory.error;result.data.drivers=directory.data;}
   return {body:await sign(result.data),status:200};
  };
 }

@@ -87,7 +87,7 @@ async function run(){
     await driver.setViewportSize({width:390,height:844});
     await driver.screenshot({path:path.join(root,'.fleet-preview/reporting-driver-approved.png'),fullPage:true});
     await admin.setViewportSize({width:390,height:900});
-    await admin.locator('[data-dr-edit]').click();await admin.locator('.dr-edit-dialog').waitFor();
+    await admin.locator('[data-dr-edit]').first().click();await admin.locator('.dr-edit-dialog').waitFor();
     assert.equal(await admin.locator('[data-admin-edit-day="'+month+'-09"]').isEnabled(),true,'admin can select a forbidden day');
     await admin.locator('[data-admin-edit-day="'+month+'-09"]').click();
     await admin.locator('.dr-edit-dialog [name=note]').fill('後台核准臨時調休');

@@ -133,10 +133,10 @@
     const libraries = {
       staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261121-6"],
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
-      payments:["HeycarPayments","./assets/admin-payments.js?v=20261121-3"],
-      benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261121-3"],
-      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-1"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-1"],
+      payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
+      benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
+      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-4"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -1592,7 +1592,7 @@
     if(view==='payments'&&state.admin)names.push(['payments','HeycarPayments']);
     if(['heyPoints','equipmentManagement','equipmentLoans','maintenance','maintenanceManagement','serviceRecords','calendar','storage'].includes(view))names.push(['inspections','HeycarVehicleInspections'],['benefits','HeycarBenefits']);
     if(view==='vehicleInspections')names.push(['inspections','HeycarVehicleInspections'],['archive','HeycarArchive']);
-    if(view==='driverReporting')names.push(['reporting','HeycarDriverReporting']);
+    if(['driverReporting','driverRoster'].includes(view))names.push(['reporting','HeycarDriverReporting']);
     if(view==='boardManagement')names.push(['board','HeycarBoardManagement']);
     return names.filter(([,global])=>!window[global]);
   }
@@ -1990,7 +1990,7 @@
   function mountDriverReporting(driver) {
     if (!window.HeycarDriverReporting) return;
     window.HeycarDriverReporting.mount(document.getElementById("driverReportingRoot"), {
-      back:()=>{state.view="home";render();}, driver, identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}`,
+      back:()=>{state.view="home";render();}, driver, roster:!driver&&state.adminView==="driverRoster", identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}:${state.adminView==="driverRoster"?"roster":"reporting"}`,
       api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert
     });
   }
@@ -2530,8 +2530,8 @@
     const items = mine("feedbacks").sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
     return `
       ${pageHeader("意見反饋", `<button class="primary-btn" data-modal="feedback">新增反饋</button>`)}
-      <div class="feedback-list">
-        ${items.length ? items.map((item) => `<article class="feedback-row">
+      <div class="feedback-list feedback-workspace">
+        ${items.length ? items.map((item) => `<article class="feedback-row feedback-card">
           <div><span class="message-kind personal">${escapeHtml(item.category || "其他")}</span><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.content)}</p></div>
           <div class="feedback-reply">${item.admin_reply ? `<small>管理中心回覆</small><p>${escapeHtml(item.admin_reply)}</p>` : `<small>等待管理中心回覆</small>`}</div>
           ${statusBadge(item.status === "待回覆" ? "pending" : "completed")}
@@ -5530,7 +5530,7 @@
     heyPoints: "點數管理",
     equipmentManagement: "安椅管理",
     vehicleInspections: "車輛檢查",
-    driverReporting: "司機報班",
+    driverReporting: "司機報班",driverRoster:"班表",
     home: "首頁",
     internalAnnouncements: "內部公告發布",
     internalCalendar: "員工行事曆編輯",
@@ -5573,7 +5573,7 @@
     ["員工辦公室", ["home"]],
     ["車商管理", ["insurancePartners"]],
     ["禮賓司機", ["heyPoints", "equipmentManagement", "drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
-    ["行控中心", ["boardManagement", "dispatchCenter", "driverReporting", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
+    ["行控中心", ["boardManagement", "dispatchCenter", "driverReporting", "driverRoster", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "vehicleInspections", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
     ["系統管理", ["adminUsers", "loginHistory", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
   ];
@@ -6100,7 +6100,7 @@
       ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
       ["dispatchCenter", "派趟中心", "🧭", "dispatchCenter"],
-      ["driverReporting", "司機報班", "🗓️", "driverReporting"],
+      ["driverReporting", "司機報班", "🗓️", "driverReporting"],["driverRoster","班表","▦","driverReporting"],
       ["boardManagement","看板管理","📺","boardManagement"],
       ["heyPoints","點數管理","⭐","heyPoints"],
       ["equipmentManagement","安椅管理","💺","equipmentManagement"],
@@ -6145,7 +6145,7 @@
       vehicleTypes: adminVehicleTypes,
       dispatchCenter: adminDispatchCenter,
       vehicleInspections: inspectionPlaceholder,
-      driverReporting: reportingPlaceholder,
+      driverReporting: reportingPlaceholder,driverRoster:reportingPlaceholder,
       vehicles: adminVehicles,
       fleetCases: renderFleetFines,
       maintenanceManagement: renderFleetOperations,
@@ -6189,7 +6189,7 @@
             <button class="nav-btn logout-nav-btn" data-action="logout" title="登出"><span class="nav-icon">↩</span><span class="nav-label">登出</span></button>
           </div>
         </aside>
-        <section class="admin-workspace">${body}</section>
+        <section class="admin-workspace ${state.adminView==="driverRoster"?"is-roster-workspace":""}">${body}</section>
       </div>
     `);
     const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
@@ -6202,7 +6202,7 @@
     if(state.adminView==="boardManagement")window.HeycarBoardManagement.mount(document.getElementById("boardManagementRoot"),{token:state.apiSession,confirm:showConfirm});
     if(["heyPoints","equipmentManagement"].includes(state.adminView))mountBenefits(true,state.adminView==="heyPoints"?"points":"equipment");
     if (state.adminView === "vehicleInspections") mountVehicleInspections(false);
-    if (state.adminView === "driverReporting") mountDriverReporting(false);
+    if (["driverReporting","driverRoster"].includes(state.adminView)) mountDriverReporting(false);
 
   }
 
@@ -6824,12 +6824,12 @@
     const items = [...(state.data.feedbacks || [])].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
     return `
       <div class="section-head"><div><h2>意見反饋</h2><small>查看、回覆並結案司機提出的問題</small></div></div>
-      <div class="feedback-list">
-        ${items.length ? items.map((item) => `<article class="feedback-row">
+      <div class="feedback-list feedback-workspace">
+        ${items.length ? items.map((item) => `<article class="feedback-row feedback-card">
           <div><span class="message-kind personal">${escapeHtml(item.category)}</span><strong>${escapeHtml(item.title)}</strong><small>${escapeHtml(item.driver_name)} · ${fmtDate(item.created_at)}</small><p>${escapeHtml(item.content)}</p></div>
           <div class="feedback-reply">${item.admin_reply ? `<small>目前回覆</small><p>${escapeHtml(item.admin_reply)}</p>` : `<small>尚未回覆</small>`}</div>
           ${statusBadge(item.status === "待回覆" ? "pending" : "completed")}
-          ${rowActions("feedbackReply", "feedbacks", item.id)}
+          <div class="feedback-card-actions">${rowActions("feedbackReply", "feedbacks", item.id)}</div>
         </article>`).join("") : `<div class="empty">目前沒有意見反饋</div>`}
       </div>
     `;
@@ -6934,7 +6934,7 @@
     <div class="dispatch-admin-list">
       ${items.length ? items.map((item) => `<div class="dispatch-admin-row">
         ${dispatchOrderCard(item, true)}
-        ${dealer ? (!item.driver_id && !String(item.driver_name || "").trim() && item.status === "pending" ? `<form class="dispatch-assign-form" data-order-id="${escapeHtml(item.id)}"><label>指派司機<select name="driver_id" required><option value="">請選擇司機</option>${(state.data.drivers || []).map(driver => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.name)} · ${escapeHtml(driver.phone || "")}</option>`).join("")}</select></label><button class="primary-btn" type="submit">指派</button></form>` : `<span class="dispatch-assigned-label">${item.status === "pending" ? "已指派" : "已結束"}</span>`) : `<div class="actions"><button class="soft-btn dispatch-edit-btn" data-modal="dispatchOrder" data-id="${escapeHtml(item.id)}" aria-label="編輯派趟" title="編輯派趟"><span aria-hidden="true">✎</span><span class="dispatch-edit-label">編輯</span></button><button class="danger-btn dispatch-delete-btn" data-delete="dispatch_orders:${escapeHtml(item.id)}">刪除</button></div>`}
+        ${dealer ? (!item.driver_id && !String(item.driver_name || "").trim() && item.status === "pending" ? `<form class="dispatch-assign-form" data-order-id="${escapeHtml(item.id)}"><label>指派司機<select name="driver_id" required><option value="">請選擇司機</option>${selectableDrivers().map(driver => `<option value="${escapeHtml(driver.id)}">${escapeHtml(driver.name)} · ${escapeHtml(driver.phone || "")}</option>`).join("")}</select></label><button class="primary-btn" type="submit">指派</button></form>` : `<span class="dispatch-assigned-label">${item.status === "pending" ? "已指派" : "已結束"}</span>`) : `<div class="actions"><button class="soft-btn dispatch-edit-btn" data-modal="dispatchOrder" data-id="${escapeHtml(item.id)}" aria-label="編輯派趟" title="編輯派趟"><span aria-hidden="true">✎</span><span class="dispatch-edit-label">編輯</span></button><button class="danger-btn dispatch-delete-btn" data-delete="dispatch_orders:${escapeHtml(item.id)}">刪除</button></div>`}
       </div>`).join("") : `<div class="empty">此日期沒有派趟資料</div>`}
     </div></div>`;
   }
@@ -6965,7 +6965,7 @@
   function findDriverForDispatch(name = "", phone = "") {
     const normalizedName = normalizedText(name);
     const normalizedPhone = String(phone || "").replace(/\D/g, "");
-    const matches = (state.data.drivers || []).filter((driver) =>
+    const matches = selectableDrivers().filter((driver) =>
       (!normalizedName || normalizedText(driver.name) === normalizedName) &&
       (!normalizedPhone || phoneMatches(driver.phone, normalizedPhone))
     );
@@ -8640,14 +8640,15 @@
     </div>`;
   }
 
+  function selectableDrivers(){return (state.data.drivers||[]).filter(driver=>!['已離職','離職'].includes(String(driver.driver_status||'').trim()));}
   function driverOptions(value) {
-    return select("driver_id", "指定駕駛", value || "", [["", "請選擇"], ...state.data.drivers.map((d) => [d.id, d.name])]);
+    const current=state.data.drivers.find(d=>d.id===value),retired=current&&['已離職','離職'].includes(String(current.driver_status||'').trim());const html=select("driver_id", "指定駕駛", value || "", [["", "請選擇"],...selectableDrivers().map(d=>[d.id,d.name]),...(retired?[[value,current.name+'（已離職／歷史紀錄）']]:[])]);return retired?html.replace('value="'+value+'"','hidden value="'+value+'"'):html;
   }
 
   function searchableDriverOptions(value) {
     const selected=state.data.drivers.find(row=>row.id===value),preferred=(state.data.insurance_partners||[]).find(row=>row.partner_type==='dealer'&&/亞菲得/.test(row.name));
     const dealer=selected?.dealer_partner_id||preferred?.id||'';
-    return '<div class="field full driver-picker single-driver-picker service-driver-picker"><label>本次通知司機</label><div class="driver-picker-toolbar"><select data-service-driver-dealer aria-label="篩選車商"><option value="">全部車商</option>'+(state.data.insurance_partners||[]).filter(row=>row.partner_type==='dealer').map(row=>'<option value="'+row.id+'" '+(row.id===dealer?'selected':'')+'>'+escapeHtml(row.name)+'</option>').join('')+'</select><input type="search" data-service-driver-search placeholder="輸入姓名或手機尋找司機" value="'+escapeHtml(selected?.name||'')+'"></div><small data-service-driver-selected>'+escapeHtml(selected?'已選：'+selected.name:'尚未選擇司機')+'</small><div class="driver-picker-list"><label class="driver-picker-option" data-service-driver-option data-dealer="" data-search=""><input type="radio" name="driver_id" value="" '+(!value?'checked':'')+'><span>未指定</span></label>'+state.data.drivers.filter(row=>row.driver_status==='跑趟中'||row.id===value).map(row=>'<label class="driver-picker-option" data-service-driver-option data-dealer="'+escapeHtml(row.dealer_partner_id||'')+'" data-search="'+escapeHtml((row.name+' '+(row.phone||'')).toLowerCase())+'" '+(row.id!==value&&dealer&&row.dealer_partner_id!==dealer?'hidden':'')+'><input type="radio" name="driver_id" value="'+row.id+'" '+(row.id===value?'checked':'')+'><span>'+escapeHtml(row.name)+'<small>'+escapeHtml(row.phone||'')+'</small></span></label>').join('')+'</div></div>';
+    return '<div class="field full driver-picker single-driver-picker service-driver-picker"><label>本次通知司機</label><div class="driver-picker-toolbar"><select data-service-driver-dealer aria-label="篩選車商"><option value="">全部車商</option>'+(state.data.insurance_partners||[]).filter(row=>row.partner_type==='dealer').map(row=>'<option value="'+row.id+'" '+(row.id===dealer?'selected':'')+'>'+escapeHtml(row.name)+'</option>').join('')+'</select><input type="search" data-service-driver-search placeholder="輸入姓名或手機尋找司機" value="'+escapeHtml(selected?.name||'')+'"></div><small data-service-driver-selected>'+escapeHtml(selected?'已選：'+selected.name:'尚未選擇司機')+'</small><div class="driver-picker-list">'+(selected&&['已離職','離職'].includes(selected.driver_status)?'<input type="radio" name="driver_id" value="'+escapeHtml(value)+'" checked hidden>':'')+'<label class="driver-picker-option" data-service-driver-option data-dealer="" data-search=""><input type="radio" name="driver_id" value="" '+(!value?'checked':'')+'><span>未指定</span></label>'+selectableDrivers().filter(row=>row.driver_status==='跑趟中'||row.id===value).map(row=>'<label class="driver-picker-option" data-service-driver-option data-dealer="'+escapeHtml(row.dealer_partner_id||'')+'" data-search="'+escapeHtml((row.name+' '+(row.phone||'')).toLowerCase())+'" '+(row.id!==value&&dealer&&row.dealer_partner_id!==dealer?'hidden':'')+'><input type="radio" name="driver_id" value="'+row.id+'" '+(row.id===value?'checked':'')+'><span>'+escapeHtml(row.name)+'<small>'+escapeHtml(row.phone||'')+'</small></span></label>').join('')+'</div></div>';
   }
   function filterServiceDrivers(target){const picker=target.closest('.service-driver-picker');if(!picker)return;const q=picker.querySelector('[data-service-driver-search]').value.trim().toLowerCase(),dealer=picker.querySelector('[data-service-driver-dealer]').value;picker.querySelectorAll('[data-service-driver-option]').forEach(row=>row.hidden=!!((dealer&&row.dataset.dealer&&row.dataset.dealer!==dealer)||(q&&!row.dataset.search.includes(q))));}
   document.addEventListener('input',event=>{if(event.target.matches('[data-service-driver-search]'))filterServiceDrivers(event.target);});
@@ -8718,8 +8719,8 @@
       <label>${label}</label>
       <input type="search" data-driver-select-search placeholder="輸入姓名或手機快速篩選">
       <select name="driver_id" data-driver-select>
-        <option value="">請選擇駕駛</option>
-        ${state.data.drivers.map((driver) => {
+        <option value="">請選擇駕駛</option>${value&&!selectableDrivers().some(d=>d.id===value)?`<option value="${escapeHtml(value)}" selected hidden>${escapeHtml(driverName(value))}（歷史紀錄）</option>`:""}
+        ${selectableDrivers().map((driver) => {
           const text = `${driver.name || "未命名"} ${driver.phone ? `(${driver.phone})` : ""}`;
           return `<option value="${driver.id}" ${value === driver.id ? "selected" : ""}>${escapeHtml(text)}</option>`;
         }).join("")}
@@ -9379,7 +9380,7 @@
   }
 
   function currentMaintenanceDriver(vehicle = {}) {
-    const drivers = state.data.drivers || [];
+    const drivers = selectableDrivers();
     const active = vehicleActiveDriverRecords(vehicle);
     const match = record => {
       if (record.driver_id) return drivers.find(driver => driver.id === record.driver_id) || null;
@@ -9390,7 +9391,7 @@
       const matched = active.map(match).filter(Boolean);
       return matched.find(driver => driver.id === vehicle.current_driver_id) || matched[0] || null;
     }
-    return drivers.find(driver => driver.id === vehicle.current_driver_id) || vehicleDrivers(vehicle)[0] || null;
+    return drivers.find(driver => driver.id === vehicle.current_driver_id) || vehicleDrivers(vehicle).find(driver=>driver.driver_status!=='已離職') || null;
   }
 
   function syncMaintenanceDriverPicker(form, vehicle) {
@@ -9648,13 +9649,13 @@
   }
 
   function findDriverForMaintenanceImport(vehicle, row = {}) {
-    const activeDriver = vehicleDrivers(vehicle)[0];
+    const activeDriver = vehicleDrivers(vehicle).find(driver=>!['已離職','離職'].includes(driver.driver_status));
     if (activeDriver) return activeDriver;
     const rowDriver = String(row.driver_name || "").trim();
     if (rowDriver) {
-      return (state.data.drivers || []).find((driver) => driver.name === rowDriver || String(driver.name || "").includes(rowDriver) || rowDriver.includes(driver.name)) || null;
+      return selectableDrivers().find((driver) => driver.name === rowDriver || String(driver.name || "").includes(rowDriver) || rowDriver.includes(driver.name)) || null;
     }
-    if (vehicle?.current_driver_id) return (state.data.drivers || []).find((driver) => driver.id === vehicle.current_driver_id) || null;
+    if (vehicle?.current_driver_id) return selectableDrivers().find((driver) => driver.id === vehicle.current_driver_id) || null;
     return null;
   }
 
@@ -11024,7 +11025,7 @@
     }
     if (target.dataset.adminView) {
       const navigation=++adminNavigation;
-      if (!["home", "driverReporting", "vehicleInspections", "heyPoints", "equipmentManagement", "boardManagement"].includes(target.dataset.adminView)) {
+      if (!["home", "driverReporting", "driverRoster", "vehicleInspections", "heyPoints", "equipmentManagement", "boardManagement"].includes(target.dataset.adminView)) {
         try { await withAppLoading("正在載入功能資料", ()=>ensureAdminWorkspaceData(target.dataset.adminView)); }
         catch(error) { await showAlert(error.message || error, "載入失敗，請再試一次"); return; }
       }
@@ -11247,7 +11248,7 @@
     if (target.dataset.taskStatus) {
       const [tableName, id, status] = target.dataset.taskStatus.split(":");
       if (tableName === "maintenance_notifications" && status === "completed" && !state.data.maintenance_notifications.find(row => row.id === id)?.batch_id) {
-        window.HeycarBenefits.capture({api:apiRequest,purpose:"service",referenceId:id,title:"完成保養／維修回報",slots:window.HeycarBenefits.photoSlots,onSave:async(photos,odometer)=>{const result=await apiRequest("complete_service_schedule",{id,odometer,photos});Object.assign(state.data.maintenance_notifications.find(row=>row.id===id)||{},result.notification);if(result.event?.id)Object.assign(state.data.calendar_events.find(row=>row.id===result.event.id)||{},result.event);render();}});return;
+        window.HeycarBenefits.capture({api:apiRequest,purpose:"service",referenceId:id,title:"完成保養／維修回報",slots:window.HeycarBenefits.photoSlots,onSave:async(photos,odometer,work_order_missing)=>{const result=await apiRequest("complete_service_schedule",{id,odometer,photos,work_order_missing});Object.assign(state.data.maintenance_notifications.find(row=>row.id===id)||{},result.notification);if(result.event?.id)Object.assign(state.data.calendar_events.find(row=>row.id===result.event.id)||{},result.event);render();}});return;
       }
       await update(tableName,id,{status});
       if (state.view === "messagesCenter" && tableName === "personal_messages" && status === "completed") state.messageReadFilter = "read";
@@ -11639,7 +11640,7 @@
       suggestions.innerHTML = "";
       return;
     }
-    const matches = (state.data.drivers || [])
+    const matches = selectableDrivers()
       .filter((driver) => [driver.name, driver.phone, driver.driver_code].some((value) => String(value || "").toLowerCase().includes(query)))
       .slice(0, 8);
     suggestions.hidden = !matches.length;

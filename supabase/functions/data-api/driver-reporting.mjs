@@ -1,4 +1,4 @@
-export const reportingActions = ['load_driver_reporting','save_driver_reporting_month','submit_driver_reporting','review_driver_reporting','admin_edit_driver_reporting','save_driver_roster_note','driver_roster_stamp'];
+export const reportingActions = ['load_driver_reporting','save_driver_reporting_month','submit_driver_reporting','review_driver_reporting','admin_edit_driver_reporting','save_driver_roster_note','driver_roster_stamp','save_driver_roster_shift','admin_set_driver_leave'];
 
 export function createDriverReportingHandler({ db, adminCan }) {
   return async function handle(body, session) {
@@ -14,7 +14,7 @@ export function createDriverReportingHandler({ db, adminCan }) {
     if (!['review_driver_reporting','admin_edit_driver_reporting','save_driver_roster_note'].includes(body.action) && !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return fail('請選擇有效月份');
     const actor = { role: 'admin', id: session.admin_user_id || 'super-admin', name: session.admin_name || '最高管理員' };
     let rpc, args;
-    if(body.action==='driver_roster_stamp'){rpc='driver_roster_stamp';args={p_month:month+'-01'};}else if(body.action==='save_driver_roster_note'){
+    if(body.action==='save_driver_roster_shift'){if(!/^[0-9a-f-]{36}$/i.test(body.driver_id||'')||typeof body.label!=='string'||body.label.length>40||!Number.isInteger(body.revision)||body.revision<0)return fail('請確認司機與班別');rpc='driver_roster_shift_save';args={p_month:month+'-01',p_driver:body.driver_id,p_label:body.label,p_revision:body.revision,p_actor:actor};}else if(body.action==='admin_set_driver_leave'){if(!/^[0-9a-f-]{36}$/i.test(body.driver_id||'')||!Array.isArray(body.dates)||body.dates.length>31||!Number.isInteger(body.revision)||body.revision<0||body.confirmed!==true||typeof(body.note??'')!=='string'||String(body.note||'').length>1000)return fail('請確認後台休假安排');rpc='driver_reporting_admin_set';args={p_month:month+'-01',p_driver:body.driver_id,p_dates:body.dates,p_revision:body.revision,p_note:body.note||'',p_actor:actor};}else if(body.action==='driver_roster_stamp'){rpc='driver_roster_stamp';args={p_month:month+'-01'};}else if(body.action==='save_driver_roster_note'){
       if(!/^[0-9a-f-]{36}$/i.test(String(body.driver_id||''))||!/^\d{4}-\d{2}-\d{2}$/.test(body.date||'')||!Number.isFinite(Date.parse(body.date))||new Date(body.date).toISOString().slice(0,10)!==body.date||typeof body.note!=='string'||body.note.length>1000||!Number.isInteger(body.revision)||body.revision<0)return fail('請確認日期與班表備註');
       rpc='driver_roster_save';args={p_driver:body.driver_id,p_date:body.date,p_note:body.note,p_revision:body.revision,p_actor:actor};
     }else if (body.action === 'load_driver_reporting') {
@@ -46,7 +46,7 @@ export function createDriverReportingHandler({ db, adminCan }) {
       if (['42883','42P01','PGRST202'].includes(error.code)) return fail('司機報班尚未完成資料庫安裝，請先套用本機 migration',503);
       return fail(error.message || '報班處理失敗，請重新整理', error.code === 'P0001' ? 409 : 400);
     }
-    if(body.action==='load_driver_reporting'&&!driver){const roster=await db.rpc('driver_roster_load',{p_month:month+'-01'});if(roster.error)return fail(roster.error.message,503);data.roster=roster.data;}
+    if(body.action==='load_driver_reporting'&&!driver){const roster=await db.rpc('driver_roster_load',{p_month:month+'-01'});if(roster.error)return fail(roster.error.message,503);data.roster=roster.data;data.rows=(data.rows||[]).map(row=>({...row,plates:[...new Set((roster.data.vehicles||[]).filter(v=>v.driver_id===row.driver_id).map(v=>v.plate_no))]}));}
     return { body: { data }, status: 200 };
   };
 }

@@ -450,7 +450,7 @@ async function request(req, res) {
       return send(res,result.body,result.status);
     }
     if (reporting.actions.includes(body.action)) {
-      if(body.action==='load_driver_reporting')await reporting.syncCalendar(fixture.calendar||[]);
+      if(body.action==='load_driver_reporting'){await reporting.syncCalendar(fixture.calendar||[]);await reporting.syncVehicles(fixture.vehicles||[]);}
       const result = await reporting.handle(body, session);
       return send(res, result.body, result.status);
     }
@@ -549,7 +549,7 @@ async function request(req, res) {
         if(session.session_type!=='driver'||!notice)return send(res,{error:'找不到本人保養通知'},403);
         if(notice.status!=='pending'||event?.completed_at)return send(res,{error:'通知已處理'},409);
         if(typeof body.odometer!=='number'||!Number.isFinite(body.odometer)||body.odometer<0||body.odometer>10000000)return send(res,{error:'請輸入有效完成里程'},400);
-        notice.status='completed';notice.updated_at=new Date().toISOString();
+        notice.work_order_pending=body.work_order_missing===true;notice.status='completed';notice.updated_at=new Date().toISOString();
         if(event){event.status='completed';event.completed_at=notice.updated_at;event.completed_odometer=body.odometer;}
         persistFixture();return send(res,{event,notification:notice});
       }

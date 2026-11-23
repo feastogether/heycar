@@ -43,7 +43,7 @@
  function form(p,h){
   const {escapeHtml,select,input,text,attachmentField,linePushCheckbox,formDate}=h;
   const drivers=cache?.drivers||[];
-  const picker='<div class="field full driver-select-picker"><label>指定駕駛</label><input type="search" data-driver-select-search placeholder="輸入姓名或手機快速篩選"><select name="driver_id" data-driver-select required><option value="">請選擇駕駛</option>'+drivers.map(d=>'<option value="'+escapeHtml(d.id)+'" '+(p.driver_id===d.id?'selected':'')+'>'+escapeHtml(d.name+(d.phone?' ('+d.phone+')':''))+'</option>').join('')+'</select></div>';
+  const picker='<div class="field full driver-select-picker"><label>指定駕駛</label><input type="search" data-driver-select-search placeholder="輸入姓名或手機快速篩選"><select name="driver_id" data-driver-select required><option value="">請選擇駕駛</option>'+(p.driver_id&&drivers.some(d=>d.id===p.driver_id&&["已離職","離職"].includes(d.driver_status))?'<option value="'+escapeHtml(p.driver_id)+'" selected hidden>'+escapeHtml(drivers.find(d=>d.id===p.driver_id).name)+'（歷史紀錄）</option>':'')+drivers.filter(d=>!['已離職','離職'].includes(String(d.driver_status||'').trim())).map(d=>'<option value="'+escapeHtml(d.id)+'" '+(p.driver_id===d.id?'selected':'')+'>'+escapeHtml(d.name+(d.phone?' ('+d.phone+')':''))+'</option>').join('')+'</select></div>';
   return picker+select('fee_type','費用類型',p.fee_type||'罰單',['罰單','通行費','薪資','牌照稅','燃料稅','其他欠費','代扣費用','靠行費'].map(x=>[x,x]))+input('amount','金額（NT$）',p.amount,'number',true)+input('due_date','繳費期限與發放日期',formDate(p.due_date),'date')+select('status','狀態',p.status||'pending',[['pending','待處理'],['paid','已確認'],['returned','已退回']])+text('content','繳費內容',p.content)+attachmentField(p)+(!p.id?linePushCheckbox():'');
  }
  window.HeycarPayments={mount,invalidate,form};
