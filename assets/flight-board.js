@@ -1,5 +1,5 @@
 import {createBoardAudio} from './board-audio-player.js?v=20261123-1';
-import { mountLiveNews } from './flight-board-news.js?v=20261120-3';
+import { mountLiveNews } from './flight-board-news.js?v=20261123-3';
 import { flightAnnouncement, announcementKey, eventTime, withinTrackingWindow } from './flight-announcement.js?v=20261121-2';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const $ = id => document.getElementById(id);
