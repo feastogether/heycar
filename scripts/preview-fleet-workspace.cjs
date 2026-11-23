@@ -656,7 +656,7 @@ async function request(req, res) {
         ...(partner ? { partner } : { admin_profile: admin }),
       };
       if(session.session_type==='admin'&&['home','view'].includes(body.scope)){const views=require('../supabase/functions/data-api/workspace-query.mjs').workspaceViews;const selected=views[body.scope==='home'?'home':body.view]||[];response.data=Object.fromEntries(Object.entries(response.data).filter(([table])=>selected.includes(table)));}
-      if(body.scope==='view'&&!['drivers','driverOnboarding'].includes(body.view)&&response.data.drivers){response.data.drivers=response.data.drivers.map(row=>Object.fromEntries(['id','name','phone','dealer_partner_id','fleet_name','driver_status','updated_at'].map(key=>[key,row[key]])));response.partial_tables=['drivers'];}
+      if(body.scope==='view'&&!['drivers','driverOnboarding'].includes(body.view)&&response.data.drivers){response.data.drivers=response.data.drivers.map(row=>Object.fromEntries(['id','name','phone','dealer_partner_id','fleet_name','driver_status','updated_at',...(['vehicles','vehicleLoans'].includes(body.view)?['photo_url']:[])].map(key=>[key,row[key]])));response.partial_tables=['drivers'];}
       return send(res,response);
     }
     return send(res, {error:"本機預覽尚未支援此操作"},400);

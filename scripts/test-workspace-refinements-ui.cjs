@@ -19,8 +19,9 @@ const fixture={
 fixture.baselines[0].service_date=new Date(Date.parse(today)-40*86400000).toISOString().slice(0,10);
 fixture.vehicles[1].current_driver_id=alternateDriver;
 fixture.vehicles[1].driver_history=[];
+const avatar='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMioAAAAASUVORK5CYII=';
 fixture.drivers=[
- {id:driver,name:'測試司機一',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註',unknown_field:'保留'},updated_at:null},
+ {id:driver,photo_url:avatar,name:'測試司機一',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註',unknown_field:'保留'},updated_at:null},
  {id:alternateDriver,name:'測試司機二',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'跑趟中',onboarding_progress:{notes:'原始進度備註'},updated_at:null},
  {id:'20000000-0000-4000-8000-000000000003',name:'測試待上線司機',dealer_partner_id:dealer,fleet_name:'亞菲得股份有限公司',driver_status:'待上線',onboarding_progress:{notes:'原始進度備註'},updated_at:null}
 ];
@@ -49,10 +50,10 @@ async function main(){
   await nav('serviceRecords');assert.deepEqual(await page.evaluate(()=>[document.querySelector('.side-nav').scrollTop,document.querySelector('.admin-sidebar').scrollTop]),scrolled);
   if(await menu.getAttribute('aria-expanded')==='true')await menu.click();
   for(const width of [320,390,768,1440]){
-   await page.setViewportSize({width,height:900});await nav('vehicles');const actions=page.locator('.vehicle-row-actions').first();await actions.waitFor();
+   await page.setViewportSize({width,height:900});await nav('vehicles');await page.locator('[data-vehicle-view=visual]').click();const image=page.locator('.vehicle-driver-avatars img').first();await image.waitFor();await page.waitForFunction(()=>{const img=document.querySelector('.vehicle-driver-avatars img');return img?.complete&&img.naturalWidth>0;});assert.equal(await image.getAttribute('src'),avatar,'driver avatar survives partial vehicle query');await page.locator('[data-vehicle-view=list]').click();const actions=page.locator('.vehicle-row-actions').first();await actions.waitFor();
    assert.deepEqual((await actions.locator('button').allTextContents()).map(s=>s.trim()),['資料','保單','罰單','編輯']);
    const tops=await actions.locator('button').evaluateAll(buttons=>buttons.map(b=>b.getBoundingClientRect().top));assert(Math.max(...tops)-Math.min(...tops)<2);
-   assert.equal(await actions.locator('[data-delete]').count(),0);await actions.locator('[data-modal="vehicle"]').click();assert.equal(await page.locator('#modalForm [data-delete^="vehicles:"]').count(),1);await page.locator('#modalForm [data-close-modal]').click();
+   assert.equal(await actions.locator('[data-delete]').count(),0);await actions.locator('[data-modal="vehicle"]').click();await page.locator('#modalForm [data-delete^="vehicles:"]').waitFor();assert.equal(await page.locator('#modalForm [data-delete^="vehicles:"]').count(),1);await page.locator('#modalForm [data-close-modal]').click();
    await nav('serviceRecords');await page.locator('.service-record-row').waitFor();assert((await page.locator('.service-record-main').innerText()).includes('送修原因'));assert((await page.locator('.service-record-main').innerText()).includes('實際維修'));
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'viewport '+width);
    assert(await page.locator('.service-parts-summary').evaluate(el=>el.scrollWidth<=el.clientWidth+1),'parts fit '+width);

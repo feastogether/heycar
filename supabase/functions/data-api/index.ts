@@ -456,7 +456,7 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
       result[table] = [];
       return;
     }
-    if(scope==='view'&&table==='drivers'&&!['drivers','driverOnboarding'].includes(view)){result[table]=await dispatchRows(table,'id,name,phone,dealer_partner_id,fleet_name,driver_status,login_enabled,residence_city,service_area,region,group_name,updated_at');return;}
+    if(scope==='view'&&table==='drivers'&&!['drivers','driverOnboarding'].includes(view)){const columns='id,name,phone,dealer_partner_id,fleet_name,driver_status,login_enabled,residence_city,service_area,region,group_name,updated_at'+(['vehicles','vehicleLoans'].includes(view)?',photo_url':'');result[table]=await dispatchRows(table,columns);return;}
     if(table==='dispatch_orders'){result[table]=await dispatchRows(table,'*','','',dispatchDate);return;}
     if (["maintenance_notifications", "maintenance_notification_batches"].includes(table)) {
       result[table] = await dispatchRows(table, "*");
