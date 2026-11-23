@@ -8,11 +8,13 @@ const dealers=[{id:ids.dealer,name:'亞菲得股份有限公司',partner_type:'d
 const drivers=[{id:ids.driver,name:'測試司機一',dealer_partner_id:ids.dealer},{id:ids.second,name:'測試司機二',dealer_partner_id:ids.dealer},{id:ids.third,name:'未開放司機',dealer_partner_id:ids.other}];
 drivers.forEach(row=>row.driver_status='待上線');
 const sessions={'preview-admin':{session_type:'admin',is_super_admin:true},'preview-driver':{session_type:'driver',driver_id:ids.driver},'preview-driver2':{session_type:'driver',driver_id:ids.second},'preview-otherdriver':{session_type:'driver',driver_id:ids.third}};
-const signatures={driver_reporting_admin_edit:['uuid','date[]','bigint','text','jsonb'],driver_reporting_load:['date','uuid'],driver_reporting_save_month:['date','jsonb','bigint','jsonb'],driver_reporting_submit:['date','uuid','date[]','bigint'],driver_reporting_review:['uuid','text','text','bigint','jsonb']};
+const signatures={driver_roster_stamp:["date"],driver_roster_load:["date"],driver_roster_save:["uuid","date","text","integer","jsonb"],driver_reporting_admin_edit:['uuid','date[]','bigint','text','jsonb'],driver_reporting_load:['date','uuid'],driver_reporting_save_month:['date','jsonb','bigint','jsonb'],driver_reporting_submit:['date','uuid','date[]','bigint'],driver_reporting_review:['uuid','text','text','bigint','jsonb']};
 function send(res,body,status=200){res.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(body));}
 async function main(){
  const db=await makeDatabase();
  await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261118010000_reporting_admin_calendar_edit.sql'),'utf8'));
+ await db.exec('create table calendar_events(id uuid primary key,driver_id uuid,event_date date,event_type text,plate_no text,completed_at timestamptz)');
+ const roster=fs.readFileSync(path.join(root,'supabase/migrations/20261123010000_roster_chat_updates.sql'),'utf8');await db.exec(roster.slice(roster.indexOf('create table public.driver_roster_notes')));
  const handle=createDriverReportingHandler({adminCan:async session=>session.is_super_admin,db:{rpc:async(name,args)=>{
   try{const types=signatures[name];const values=Object.values(args).map((value,index)=>types[index]==='jsonb'?JSON.stringify(value):value);
    const result=(await db.query(`select public.${name}(${types.map((type,index)=>`$${index+1}::${type}`).join(',')}) as result`,values)).rows[0].result;return {data:result};

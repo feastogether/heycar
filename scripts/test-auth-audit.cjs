@@ -19,7 +19,7 @@ function fn(code, name) {
   assert(end, name);
   return rest.slice(0, end.index + end[0].length);
 }
-function fixture(adminCode = "unit-secure-admin") {
+function fixture(adminCode = "unit-secure-admin", bindings = {}) {
   let handler,
     failAudit = false;
   const rows = {
@@ -145,6 +145,7 @@ function fixture(adminCode = "unit-secure-admin") {
     TextEncoder,
     URL,
     console: { error() {}, warn() {}, log() {} },
+    ...bindings,
   });
   return {
     rows,
@@ -301,7 +302,8 @@ async function main() {
     "PASS: 0000 denied for all login types, valid login retained, success/failure audit, no credential logging, fail-closed logging, protected pagination beyond 1000 records and full history UI",
   );
 }
-main().catch((error) => {
+module.exports={fixture};
+if(require.main===module)main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });

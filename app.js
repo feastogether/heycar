@@ -135,10 +135,10 @@
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261121-3"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261121-3"],
-      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261121-3"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261121-3"],
+      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-1"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-1"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
-      board:["HeycarBoardManagement","./assets/board-management.js?v=20261120-9"],
+      board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
       screenshot: ["html2canvas", "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"],
       ocr: ["Tesseract", "https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"],
@@ -2257,11 +2257,11 @@
     const link = platformLink(item.source_platform);
     const modal = document.createElement("div");
     modal.className = "modal-backdrop dispatch-detail-backdrop";
-    modal.innerHTML = `<div class="modal dispatch-detail-modal">
+    modal.innerHTML = `<div class="modal dispatch-detail-modal" role="dialog" aria-modal="true" aria-labelledby="dispatchDetailTitle">
       <div class="loan-detail-hero dispatch-detail-hero ${platformClass(item.source_platform)}">
         <div>
           <small>${escapeHtml(item.source_platform || "派趟訂單")}</small>
-          <h3>${escapeHtml(item.booking_no || "-")}</h3>
+          <h3 id="dispatchDetailTitle">${escapeHtml(item.booking_no || "-")}</h3>
           <p>${escapeHtml(dispatchSummaryLine(item))}</p>
         </div>
         <button class="icon-close-btn" data-close-modal aria-label="關閉">${iconSvg("M6 6l12 12M18 6 6 18")}</button>
@@ -5660,6 +5660,10 @@
       .sort((a, b) => String(a.created_at || "").localeCompare(String(b.created_at || "")));
   }
 
+  function chatGivenName(id){const name=adminChatContactName(id);if(name==='未命名')return '夥伴';if(id==='super-admin')return '管理員';if(/^[\u3400-\u9fff]{2,6}$/.test(name))return name.slice(['歐陽','司馬','上官','諸葛','司徒','司空'].some(prefix=>name.startsWith(prefix))?2:1);return name;}
+  function chatReadReceipt(item,groupId){if(String(item.sender_id)!==currentAdminChatId())return '';if(!groupId)return item.read_at?'<span class="chat-read-receipt">已讀</span>':'';const names=(state.chatGroupReaders?.[groupId]||[]).filter(row=>row.user_id!==item.sender_id&&Number(row.last_read_seq)>=Number(item.seq)).map(row=>chatGivenName(row.user_id));return names.length?'<span class="chat-read-receipt">已讀 · '+names.map(escapeHtml).join('、')+'</span>':'';}
+  function paintChatMentions(input){let popup=document.querySelector('[data-chat-mentions]');popup?.remove();if(!state.adminChatContactId.startsWith('group:'))return;const match=input.value.slice(0,input.selectionStart).match(/@([^@\s]{0,20})$/);if(!match)return;const group=(state.data.admin_chat_groups||[]).find(row=>'group:'+row.id===state.adminChatContactId);const ids=(group?.member_ids||[]).filter(id=>id!==currentAdminChatId()&&adminChatContactName(id).includes(match[1]));if(!ids.length)return;popup=document.createElement('div');popup.dataset.chatMentions='';popup.className='chat-mention-menu';popup.setAttribute('role','listbox');popup.innerHTML=ids.map(id=>'<button type="button" data-chat-mention="'+escapeHtml(id)+'">'+escapeHtml(adminChatContactName(id))+'</button>').join('');input.closest('form').append(popup);popup.onclick=event=>{const b=event.target.closest('[data-chat-mention]');if(!b)return;const id=b.dataset.chatMention,end=input.selectionStart,start=end-match[0].length,text='@'+chatGivenName(id)+' ';input.setRangeText(text,start,end,'end');state.adminChatDraft=input.value;state.chatMentions=[...new Set([...(state.chatMentions||[]),id])];popup.remove();input.focus();};}
+
   function adminChatMessagesMarkup(contactId = state.adminChatContactId) {
     const messages = contactId ? adminChatMessages(contactId) : [];
     if (state.adminChatError) return `<div class="admin-chat-empty">${escapeHtml(state.adminChatError)}</div>`;
@@ -5670,7 +5674,7 @@
       const mine = String(item.sender_id || "") === currentAdminChatId();
       return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
         ${adminChatAvatar(String(item.sender_id || ""))}<div class="admin-chat-bubble-copy"><small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
-        <p>${escapeHtml(item.message || "")}</p></div>
+        <p class="${(item.mention_ids||[]).includes(currentAdminChatId())?"mentions-me":""}">${escapeHtml(item.message || "")}</p>${chatReadReceipt(item,groupId)}</div>
       </article>`;
     }).join("");
   }
@@ -5686,7 +5690,7 @@
   function adminChatContactPreview(contactId, summary = adminChatSummary()) {
     const last = summary.get(contactId)?.last;
     if (!last) return { text: "尚無訊息", time: "" };
-    return { text: `${String(last.sender_id || "") === currentAdminChatId() ? "你：" : ""}${last.message || ""}`, time: formatDateTime(last.created_at).split(" ").pop() || "" };
+    return { text: `${String(last.sender_id || "") === currentAdminChatId() ? "你：" : ""}${last.message || ""}`, time: Number.isFinite(Date.parse(last.created_at))?new Date(last.created_at).toLocaleTimeString("zh-TW",{timeZone:"Asia/Taipei",hour:"2-digit",minute:"2-digit",hour12:false}):"" };
   }
 
   function adminChatContactsMarkup(contacts = adminChatContacts(), selectedId = state.adminChatContactId) {
@@ -5740,7 +5744,7 @@
   }
 
   function loadAdminChat() {
-    if(adminChatLoadSession!==state.apiSession){adminChatLoadSession=state.apiSession;adminChatLoadPromise=null;state.adminChatContactId="";state.adminChatDraft="";state.chatNotificationInitialized=false;state.chatSince="";state.chatDirectoryAt=0;state.feedbackPending=0;state.data.admin_chat_messages=[];state.data.admin_chat_groups=[];state.data.admin_chat_group_messages=[];}
+    if(adminChatLoadSession!==state.apiSession){adminChatLoadSession=state.apiSession;adminChatLoadPromise=null;state.adminChatContactId="";state.adminChatDraft="";state.chatNotificationInitialized=false;state.chatSince="";state.chatDirectoryAt=0;state.chatMentions=[];state.chatGroupCursors={};state.chatGroupReaders={};state.feedbackPending=0;state.data.admin_chat_messages=[];state.data.admin_chat_groups=[];state.data.admin_chat_group_messages=[];}
     if (!adminChatLoadPromise) {const pending=fetchAdminChat().finally(() => {if(adminChatLoadPromise===pending)adminChatLoadPromise = null;});adminChatLoadPromise=pending;}
     return adminChatLoadPromise;
   }
@@ -5751,7 +5755,7 @@
     const contactId = state.adminChatContactId || "";
     const oldMessages=new Set((state.data.admin_chat_messages||[]).map(item=>item.id));
     const oldGroupMessages=new Set((state.data.admin_chat_groups||[]).map(group=>group.last_message?.id));
-    let result;const payload={group_id:contactId.startsWith("group:")?contactId.slice(6):"",since:state.chatSince||"",directory:!state.chatDirectoryAt||Date.now()-state.chatDirectoryAt>300000};
+    let result;const payload={group_after:contactId.startsWith("group:")?state.chatGroupCursors?.[contactId.slice(6)]||0:0,group_id:contactId.startsWith("group:")?contactId.slice(6):"",since:state.chatSince||"",directory:!state.chatDirectoryAt||Date.now()-state.chatDirectoryAt>300000};
     try{result=await apiRequest("load_admin_chat",payload);}catch(error){if(payload.group_id&&/群組.*成員|群組.*不存在/.test(error.message||"")){state.adminChatContactId="";result=await apiRequest("load_admin_chat",{...payload,group_id:""});}else throw error;}
     if (state.apiSession !== session) return;
     if (result.admin_users) {
@@ -5776,10 +5780,12 @@
     if(result.snapshot_at)state.chatSince=result.snapshot_at;
     state.data.admin_chat_groups = result.admin_chat_groups || [];
     if (result.group_id) {
+      state.chatGroupReaders={...state.chatGroupReaders,[result.group_id]:result.group_readers||[]};
+      state.chatGroupCursors={...state.chatGroupCursors,[result.group_id]:Math.max(state.chatGroupCursors?.[result.group_id]||0,...(result.group_messages||[]).map(row=>Number(row.seq)))};
       const existing = state.data.admin_chat_group_messages || [];
       const hadOlder = existing.some(item=>item.group_id===result.group_id && Number(item.seq)<Number(result.group_messages?.[0]?.seq || 0));
       state.data.admin_chat_group_messages = [...new Map([...existing,...(result.group_messages || [])].map(item=>[item.id,item])).values()];
-      if (!hadOlder) state.adminChatGroupMore = {...state.adminChatGroupMore,[result.group_id]:result.group_has_more};
+      if (!hadOlder&&!result.group_incremental) state.adminChatGroupMore = {...state.adminChatGroupMore,[result.group_id]:result.group_has_more};
     }
     if (!state.adminChatContactId) state.adminChatContactId = adminChatContacts()[0]?.id || "";
     state.adminChatError = "";
@@ -5821,11 +5827,12 @@
     const session = state.apiSession, groupId = contactId.slice(6);
     const existing = adminChatMessages(contactId);
     const before = older && existing.length ? Number(existing[0].seq) : 0;
-    const result = await apiRequest("load_admin_group_messages",{group_id:groupId,before_seq:before});
+    const result = await apiRequest("load_admin_group_messages",{group_id:groupId,before_seq:before,after_seq:older?0:state.chatGroupCursors?.[groupId]||0});
+    if(state.apiSession===session){state.chatGroupReaders={...state.chatGroupReaders,[groupId]:result.readers||[]};if(!older)state.chatGroupCursors={...state.chatGroupCursors,[groupId]:Math.max(state.chatGroupCursors?.[groupId]||0,...(result.messages||[]).map(row=>Number(row.seq)))};}
     if (state.apiSession !== session) return;
-    const rows = [...(state.data.admin_chat_group_messages || []).filter(item=>older || item.group_id!==groupId),...(result.messages || [])];
+    const rows = [...(state.data.admin_chat_group_messages || []).filter(item=>older || result.incremental || item.group_id!==groupId),...(result.messages || [])];
     state.data.admin_chat_group_messages = [...new Map(rows.map(item=>[item.id,item])).values()];
-    state.adminChatGroupMore = {...state.adminChatGroupMore,[groupId]:result.has_more};
+    if(!result.incremental)state.adminChatGroupMore = {...state.adminChatGroupMore,[groupId]:result.has_more};
   }
 
   function openAdminChatGroupEditor() {
@@ -10875,7 +10882,7 @@
       state.loginLoading = false;
       state.adminChatOpen = false;
       state.adminChatContactId = "";
-      state.adminChatDraft = "";
+      state.adminChatDraft = "";state.chatMentions=[];
       state.adminChatEmojiOpen = false;
       if (adminChatRefreshTimer) {
         clearInterval(adminChatRefreshTimer);
@@ -11399,6 +11406,7 @@
         const isGroup=receiverId.startsWith("group:");
         const result = await apiRequest(isGroup ? "send_admin_group_message" : "send_admin_chat_message", {
           group_id:isGroup?receiverId.slice(6):undefined,
+          mention_ids:isGroup?(state.chatMentions||[]).filter(id=>message.includes("@"+chatGivenName(id))):undefined,
           receiver_id: receiverId,
           receiver_name: adminChatContactName(receiverId),
           message
@@ -11406,7 +11414,7 @@
         const key=isGroup?"admin_chat_group_messages":"admin_chat_messages";
         state.data[key] = [...new Map([...(state.data[key] || []),result.data].filter(Boolean).map(item=>[item.id,item])).values()];
         if (isGroup) { const group=(state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===receiverId); if(group)group.last_message=result.data; }
-        if (state.adminChatContactId===receiverId) state.adminChatDraft = "";
+        if (state.adminChatContactId===receiverId){state.adminChatDraft = "";state.chatMentions=[];state.chatMentions=[];document.querySelector("[data-chat-mentions]")?.remove();}
         state.adminChatEmojiOpen = false;
         state.adminChatError = "";
         if (state.adminChatContactId===receiverId) form.reset();
@@ -11672,7 +11680,7 @@
       }
     }
     if (e.target.closest("#adminChatForm input[name='message']")) {
-      state.adminChatDraft = e.target.value;
+      state.adminChatDraft = e.target.value;paintChatMentions(e.target);
       return;
     }
     if (e.target.closest("[data-rich-editor]")) {

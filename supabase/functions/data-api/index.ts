@@ -312,12 +312,14 @@ async function requireAdminGroupMember(groupId: string, userId: string) {
   return Boolean(data);
 }
 
-async function loadAdminGroupMessages(groupId: string, before = 0) {
-  let query = db.from("admin_chat_group_messages").select("*").eq("group_id", groupId).order("seq", { ascending: false }).limit(101);
+async function loadAdminGroupMessages(groupId: string, before = 0, after = 0) {
+  let query = db.from("admin_chat_group_messages").select("*").eq("group_id", groupId).order("seq", { ascending: after > 0 }).limit(101);
   if (before) query = query.lt("seq", before);
+  if (after) query = query.gt("seq",after);
   const { data, error } = await query;
   if (error) throw error;
-  return { messages: (data || []).slice(0,100).reverse(), has_more: (data || []).length > 100 };
+  const readers=await db.from("admin_chat_group_members").select("user_id,last_read_seq").eq("group_id",groupId);if(readers.error)throw readers.error;
+  return { messages: after?(data||[]).slice(0,100):(data || []).slice(0,100).reverse(), has_more: !after&&(data || []).length > 100, incremental:!!after,has_more_new:!!after&&(data||[]).length>100, readers:readers.data||[] };
 }
 
 async function handleAdminGroupChat(body: Record<string, any>, session: Record<string, any>) {
@@ -340,8 +342,8 @@ async function handleAdminGroupChat(body: Record<string, any>, session: Record<s
   if (!(await requireAdminGroupMember(groupId,userId))) return json({ error:"你不是這個群組的成員" },403);
   if (body.action === "load_admin_group_messages") {
     const before = Number(body.before_seq || 0);
-    if (!Number.isSafeInteger(before) || before < 0) return json({error:"無效的訊息位置"},400);
-    return json(await loadAdminGroupMessages(groupId,before));
+    const after=Number(body.after_seq||0);if (!Number.isSafeInteger(before) || before < 0||!Number.isSafeInteger(after)||after<0||before&&after) return json({error:"無效的訊息位置"},400);
+    return json(await loadAdminGroupMessages(groupId,before,after));
   }
   if (body.action === "mark_admin_group_read") {
     const through = Number(body.through_seq || 0);
@@ -352,7 +354,9 @@ async function handleAdminGroupChat(body: Record<string, any>, session: Record<s
   }
   const message = compactText(body.message);
   if (!message || message.length > 2000) return json({error:"請輸入 1 至 2000 字的訊息"},400);
-  const { data, error } = await db.from("admin_chat_group_messages").insert({group_id:groupId,sender_id:userId,sender_name:compactText(session.admin_name,session.is_super_admin?"最高管理員":"管理者"),message}).select("*").single();
+  const mentions=body.mention_ids||[];if(!Array.isArray(mentions)||mentions.length>30||mentions.some(id=>typeof id!=='string'))return json({error:'TAG 成員格式錯誤'},400);
+  if(mentions.length){const members=await db.from('admin_chat_group_members').select('user_id').eq('group_id',groupId).in('user_id',mentions);if(members.error)throw members.error;if(new Set(mentions).size!==members.data.length)return json({error:'只能 TAG 此群組的成員'},400);}
+  const { data, error } = await db.from("admin_chat_group_messages").insert({mention_ids:[...new Set(mentions)],group_id:groupId,sender_id:userId,sender_name:compactText(session.admin_name,session.is_super_admin?"最高管理員":"管理者"),message}).select("*").single();
   if (error) throw error;
   return json({data});
 }
@@ -1667,7 +1671,7 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return data ? json({ ok: true }) : json({ error: "此資料已核對，請重新整理" }, 409);
     }
-    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting", "admin_edit_driver_reporting"].includes(body.action)) {
+    if (["load_driver_reporting", "save_driver_reporting_month", "submit_driver_reporting", "review_driver_reporting", "admin_edit_driver_reporting", "save_driver_roster_note", "driver_roster_stamp"].includes(body.action)) {
       const response = await createDriverReportingHandler({ db, adminCan })(body, session);
       return json(response.body, response.status);
     }
@@ -1910,13 +1914,13 @@ Deno.serve(async (req) => {
       const messages = [...byId.values()].sort((a, b) => compactText(a.created_at).localeCompare(compactText(b.created_at)));
       const groups = await loadAdminChatGroups(myChatId);
       const feedback = await adminCan(session,"feedbacks") ? await db.from("feedbacks").select("id",{count:"exact",head:true}).or("admin_reply.is.null,admin_reply.eq.") : {count:0};
-      let groupMessages: {messages:Record<string,unknown>[],has_more:boolean} = { messages:[], has_more:false };
+      let groupMessages: {messages:Record<string,unknown>[],has_more:boolean,readers?:Record<string,unknown>[],incremental?:boolean,has_more_new?:boolean} = { messages:[], has_more:false };
       const groupId = compactText(body.group_id);
       if (groupId) {
         if (!groups.some((group: any)=>group.id===groupId)) return json({error:"你不是這個群組的成員"},403);
-        groupMessages = await loadAdminGroupMessages(groupId);
+        const after=Number(body.group_after||0);if(!Number.isSafeInteger(after)||after<0)return json({error:"無效的訊息位置"},400);groupMessages = await loadAdminGroupMessages(groupId,0,after);
       }
-      return json(await signStorageUrls({ admin_users: users.data, admin_chat_messages: messages, snapshot_at:snapshotAt,incremental:!!since,admin_chat_groups:groups, feedback_count:feedback.count||0, group_id:groupId, group_messages:groupMessages.messages, group_has_more:groupMessages.has_more }));
+      return json(await signStorageUrls({ admin_users: users.data, admin_chat_messages: messages, snapshot_at:snapshotAt,incremental:!!since,admin_chat_groups:groups, feedback_count:feedback.count||0, group_id:groupId, group_messages:groupMessages.messages, group_readers:groupMessages.readers||[],group_incremental:!!groupMessages.incremental,group_has_more_new:!!groupMessages.has_more_new, group_has_more:groupMessages.has_more }));
     }
     if (body.action === "send_admin_chat_message") {
       if (session.session_type !== "admin") return json({ error: "ADMIN_PERMISSION_DENIED" }, 403);

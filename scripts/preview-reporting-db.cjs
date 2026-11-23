@@ -31,8 +31,10 @@ module.exports=function createReportingPreview(directory, sourceDrivers = null) 
       const start=sql.indexOf('create function public.'+name+'('),end=sql.indexOf('$$;',start)+3;
       await db.exec(sql.slice(start,end).replace('create function','create or replace function'));
     }
+  await db.exec("create table if not exists calendar_events(id uuid primary key,driver_id uuid,event_date date,event_type text,plate_no text,completed_at timestamptz)");
+    if(!(await db.query("select to_regclass('public.driver_roster_notes')as name")).rows[0].name){const roster=fs.readFileSync(path.join(__dirname,'../supabase/migrations/20261123010000_roster_chat_updates.sql'),'utf8');await db.exec(roster.slice(roster.indexOf('create table public.driver_roster_notes')));}
   })();
-  const signature={driver_reporting_admin_edit:['uuid','date[]','bigint','text','jsonb'],driver_reporting_load:['date','uuid'],driver_reporting_save_month:['date','jsonb','bigint','jsonb'],driver_reporting_submit:['date','uuid','date[]','bigint'],driver_reporting_review:['uuid','text','text','bigint','jsonb']};
+  const signature={driver_roster_stamp:["date"],driver_roster_load:["date"],driver_roster_save:["uuid","date","text","integer","jsonb"],driver_reporting_admin_edit:['uuid','date[]','bigint','text','jsonb'],driver_reporting_load:['date','uuid'],driver_reporting_save_month:['date','jsonb','bigint','jsonb'],driver_reporting_submit:['date','uuid','date[]','bigint'],driver_reporting_review:['uuid','text','text','bigint','jsonb']};
   const handle=createDriverReportingHandler({adminCan:async session=>session.is_super_admin,db:{rpc:async(name,args)=>{
     await ready;
     for(const row of directory.filter(row=>row.partner_type==='dealer'))await db.query('insert into insurance_partners values($1,$2,$3,$4,$5) on conflict(id) do update set name=excluded.name,partner_type=excluded.partner_type,active=excluded.active,frontend_permissions=excluded.frontend_permissions',[row.id,row.name,row.partner_type,row.active!==false,JSON.stringify(row.frontend_permissions||{})]);
@@ -43,5 +45,5 @@ module.exports=function createReportingPreview(directory, sourceDrivers = null) 
       return {data:result};
     }catch(error){return {error:{code:error.code,message:error.message}};}
   }}});
-  return {drivers,handle,actions:reportingActions,syncDriver:async driver=>{await ready;await db.query('update drivers set name=$1,dealer_partner_id=$2,fleet_name=$3,driver_status=$4 where id=$5',[driver.name,driver.dealer_partner_id,driver.fleet_name,driver.driver_status,driver.id]);await db.exec('checkpoint');},close:async()=>{await ready;await db.close();}};
+  return {drivers,handle,actions:reportingActions,syncCalendar:async events=>{await ready;await db.exec('delete from calendar_events');for(const e of events)await db.query('insert into calendar_events(id,driver_id,event_date,event_type,plate_no,completed_at)values($1,$2,$3,$4,$5,$6)',[e.id,e.driver_id,e.event_date,e.event_type,e.plate_no,e.completed_at||null]);},syncDriver:async driver=>{await ready;await db.query('update drivers set name=$1,dealer_partner_id=$2,fleet_name=$3,driver_status=$4 where id=$5',[driver.name,driver.dealer_partner_id,driver.fleet_name,driver.driver_status,driver.id]);await db.exec('checkpoint');},close:async()=>{await ready;await db.close();}};
 };

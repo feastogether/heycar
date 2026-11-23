@@ -51,6 +51,7 @@ async function main() {
           filters.push((row) => v.includes(row[k]));
           return this;
         },
+        gt(k,v){filters.push(row=>row[k]>v);return this;},
         lt(k, v) {
           filters.push((row) => row[k] < v);
           return this;
@@ -145,13 +146,17 @@ async function main() {
   );
   assert.equal(sent.value.data.sender_id, "me");
   assert.equal(sent.value.data.sender_name, "本人");
+  rows.admin_chat_group_members.push({group_id:group,user_id:'amy',last_read_seq:106});
+  const mentioned=await ctx.handleAdminGroupChat({action:'send_admin_group_message',group_id:group,message:'@Amy 請留意',mention_ids:['amy']},session);assert.deepEqual(Array.from(mentioned.value.data.mention_ids),['amy']);
+  assert.equal((await ctx.handleAdminGroupChat({action:'send_admin_group_message',group_id:group,message:'bad',mention_ids:['outsider']},session)).status,400);
   const history = await ctx.handleAdminGroupChat(
     { action: "load_admin_group_messages", group_id: group },
     session,
   );
-  assert.equal(history.value.messages.length, 100);
+  assert.equal(history.value.messages.length, 100);assert(history.value.readers.some(row=>row.user_id==='amy'&&row.last_read_seq===106));
   assert.equal(history.value.has_more, true);
   assert(history.value.messages[0].seq < history.value.messages[99].seq);
+  const incremental=await ctx.loadAdminGroupMessages(group,0,103);assert.equal(incremental.incremental,true);assert(incremental.messages.every(row=>row.seq>103));assert.equal(incremental.has_more,false);
   const older = await ctx.handleAdminGroupChat(
     { action: "load_admin_group_messages", group_id: group, before_seq: 7 },
     session,
@@ -269,6 +274,8 @@ async function main() {
     "adminChatContactName",
     "adminChatCurrentMarkup",
     "adminChatMessages",
+    "chatGivenName",
+    "chatReadReceipt",
     "adminChatMessagesMarkup",
     "adminChatContactPreview",
     "adminChatContactUnread",

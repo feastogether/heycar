@@ -1,3 +1,5 @@
+import {boardUpload,boardAssetUrl,synthesizeBoardSpeech,broadcastQueue,sendBoardBroadcast,speechReady,speechProvider} from './board-audio.js';
+import {flightAnnouncement} from '../assets/flight-announcement.js';
 import {sealBoardToken,openBoardToken} from './board-links.js';
 import {boardBriefing} from './board-briefing.js';
 import {readBoardSettings,saveBoardSettings} from './board-settings.js';
@@ -74,7 +76,8 @@ async function canPair(actor, env) {
   if (actor?.session_type !== 'admin') return false;
   if (actor.is_super_admin) return true;
   if (!actor.admin_user_id) return false;
-  const profile = (await rest(env, 'admin_users', { id: `eq.${actor.admin_user_id}`, select: 'active,permissions', limit: '1' }))[0];
+  const profile = (await rest(env, 'admin_users', { id: `eq.${actor.admin_user_id}`, select: 'active,permissions,department_id,permission_mode', limit: '1' }))[0];
+  if(profile?.permission_mode==='department'){const department=(await rest(env,'staff_departments',{id:'eq.'+profile.department_id,deleted_at:'is.null',select:'permissions',limit:'1'}))[0];profile.permissions=department?.permissions||{};}
   return profile?.active && profile.permissions?.boardManagement===true;
 }
 async function listedWatches(bucket, date) {
@@ -86,15 +89,16 @@ export async function flightBoard(request, env) {
   let stage='request';
   try {
     if (request.method !== 'POST') return reply({ error: 'METHOD_NOT_ALLOWED' }, 405);
-    const body = JSON.parse(await boundedText(request, 32768));
-    if (['snapshot','pulse','briefing'].includes(body.action)) {
+    const body = JSON.parse(await boundedText(request, 3000000));
+    if (['snapshot','pulse','briefing','speech_flight','speech_test'].includes(body.action)) {
       const token = request.headers.get('x-board-token') || '';
       if (!/^[a-f0-9]{64}$/.test(token)) return reply({ error: '請使用後台產生的電視配對連結' }, 401);
       const access = await env.ATTACHMENTS.get(`${PREFIX}access/${await hash(token)}.json`);
       if (!access) return reply({ error: '電視連結已撤銷或無效，請重新取得連結' }, 401);
       const accessData=await access.json(),accessId=await hash(token);if(!accessData.token_cipher){const token_cipher=await sealBoardToken(token,accessId,env);await env.ATTACHMENTS.put(`${PREFIX}access/${accessId}.json`,JSON.stringify({...accessData,token_cipher}),{onlyIf:{etagMatches:access.etag},customMetadata:{...access.customMetadata,tokenStored:'1'}});}
+      if(body.action==='speech_test')return reply(await synthesizeBoardSpeech(env,'語音播報已啟用。祝各位司機行車平安。',new URL(request.url).origin));
       if(body.action==='briefing'){stage='briefing';const settings=(await readBoardSettings(env.ATTACHMENTS)).data;return reply(await boardBriefing(env.ATTACHMENTS,{includeWeather:settings.ticker_weather!==false,includeStock:settings.ticker_stock!==false}));}
-      stage='feed';const cached=body.action==='pulse'?await env.ATTACHMENTS.get(PREFIX+'cache/arrivals.json'):null;const feed=body.action==='pulse'?(cached?await cached.json():{updated:0,fetched_at:0,flights:[]}):await arrivals(env), date = day(), tomorrow = day(Date.now() + 86400000);const settings=(await readBoardSettings(env.ATTACHMENTS)).data;
+      stage='feed';const cached=['pulse','speech_flight'].includes(body.action)?await env.ATTACHMENTS.get(PREFIX+'cache/arrivals.json'):null;const feed=['pulse','speech_flight'].includes(body.action)?(cached?await cached.json():{updated:0,fetched_at:0,flights:[]}):await arrivals(env), date = day(), tomorrow = day(Date.now() + 86400000);const settings=(await readBoardSettings(env.ATTACHMENTS)).data;
       stage='watch_list';
       const objects = [...await listedWatches(env.ATTACHMENTS,day(Date.now()-86400000)),...await listedWatches(env.ATTACHMENTS, date), ...await listedWatches(env.ATTACHMENTS, tomorrow)];
       const watches = [];
@@ -125,13 +129,18 @@ export async function flightBoard(request, env) {
         if (!watch.cancelledAt&&watch.landedAt && Date.now() - watch.landedAt > 5 * 60000) continue;
         watches.push({ ...watch, flight: flight || null });
       }
-      return reply({ updated_at: new Date(feed.updated).toISOString(), source:feed.source||'桃園機場',stale: !!feed.stale||Date.now()-feed.updated>600000,next_refresh_at:Math.max((feed.fetched_at||feed.updated)+300000,feed.retry_at||0),checked_at:new Date().toISOString(), watches, ...(body.action==='snapshot'?{flights: feed.flights.filter(f => [date, tomorrow].includes(f.date) && !f.landed && !f.cancelled && Date.parse(f.estimatedTime || f.scheduledTime) >= Date.now()).sort((a,b) => Date.parse(a.estimatedTime || a.scheduledTime) - Date.parse(b.estimatedTime || b.scheduledTime)).slice(0, 40)}:{}), marquee:settings.marquee,ticker_weather:settings.ticker_weather!==false,ticker_stock:settings.ticker_stock!==false,announcements:settings.announcements.filter(x=>x.active!==false), news_video_id: /^[\w-]{11}$/.test(env.CTS_LIVE_VIDEO_ID || '') ? env.CTS_LIVE_VIDEO_ID : 'wM0g8EoUZ_E' });
+      if(body.action==='speech_flight'){const watch=watches.find(row=>row.id===body.watch_id);if(!watch||!watch.cancelledAt&&!watch.landedAt||Date.now()-(watch.cancelledAt||watch.landedAt)>900000)return reply({error:'此航班沒有可播報的新事件'},409);return reply(await synthesizeBoardSpeech(env,flightAnnouncement(watch),new URL(request.url).origin));}
+      const announcements=await Promise.all(settings.announcements.filter(x=>x.active!==false).map(async row=>({...row,image_url:row.image_path?await boardAssetUrl(env,row.image_path,new URL(request.url).origin):''})));
+      return reply({ updated_at: new Date(feed.updated).toISOString(), source:feed.source||'桃園機場',stale: !!feed.stale||Date.now()-feed.updated>600000,next_refresh_at:Math.max((feed.fetched_at||feed.updated)+300000,feed.retry_at||0),checked_at:new Date().toISOString(), watches, ...(body.action==='snapshot'?{flights: feed.flights.filter(f => [date, tomorrow].includes(f.date) && !f.landed && !f.cancelled && Date.parse(f.estimatedTime || f.scheduledTime) >= Date.now()).sort((a,b) => Date.parse(a.estimatedTime || a.scheduledTime) - Date.parse(b.estimatedTime || b.scheduledTime)).slice(0, 40)}:{}), marquee:settings.marquee,ticker_weather:settings.ticker_weather!==false,ticker_stock:settings.ticker_stock!==false,announcements,broadcasts:await broadcastQueue(env,new URL(request.url).origin),speech_ready:speechReady(env),speech_provider:speechProvider(env), news_video_id: /^[\w-]{11}$/.test(env.CTS_LIVE_VIDEO_ID || '') ? env.CTS_LIVE_VIDEO_ID : 'wM0g8EoUZ_E' });
     }
     const actor = await session(request, env);
     if (!actor) return reply({ error: '請重新登入' }, 401);
-    if(['settings_get','settings_save','pair_list','pair_link'].includes(body.action)){
+    if(['settings_get','settings_save','pair_list','pair_link','board_upload','broadcast_send','speech_preview'].includes(body.action)){
       if(!await canPair(actor,env))return reply({error:'沒有看板管理權限'},403);
-      if(body.action==='settings_get')return reply({settings:(await readBoardSettings(env.ATTACHMENTS)).data});
+      if(body.action==='board_upload')return reply(await boardUpload(env,body,new URL(request.url).origin));
+      if(body.action==='speech_preview')return reply(await synthesizeBoardSpeech(env,body.text,new URL(request.url).origin));
+      if(body.action==='broadcast_send')return reply({broadcast:await sendBoardBroadcast(env,body,actor,new URL(request.url).origin)});
+      if(body.action==='settings_get'){const settings=(await readBoardSettings(env.ATTACHMENTS)).data;return reply({settings:{...settings,announcements:await Promise.all(settings.announcements.map(async row=>({...row,image_url:row.image_path?await boardAssetUrl(env,row.image_path,new URL(request.url).origin):''})))},speech_ready:speechReady(env),speech_provider:speechProvider(env)});}
       if(body.action==='settings_save'){const settings=await saveBoardSettings(env.ATTACHMENTS,body.settings,{id:actor.admin_user_id||'super-admin'});return settings?reply({settings}):reply({error:'設定已由其他人修改，請重新整理後再儲存'},409);}
       if(body.action==='pair_link'){if(!/^[a-f0-9]{64}$/.test(body.id||''))return reply({error:'連結編號錯誤'},400);const file=await env.ATTACHMENTS.get(`${PREFIX}access/${body.id}.json`);if(!file)return reply({error:'此連結已停用'},404);const data=await file.json();if(!data.token_cipher)return reply({error:'此舊連結尚未保存網址，請在原電視重新整理後再取得；若原電視尚未使用，請產生新連結。'},409);return reply({token:await openBoardToken(data.token_cipher,body.id,env)});}
       const page=await env.ATTACHMENTS.list({prefix:PREFIX+'access/',limit:1000,include:['customMetadata']});return reply({pairs:page.objects.map(row=>({id:row.key.split('/').pop().replace('.json',''),name:row.customMetadata?.name||'電視看板',created_at:row.uploaded}))});
@@ -159,5 +168,5 @@ export async function flightBoard(request, env) {
     const watch = { id, flightNo, date, driverName: clean(driver.name).slice(0, 60), createdAt: Date.now() };
     await env.ATTACHMENTS.put(key, JSON.stringify(watch), { onlyIf: { etagDoesNotMatch: '*' }, customMetadata: { watch: JSON.stringify(watch) } });
     return reply({ ok: true, id });
-  } catch(error) {if(error?.message==='INVALID_SETTINGS')return reply({error:'請確認跑馬燈最多20則、每則500字；公告最多12則，標題100字、內容2000字。'},400); const code=/^(SOURCE_[A-Z0-9_]+|RESPONSE_TOO_LARGE)$/.test(error?.message||'')?error.message:'BOARD_'+stage.toUpperCase();console.warn(JSON.stringify({event:'flight_board_error',code}));return reply({ error: '航班看板暫時無法連線，請稍後重試',code }, 503); }
+  } catch(error) {if(/^(尚未設定|請確認|請上傳|請輸入|語音|音檔|檔案|播報|廣播|今日|公告照片|MP3)/.test(error?.message||''))return reply({error:error.message},409);if(error?.message==='INVALID_SETTINGS')return reply({error:'請確認跑馬燈最多20則、每則500字；公告最多12則，標題100字、內容2000字。'},400); const code=/^(SOURCE_[A-Z0-9_]+|RESPONSE_TOO_LARGE)$/.test(error?.message||'')?error.message:'BOARD_'+stage.toUpperCase();console.warn(JSON.stringify({event:'flight_board_error',code}));return reply({ error: '航班看板暫時無法連線，請稍後重試',code }, 503); }
 }

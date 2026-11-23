@@ -1,5 +1,5 @@
 export const inspectionSlots=['front','front_right','right','rear_right','rear','rear_left','left','front_left','cabin','odometer'];
-export const inspectionActions=['inspection_load','inspection_create','inspection_photo','inspection_photo_ticket','inspection_draft','inspection_submit','inspection_review','inspection_start','inspection_batches','inspection_batch_action','inspection_edit_batch','inspection_export','inspection_purge'];
+export const inspectionActions=['inspection_handover_directory','inspection_create_handover','inspection_damage_load','inspection_case_export','inspection_load','inspection_create','inspection_photo','inspection_photo_ticket','inspection_draft','inspection_submit','inspection_review','inspection_start','inspection_batches','inspection_batch_action','inspection_edit_batch','inspection_export','inspection_purge'];
 const uuid=value=>typeof value==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 const safeName=value=>String(value||'照片.jpg').replace(/[\x00-\x1f/\\]/g,'').slice(0,160)||'照片.jpg';
 export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto,media=null}) {
@@ -50,12 +50,24 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
     if(!uuid(body.batch_id)||!['cancel','delete','restore'].includes(body.operation)||!Number.isSafeInteger(body.revision)||body.confirmed!==true||typeof body.reason!=='string'||body.reason.length>1000)return fail('請確認批次操作內容');
     return {body:{data:await rpc('inspection_batch_action',{p_batch:body.batch_id,p_operation:body.operation,p_revision:body.revision,p_reason:body.reason,p_actor:actor})},status:200};
    }
+   if(body.action==='inspection_handover_directory'){if(!admin)return fail('沒有車檢管理權限',403);return {body:{data:await rpc('inspection_handover_directory',{})},status:200};}
+   if(body.action==='inspection_create_handover'){
+    if(!admin)return fail('沒有車檢管理權限',403);
+    const plate=String(body.plate_no||'').trim().toUpperCase(),date=String(body.due_on||'');if(!uuid(body.request_id)||!uuid(body.driver_id)||!['delivery','return'].includes(body.kind)||!/^[-A-Z0-9]{2,20}$/.test(plate)||!/^\d{4}-\d{2}-\d{2}$/.test(date)||!Number.isFinite(Date.parse(date))||new Date(date).toISOString().slice(0,10)!==date||typeof body.instructions!=='string'||body.instructions.length>2000)return fail('請確認車牌、指定司機與期限');
+    return {body:{data:await rpc('inspection_create_handover',{p_request:body.request_id,p_kind:body.kind,p_plate:plate,p_driver:body.driver_id,p_due:new Date(date+'T23:59:59+08:00').toISOString(),p_instructions:body.instructions,p_actor:actor})},status:200};
+   }
+   if(body.action==='inspection_damage_load'){if(!uuid(body.task_id)||!Number.isInteger(body.page)||body.page<1)return fail('頁碼錯誤');return {body:{data:await present(await rpc('inspection_damage_load',{p_task:body.task_id,p_driver:driver?session.driver_id:null,p_page:body.page}))},status:200};}
+   if(body.action==='inspection_case_export'){
+    if(!admin)return fail('沒有下載權限',403);if(!uuid(body.task_id))return fail('案件編號錯誤');const manifest=await rpc('inspection_case_manifest',{p_task:body.task_id});if(!manifest)return fail('找不到檢查案件',404);
+    for(let i=0;i<manifest.photos.length;i+=100){const photos=manifest.photos.slice(i,i+100),signed=await bucket.createSignedUrls(photos.map(p=>p.storage_path),3600);if(signed.error)throw signed.error;photos.forEach((p,j)=>p.url=signed.data[j]?.signedUrl||'');}return {body:{data:{manifest}},status:200};
+   }
    if(body.action==='inspection_load') {
     if((body.task_id!=null&&!uuid(body.task_id))||(body.batch_id!=null&&!uuid(body.batch_id)))return fail('檢查編號錯誤');
     const page=body.page??1;
     if(!Number.isInteger(page)||page<1||page>10000)return fail('頁碼錯誤');
     if(!['all','pending','draft','submitted','approved','returned','cancelled','overdue','incomplete','todo'].includes(body.status||'all'))return fail('篩選狀態錯誤');
     const data=await rpc('inspection_load',{p_driver:driver?session.driver_id:null,p_batch:body.batch_id||null,p_task:body.task_id||null,p_status:body.status||'all',p_page:page,p_history:admin&&body.history===true});
+    if(data.task){const damage=await rpc('inspection_damage_load',{p_task:data.task.id,p_driver:driver?session.driver_id:null,p_page:1});data.damage_total=damage.total;data.photos.push(...damage.photos);}
     return {body:{data:await present(data)},status:200};
    }
    if(body.action==='inspection_create') {
@@ -84,14 +96,17 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
     const data=await rpc('inspection_submit',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_odometer:body.odometer,p_notes:body.notes,p_submit:body.action==='inspection_submit'});
     return {body:{data},status:200};
    }
-   if(!uuid(body.request_id)||!inspectionSlots.includes(body.slot)||(!body.receipt&&body.action!=='inspection_photo_ticket'&&(typeof body.base64!=='string'||body.base64.length>2796204)))return fail('請使用壓縮後 2 MB 以內的指定角度照片');
+   if(!uuid(body.request_id)||!(inspectionSlots.includes(body.slot)||/^damage_[a-f0-9-]{36}$/.test(body.slot||''))||(!body.receipt&&body.action!=='inspection_photo_ticket'&&(typeof body.base64!=='string'||body.base64.length>2796204)))return fail('請使用壓縮後 2 MB 以內的指定角度照片');
    const task=await db.from('vehicle_inspection_tasks').select('*').eq('id',body.task_id).maybeSingle();
    if(task.error)throw task.error;
    if(!task.data||!(task.data.eligible_driver_ids||[task.data.driver_id]).includes(session.driver_id))return fail('找不到本人的車輛檢查',404);
    if(task.data.claimed_by&&task.data.claimed_by!==session.driver_id)return fail('同車司機已開始執行此檢查，無需重複拍攝',409);
+   const damage=/^damage_[a-f0-9-]{36}$/.test(body.slot||'');
+   if(damage){const batch=await db.from('vehicle_inspection_batches').select('inspection_kind').eq('id',task.data.batch_id).maybeSingle();if(batch.error)throw batch.error;if(!['delivery','return'].includes(batch.data?.inspection_kind))return fail('此案件不能新增損傷照片',403);}
+   if(typeof(body.damage_description||'')!=='string'||(body.damage_description||'').length>1000)return fail('損傷說明最多1000字');
    if(body.action==='inspection_photo_ticket'){
     if(!media)return fail('照片直傳服務尚未啟用',503);
-    if(Number(task.data.revision)!==body.revision||!['pending','draft','returned'].includes(task.data.status)||(task.data.required_slots&&!task.data.required_slots.includes(body.slot))||(task.data.status==='returned'&&!task.data.returned_slots.includes(body.slot)))return fail('此角度或檢查已鎖定，請重新整理',409);
+    if(Number(task.data.revision)!==body.revision||!['pending','draft','returned'].includes(task.data.status)||(task.data.required_slots&&!task.data.required_slots.includes(body.slot)&&!damage)||(task.data.status==='returned'&&!task.data.returned_slots.includes(body.slot)&&!damage))return fail('此角度或檢查已鎖定，請重新整理',409);
     return {body:await media.issue({bucket:'vehicle-inspections',path:body.task_id+'/'+body.request_id+'.jpg',driver_id:session.driver_id,task_id:body.task_id,request_id:body.request_id,slot:body.slot}),status:200};
    }
    const receipt=body.receipt?await media?.receipt(body.receipt,{bucket:'vehicle-inspections',driver_id:session.driver_id,task_id:body.task_id,request_id:body.request_id,slot:body.slot}):null;
@@ -114,7 +129,7 @@ export function createInspectionHandler({db,adminCan,cryptoApi=globalThis.crypto
    if(!receipt){const uploaded=await bucket.upload(logicalPath,bytes,{contentType:mime,cacheControl:"600",upsert:false});if(uploaded.error)throw uploaded.error;}
    let data;
    try {
-    data=await rpc('inspection_save_photo',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_photo:{id:body.request_id,slot:body.slot,storage_path:path,name:safeName(body.name),mime,size:receipt?.size||bytes.length,sha256:digest}});
+    data=await rpc('inspection_save_photo',{p_task:body.task_id,p_driver:session.driver_id,p_revision:body.revision,p_photo:{damage_description:body.damage_description||'',id:body.request_id,slot:body.slot,storage_path:path,name:safeName(body.name),mime,size:receipt?.size||bytes.length,sha256:digest}});
    } catch(error) {
     // A lost response can follow a committed write: never delete a possibly saved photo.
     const check=await db.from('vehicle_inspection_photos').select('storage_path').eq('id',body.request_id).maybeSingle();

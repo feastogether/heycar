@@ -1,6 +1,10 @@
 # HEYCAR 專案交接文件
 
-檢查日期：2026-11-21（Asia/Taipei）。供另一個 ChatGPT Business 帳號的 Codex 在既有系統上接續開發；本文件不包含密碼、登入代碼、Token、服務金鑰、Session 或實際人員／車輛資料。
+檢查日期：2026-11-23（Asia/Taipei）。供另一個 ChatGPT Business 帳號的 Codex 在既有系統上接續開發；本文件不包含密碼、登入代碼、Token、服務金鑰、Session 或實際人員／車輛資料。
+
+## 2026-11-23 雲端播報與作業更新（優先閱讀）
+
+見 [電視語音、交付檢查、班表與通訊](docs/operations-board-inspections-roster-20261123.md)。依使用者選擇，以原生 Worker 相容 gTTS RPC 產生台灣中文 MP3，私人 R2 共用快取，無需 Azure／信用卡／Google API key；正式雲端合成與瀏覽器解碼已驗證，實體 LG 尚待現場點一次啟用播報。後台新增電子廣播及公告圖片；**公告電視前台原本顯示方式不變**。新增交付／返還檢查、無上限損傷照片分頁、單案 ZIP、月班表與每日備註、聊天已讀／群組 @ 及派趟明細樣式。兩個 20261123 migration 已正式套用並驗證原有 68 表欄位及 Storage metadata 不變，不得修改已部署 migration。data-api 93；前端 4c719dd0-ec8e-4f79-b59f-d9abaaf21563，R2 f5494b91-ffbb-475e-9a19-2d71768419a9。下列較早版本僅作歷史。gTTS 不是有 SLA 的官方付費 API，可能限流；保留上傳 MP3 路徑。詳見發布文件的測試／設定及待辦。
 
 ## 2026-11-21 員工、部門與統一卡片（優先閱讀）
 

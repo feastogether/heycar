@@ -5,6 +5,7 @@ workers_dev = true
 preview_urls = false
 
 [vars]
+TTS_PROVIDER = "gtts"
 SUPABASE_URL = "https://chnvwziuqcqnllcjqobj.supabase.co"
 STORAGE_QUOTA_BYTES = "10737418240"
 
