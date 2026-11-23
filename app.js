@@ -136,7 +136,7 @@
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-10"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-12"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -1991,7 +1991,16 @@
     if (!window.HeycarDriverReporting) return;
     window.HeycarDriverReporting.mount(document.getElementById("driverReportingRoot"), {
       back:()=>{state.view="home";render();}, driver, roster:!driver&&state.adminView==="driverRoster", identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}:${state.adminView==="driverRoster"?"roster":"reporting"}`,
-      api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert
+      api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert,
+      editSchedule: !driver&&adminCan('calendar') ? async id=>{
+        const session=state.apiSession,view=state.adminView;
+        await ensureAdminWorkspaceData('calendar');
+        const result=await apiRequest('workspace_record',{table:'calendar_events',id});
+        if(state.apiSession!==session||state.adminView!==view)return;
+        const i=state.data.calendar_events.findIndex(row=>row.id===id);
+        if(i<0)state.data.calendar_events.push(result.data);else state.data.calendar_events[i]=result.data;
+        await openModal('calendarEvent',id);
+      }:null
     });
   }
 
@@ -2639,17 +2648,21 @@
       </form><div id="flightList" class="luxury-card-mesh flight-grid" aria-live="polite"></div></section>`;
   }
 
+  function calendarItemIsCancelled(item) {
+    return /^(cancelled|canceled|已取消)$/i.test(String(item.status||'').trim());
+  }
+
   function calendarItems(isAdmin) {
-    const items = state.data.calendar_events || [];
+    const items = (state.data.calendar_events || []).filter(item=>!calendarItemIsCancelled(item));
     if (isAdmin) return items;
-    if (state.partner?.partner_type === "repair_shop") return repairShopCalendarItems();
+    if (state.partner?.partner_type === "repair_shop") return repairShopCalendarItems().filter(item=>!calendarItemIsCancelled(item));
     const dealerName = currentDriverDealerName();
     const legacyFleet = driverFleet();
     const visibleCalendarEvents = items.filter((item) => {
       const target = item.fleet_name || "全部車商";
       return !target || target === "全部車隊" || target === "全部車商" || target === dealerName || target === legacyFleet;
     });
-    return [...visibleCalendarEvents, ...maintenanceNotificationsAsCalendarItems(visibleCalendarEvents)];
+    return [...visibleCalendarEvents, ...maintenanceNotificationsAsCalendarItems(visibleCalendarEvents)].filter(item=>!calendarItemIsCancelled(item));
   }
 
   function repairShopCalendarItems() {
@@ -4950,15 +4963,15 @@
             <div class="partner-logo-tile">${item.logo_url ? `<img src="${escapeHtml(item.logo_url)}" alt="${escapeHtml(item.name || "logo")}" loading="lazy" onerror="this.hidden=true;this.nextElementSibling.hidden=false"><span hidden>${escapeHtml(initial)}</span>` : `<span>${escapeHtml(initial)}</span>`}</div>
             <div class="partner-card-body">
               <div class="partner-card-head">
-                <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong>
+                <strong title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</strong><small class="partner-type-label">${partnerTypeName(item.partner_type)}</small>
                 <span class="status ${item.active === false ? "returned" : "done"}">${status}</span>
               </div>
               <div class="partner-card-meta">
-                <span class="partner-kind">${partnerTypeName(item.partner_type)}</span>
-                <span title="${escapeHtml(item.contact_name||'')}">聯絡人：${escapeHtml(item.contact_name || "未填寫")}</span>
-                <span title="${escapeHtml(item.phone||'')}">電話：${escapeHtml(item.phone || "未填寫")}</span>
+
+                <span class="partner-contact" title="${escapeHtml(item.contact_name||'')}"><small>聯絡人</small><b>${escapeHtml(item.contact_name || "—")}</b></span>
+                <span class="partner-phone" title="${escapeHtml(item.phone||'')}"><small>聯絡電話</small><b>${escapeHtml(item.phone || "—")}</b></span>
               </div>
-              <p class="partner-notes" title="${escapeHtml(item.notes||'')}">${escapeHtml(item.notes||"尚無備註")}</p>
+              <p class="partner-notes" title="${escapeHtml(item.notes||'')}">${escapeHtml(item.notes||" ")}</p>
               ${rowActions("insurancePartner", "insurance_partners", item.id)}
             </div>
           </article>`;
@@ -7731,6 +7744,7 @@
         <form id="modalForm" class="modal-form">
           <div class="modal-form-body form-grid">${formHtml}</div>
           <div class="modal-actions">
+            ${type === "calendarEvent" && id && ["maintenance","repair","tires"].includes(item.event_type) && !item.completed_at && !["cancelled","canceled"].includes(item.status) ? `<button class="danger-btn" type="button" data-cancel-service>取消排程</button>` : ""}
             ${type === "vehicle" && id ? `<button class="danger-btn vehicle-edit-delete" type="button" data-delete="vehicles:${id}">刪除此車輛</button>` : ""}
             <p class="error modal-save-error" role="alert" hidden></p>
             <button class="ghost-btn" type="button" data-close-modal>關閉</button>
@@ -7741,6 +7755,23 @@
     `;
     document.body.appendChild(modal);
     const modalForm = modal.querySelector("#modalForm");
+    if(type==='calendarEvent'&&item?.id&&['maintenance','repair','tires'].includes(item.event_type)){
+      if(item.completed_at||['cancelled','canceled'].includes(item.status)){
+        modalForm.querySelectorAll('.modal-form-body input,.modal-form-body select,.modal-form-body textarea,button[type=submit]').forEach(el=>el.disabled=true);
+        modal.querySelector('h3').textContent=item.completed_at?'已完成保養／調胎':'已取消排程';
+      }
+      const cancel=modal.querySelector('[data-cancel-service]');
+      if(cancel)cancel.onclick=async()=>{
+        if(modalForm.dataset.saving==='true')return;
+        const reason=await showPrompt('請填寫取消排程的原因','','取消保養／調胎');if(reason==null)return;
+        if(!String(reason).trim()||String(reason).length>500){await showAlert('請填寫取消原因（500字以內）');return;}
+        if(!await showConfirm('取消後，班表與司機通知會同步取消。是否確定？','取消排程'))return;
+        modalForm.dataset.saving='true';cancel.disabled=true;modalForm.querySelector('button[type=submit]').disabled=true;
+        try{const result=await apiRequest('cancel_service_schedule',{id:item.id,expected_updated_at:item.updated_at,reason});Object.assign(item,result.event);const notice=state.data.maintenance_notifications?.find(n=>n.id===result.notification?.id);if(notice)Object.assign(notice,result.notification);modal.remove();render();}
+        catch(error){const alert=modal.querySelector('.modal-save-error');alert.hidden=false;alert.textContent=error.message;}
+        finally{modalForm.dataset.saving='false';cancel.disabled=false;modalForm.querySelector('button[type=submit]').disabled=false;}
+      };
+    }
     if (type === "insuranceRequest" && !id) modalForm.dataset.insuranceNewQuote = "true";
     if (type === "vehicleFolder" && item?.id) {
       modalForm.vehicleInsuranceExtras = vehicleInsuranceFiles(item);
@@ -9415,7 +9446,7 @@
     const driver = state.data.drivers.find(row => row.id === driverId);
     return input("event_date", "日期", formDate(item.event_date) || today(), "date", true) +
       input("event_time", "時間", item.event_time || "", "time") +
-      select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["repair", "維修"], ["tires", "調胎"], ["other", "其他"]]) +
+      select("event_type", "類型", item.event_type || "other", [["maintenance", "保養"], ["repair", "維修"], ["tires", "調胎"], ...((item.id&&["maintenance","repair","tires"].includes(item.event_type))?[]:[["other", "其他"]])]) +
       fleetOptions("fleet_name", "通知車商", item.fleet_name) +
       vehiclePlatePicker(item, "車牌") +
       searchableDriverOptions(driverId) +

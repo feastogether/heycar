@@ -2,6 +2,7 @@ const fs=require('node:fs'),assert=require('node:assert/strict');
 const {PGlite}=require('../.fleet-preview/node_modules/@electric-sql/pglite');
 const {createEmployeeWorkflowHandler,profileIdentity,validAvatar}=require('../supabase/functions/data-api/employee-workflow.mjs');
 async function run(){
+ const vm=require('node:vm'),source=fs.readFileSync('app.js','utf8'),start=source.indexOf('  function calendarItemIsCancelled('),end=source.indexOf('  function repairShopCalendarItems(',start),context={state:{data:{calendar_events:[{id:'keep',status:'scheduled'},{id:'done',status:'completed'},{id:'cancel',status:'cancelled'}]}},currentDriverDealerName:()=>'',driverFleet:()=>'',maintenanceNotificationsAsCalendarItems:()=>[{id:'fallback',status:'cancelled'}],repairShopCalendarItems:()=>[{id:'shop-cancel',status:'cancelled'},{id:'shop-keep',status:'completed'}]};vm.createContext(context);vm.runInContext(source.slice(start,end),context);assert.equal(context.calendarItems(true).length,2);assert.equal(context.calendarItems(false).length,2);context.state.partner={partner_type:'repair_shop'};assert.equal(context.calendarItems(false).length,1,'cancelled tasks disappear from all active calendars, completed history remains');
  const db=new PGlite();
  const v='10000000-0000-4000-8000-000000000001',d='20000000-0000-4000-8000-000000000001',other='20000000-0000-4000-8000-000000000002',e='30000000-0000-4000-8000-000000000001';
  try{
@@ -15,6 +16,9 @@ async function run(){
    insert into vehicles(id,current_driver_id,driver_history,vehicle_files) values('${v}','${d}','[{"name":"原駕駛"}]','[{"url":"original-policy.pdf"}]');
    insert into calendar_events(id,event_type,vehicle_id,event_date,event_time,vendor,content)values('${e}','maintenance','${v}',current_date,'09:00','測試保養廠','十萬公里定期保養');`);
   await db.exec(fs.readFileSync('supabase/migrations/20261113040000_service_completion_workflow.sql','utf8'));
+  await db.exec("create table driver_roster_notes(driver_id uuid,work_on date);create table driver_roster_shifts(month date);create function driver_roster_stamp(date)returns text language sql as $$select 'stamp'$$;create function driver_roster_vehicles()returns jsonb language sql as $$select '[]'::jsonb$$;");
+  await db.exec("alter table calendar_events add constraint calendar_events_event_type_check check(event_type in('maintenance','tires','other'))");
+  await db.exec(fs.readFileSync('supabase/migrations/20261123060000_service_schedule_cancel.sql','utf8'));
   const q=async(sql,args=[]) => (await db.query(sql,args)).rows[0]?.result;
   const before=await q('select to_jsonb(v) as result from vehicles v');
   const countBefore=(await db.query('select count(*)::int n from calendar_events')).rows[0].n;
@@ -38,7 +42,20 @@ async function run(){
   assert.equal((await db.query('select service_record_id from calendar_events where id=$1',[e])).rows[0].service_record_id,record.rows[0].id);
   await assert.rejects(db.query("insert into vehicle_service_records(vehicle_id,service_date,service_schedule_id)values($1,current_date,$2)",[v,e]),/已登打|unique/);
   assert.deepEqual(await q('select to_jsonb(v) as result from vehicles v'),before,'workflow leaves vehicle history and policy files untouched');
+  await assert.rejects(db.query("update calendar_events set event_type='other'where id=$1",[e]),/取消排程/);
+  const cancelTask=await q('select save_vehicle_service_schedule(null,$1,null)as result',[JSON.stringify({event_type:'maintenance',driver_id:d,vehicle_id:v,event_date:'2026-11-24',vendor:'測試保養廠',content:'取消測試'})]);
+  const cancel=(expected,reason='臨時改排')=>q('select cancel_vehicle_service_schedule($1,$2,$3,$4)as result',[cancelTask.event.id,expected,reason,JSON.stringify({actor_id:'test',actor_type:'admin'})]);
+  await assert.rejects(cancel('2000-01-01'),/已更新/);await assert.rejects(cancel(cancelTask.event.updated_at,''),/取消原因/);
+  await assert.rejects(db.query("update calendar_events set event_type='other'where id=$1",[cancelTask.event.id]),/取消排程/);
+  const cancelled=await cancel(cancelTask.event.updated_at);assert.equal(cancelled.event.status,'cancelled');assert.equal(cancelled.notification.status,'cancelled');
+  await assert.rejects(q('select sync_vehicle_service_schedule($1)as result',[cancelTask.event.id]),/已取消/);
+  await assert.rejects(q('select complete_vehicle_service_schedule($1,$2,1000)as result',[cancelTask.notification.id,d]),/已處理/);
+  await assert.rejects(q('select cancel_vehicle_service_schedule($1,$2,$3,$4)as result',[e,done.event.updated_at,'錯誤取消','{}']),/已完成/);
+  assert.equal((await db.query('select count(*)::int n from service_schedule_audit')).rows[0].n,1);
+  assert.deepEqual(await q('select to_jsonb(v) as result from vehicles v'),before,'cancel preserves vehicle/driver history and policy documents');
+  await db.exec('set role anon');await assert.rejects(cancel(cancelled.event.updated_at),/permission denied/);await db.exec('reset role');
   const handler=createEmployeeWorkflowHandler({db:{rpc:async(name,args)=>({data:{name,args}})},adminCan:async()=>false});
+  assert.equal((await handler({action:'cancel_service_schedule',id:e,reason:'test',expected_updated_at:new Date().toISOString()},{session_type:'driver',driver_id:d})).status,403);
   assert.equal((await handler({action:'sync_service_schedule',id:e},{session_type:'driver',driver_id:d})).status,403);
   assert.equal((await handler({action:'sync_service_schedule',id:e},{session_type:'admin',admin_user_id:'test'})).status,403);
   assert.equal((await handler({action:'complete_service_schedule',id:e,odometer:100000},{session_type:'driver',driver_id:d})).status,400,'completion requires five photos');

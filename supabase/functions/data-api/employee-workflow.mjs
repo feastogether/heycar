@@ -31,6 +31,12 @@ export function createEmployeeWorkflowHandler({db,adminCan}) {
       return error?fail(error.message):{body:{profiles:data||[]},status:200};
     }
     const uuid=value=>/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value||''));
+    if(body.action==='cancel_service_schedule') {
+      if(session.session_type!=='admin'||!await adminCan(session,'calendar'))return fail('沒有安排保養權限',403);
+      if(!uuid(body.id)||typeof body.reason!=='string'||!body.reason.trim()||body.reason.length>500||!body.expected_updated_at||!Number.isFinite(Date.parse(body.expected_updated_at)))return fail('請確認排程與取消原因');
+      const {data,error}=await db.rpc('cancel_vehicle_service_schedule',{p_id:body.id,p_expected:body.expected_updated_at,p_reason:body.reason.trim(),p_actor:actor});
+      return error?fail(error.message,409):{body:data,status:200};
+    }
     if(body.action==='save_service_schedule') {
       if(session.session_type!=='admin'||!await adminCan(session,'calendar'))return fail('沒有安排保養權限',403);
       if(body.id!=null&&!uuid(body.id))return fail('排程編號錯誤');

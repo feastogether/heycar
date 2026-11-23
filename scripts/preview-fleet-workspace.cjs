@@ -641,7 +641,14 @@ async function request(req, res) {
       }
       return send(res,{profiles:profiles.filter(row=>row.actor_type===actor.actor_type&&(actor.actor_type==='admin'||row.actor_id===actor.actor_id))});
     }
-    if(body.action==='workspace_record'){if(!session.is_super_admin||!['drivers','vehicles'].includes(body.table))return send(res,{error:'ADMIN_PERMISSION_DENIED'},403);const row=(body.table==='drivers'?fixture.drivers:fixture.vehicles).find(row=>row.id===body.id);return row?send(res,{data:row}):send(res,{error:'NOT_FOUND'},404);}
+    if(body.action==='cancel_service_schedule'){
+      if(!session.is_super_admin)return send(res,{error:'ADMIN_PERMISSION_DENIED'},403);
+      const e=fixture.calendar.find(row=>row.id===body.id),n=e&&notifications.find(row=>row.id===e.maintenance_notification_id);
+      if(!e||e.updated_at!==body.expected_updated_at||e.completed_at||['cancelled','canceled'].includes(e.status)||n?.status==='completed')return send(res,{error:'排程已更新或已完成'},409);
+      if(!String(body.reason||'').trim())return send(res,{error:'請填寫取消原因'},400);
+      e.status='cancelled';e.updated_at=new Date().toISOString();if(n)n.status='cancelled';persistFixture();return send(res,{event:e,notification:n||null});
+    }
+    if(body.action==='workspace_record'){if(!session.is_super_admin||!['drivers','vehicles','calendar_events'].includes(body.table))return send(res,{error:'ADMIN_PERMISSION_DENIED'},403);const row=(body.table==='drivers'?fixture.drivers:body.table==='calendar_events'?fixture.calendar:fixture.vehicles).find(row=>row.id===body.id);return row?send(res,{data:row}):send(res,{error:'NOT_FOUND'},404);}
     if(['payment_page','office_todos'].includes(body.action)){const result=await officeQuery(body,session);return send(res,result.body,result.status);}
     if (body.action === "load") {
       if(body.view==='adminUsers')await getStaff().ready;

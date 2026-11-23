@@ -1659,7 +1659,7 @@ Deno.serve(async (req) => {
       const result = await createOnboardingHandler({db,adminCan})(body,session);
       return json(result.body,result.status);
     }
-    if (["save_service_schedule", "sync_service_schedule", "complete_service_schedule", "load_avatar_profiles", "save_own_avatar"].includes(body.action)) {
+    if (["cancel_service_schedule", "save_service_schedule", "sync_service_schedule", "complete_service_schedule", "load_avatar_profiles", "save_own_avatar"].includes(body.action)) {
       const result = await createEmployeeWorkflowHandler({db,adminCan})(body,session);
       return json(result.body,result.status);
     }

@@ -63,6 +63,9 @@
 - 員工管理沿用 adminUsers 相容鍵，僅最高管理員可管理員工／部門／職稱。既有 personal 權限不因分部門而覆蓋；department 模式只沿用部門，不與個人權限 OR 合併；後端必須與登入 profile 使用同一 effectiveStaffPermissions。部門／職稱 soft delete、有員工使用時禁止刪除、revision CAS、員工 expected_updated_at、欄位白名單與 audit 不得移除；audit 不存登入碼雜湊、extension 或頭像原始內容。
 - Google Drive／Gmail 尚未設定 OAuth；ChatGPT 的連接器不等於 HEYCAR 已授權。若新增同步，先取件核對、增量及局部寫入，Google tokens 只留後端 Secret，不可覆蓋車輛駕駛／文件資料。
 
+- 班表格子色彩獨立於休假／保養狀態，使用 driver_roster_save_color 的 revision CAS 與 audit；舊 driver_roster_save 不可清除色彩。色彩限空字串或六碼 hex，狀態徽章保持可辨識。
+- 班表保養／調胎點擊需 calendar 權限才可開完整排程編輯；workspace_record 僅對 calendar_events 映射 calendar 授權，不把 driverReporting 當 calendar。取消用 cancel_vehicle_service_schedule 交易同步通知、保留原因／操作人／前後資料，已完成不能取消，舊客戶端不可重開已取消排程，不物理刪除照片／工單。
+
 ## 5. 測試與發布
 
 - 交付／返還檢查允許任意車牌配指定司機，不能因此新建車輛或改正式駕駛。基本十張與分頁損傷照片分開讀取，保留描述、領取權限、revision 與全部照片匯出；班表備註獨立於休假核准並留 audit。

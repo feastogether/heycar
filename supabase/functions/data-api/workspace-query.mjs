@@ -21,7 +21,7 @@ export function createWorkspaceQueryHandler({db,adminCan,sign=async value=>value
   const fail=(error,status=400)=>({body:{error},status});
   if(session.session_type!=='admin')return fail('ADMIN_PERMISSION_DENIED',403);
   if(body.action==='workspace_record'){
-   if(!['drivers','vehicles'].includes(body.table)||!await adminCan(session,body.table))return fail('ADMIN_PERMISSION_DENIED',403);
+   if(!['drivers','vehicles','calendar_events'].includes(body.table)||!await adminCan(session,body.table==='calendar_events'?'calendar':body.table))return fail('ADMIN_PERMISSION_DENIED',403);
    if(!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(body.id||''))return fail('INVALID_RECORD_ID');
    const result=await db.from(body.table).select('*').eq('id',body.id).single();if(result.error)throw result.error;
    return {body:await sign({data:result.data}),status:200};

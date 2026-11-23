@@ -8,6 +8,12 @@ const {fixture:base,today}=require('./test-local-fixture.cjs');
  const db=require('./preview-office-db.cjs')(fixture),{createWorkspaceQueryHandler,workspaceViews}=await import('../supabase/functions/data-api/workspace-query.mjs');
  const handler=createWorkspaceQueryHandler({db,adminCan:async(s,p)=>s.permissions.includes(p)}),admin={session_type:'admin',permissions:['payments','fleetCases','insuranceCenter','serviceRecords','maintenanceManagement']};
  try{
+  const records=createWorkspaceQueryHandler({db:{from:table=>({select(){return this;},eq(){return this;},single:async()=>({data:{id:fixture.calendar[0].id,table}})})},adminCan:async(s,p)=>s.permissions.includes(p)});
+  const eventBody={action:'workspace_record',table:'calendar_events',id:fixture.calendar[0].id};
+  assert.equal((await records(eventBody,{...admin,permissions:['calendar']})).body.data.table,'calendar_events');
+  assert.equal((await records(eventBody,{...admin,permissions:['driverReporting']})).status,403,'roster permission alone does not grant calendar editing');
+  assert.equal((await records({...eventBody,table:'app_sessions'},{...admin,permissions:['calendar']})).status,403);
+  assert.equal((await records(eventBody,{session_type:'driver'})).status,403);
   assert.deepEqual(workspaceViews.payments,[]);assert(!workspaceViews.vehicles.includes('payment_notices'));assert(!workspaceViews.vehicles.includes('insurance_requests'));
   const call=(body,s=admin)=>handler(body,s);
   assert.equal((await call({action:'payment_page'}, {...admin,session_type:'driver'})).status,403);
