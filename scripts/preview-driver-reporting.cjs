@@ -16,7 +16,7 @@ async function main(){
  await db.exec('create table calendar_events(id uuid primary key,driver_id uuid,event_date date,event_type text,plate_no text,completed_at timestamptz)');
  const roster=fs.readFileSync(path.join(root,'supabase/migrations/20261123010000_roster_chat_updates.sql'),'utf8');await db.exec(roster.slice(roster.indexOf('create table public.driver_roster_notes')));
  await db.exec("create table vehicles(id uuid primary key,plate_no text,current_driver_id uuid,assigned_driver_names text,driver_history jsonb default '[]');alter table calendar_events add column vendor text;alter table calendar_events add column event_time text;");await db.exec(fs.readFileSync(path.join(root,'supabase/migrations/20261123030000_roster_workspace.sql'),'utf8'));
- const handle=createDriverReportingHandler({adminCan:async session=>session.is_super_admin,db:{rpc:async(name,args)=>{
+ const handle=createDriverReportingHandler({adminCan:async session=>session.is_super_admin,db:{from:()=>({select(){return this;},in(key,ids){return Promise.resolve({data:drivers.filter(row=>ids.includes(row.id)).map(row=>({id:row.id,region:row.region||''}))});}}),rpc:async(name,args)=>{
   try{const types=signatures[name];const values=Object.values(args).map((value,index)=>types[index]==='jsonb'?JSON.stringify(value):value);
    const result=(await db.query(`select public.${name}(${types.map((type,index)=>`$${index+1}::${type}`).join(',')}) as result`,values)).rows[0].result;return {data:result};
   }catch(error){return {error:{code:error.code,message:error.message}};}

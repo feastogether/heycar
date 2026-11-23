@@ -145,6 +145,7 @@ function fixture(adminCode = "unit-secure-admin", bindings = {}) {
     TextEncoder,
     URL,
     console: { error() {}, warn() {}, log() {} },
+    validDriverRegionChange:require('../supabase/functions/data-api/driver-regions.mjs').validDriverRegionChange,
     ...bindings,
   });
   return {

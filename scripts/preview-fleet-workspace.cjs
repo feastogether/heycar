@@ -450,7 +450,7 @@ async function request(req, res) {
       return send(res,result.body,result.status);
     }
     if (reporting.actions.includes(body.action)) {
-      if(body.action==='load_driver_reporting'){await reporting.syncCalendar(fixture.calendar||[]);await reporting.syncVehicles(fixture.vehicles||[]);}
+      if(['load_driver_reporting','driver_roster_stamp'].includes(body.action)){await reporting.syncCalendar(fixture.calendar||[]);await reporting.syncVehicles(fixture.vehicles||[]);}
       const result = await reporting.handle(body, session);
       return send(res, result.body, result.status);
     }

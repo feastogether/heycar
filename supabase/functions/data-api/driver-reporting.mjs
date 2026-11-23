@@ -46,7 +46,7 @@ export function createDriverReportingHandler({ db, adminCan }) {
       if (['42883','42P01','PGRST202'].includes(error.code)) return fail('司機報班尚未完成資料庫安裝，請先套用本機 migration',503);
       return fail(error.message || '報班處理失敗，請重新整理', error.code === 'P0001' ? 409 : 400);
     }
-    if(body.action==='load_driver_reporting'&&!driver){const roster=await db.rpc('driver_roster_load',{p_month:month+'-01'});if(roster.error)return fail(roster.error.message,503);data.roster=roster.data;data.rows=(data.rows||[]).map(row=>({...row,plates:[...new Set((roster.data.vehicles||[]).filter(v=>v.driver_id===row.driver_id).map(v=>v.plate_no))]}));}
+    if(body.action==='load_driver_reporting'&&!driver){const roster=await db.rpc('driver_roster_load',{p_month:month+'-01'});if(roster.error)return fail(roster.error.message,503);data.roster=roster.data;const regionRows=data.rows?.length?await db.from('drivers').select('id,region').in('id',data.rows.map(row=>row.driver_id)):{data:[]};if(regionRows.error)return fail('暫時無法讀取司機區域，請重新整理',503);const regions=new Map(regionRows.data.map(row=>[row.id,row.region]));data.rows=(data.rows||[]).map(row=>({...row,region:regions.get(row.driver_id)||'',plates:[...new Set((roster.data.vehicles||[]).filter(v=>v.driver_id===row.driver_id).map(v=>v.plate_no))]}));}
     return { body: { data }, status: 200 };
   };
 }

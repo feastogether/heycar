@@ -1,3 +1,4 @@
+import {validDriverRegionChange} from './driver-regions.mjs';
 import {createStaffManagementHandler} from './staff-management.mjs';
 import {workspaceViews,createWorkspaceQueryHandler} from './workspace-query.mjs';
 import {createBenefitsHandler} from "./driver-benefits.mjs";
@@ -2014,7 +2015,7 @@ Deno.serve(async (req) => {
       }
       if (body.table === "admin_chat_messages") {
         const senderId = session.is_super_admin ? "super-admin" : compactText(session.admin_user_id);
-        if (body.action === "insert") {
+            if (body.action === "insert") {
           const senderName = compactText(session.admin_name, session.is_super_admin ? "最高管理員" : "管理者");
           body.record = {
             id: body.record?.id,
@@ -2120,6 +2121,10 @@ Deno.serve(async (req) => {
     }
     if (session.session_type === "partner") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
 
+if(body.table==='drivers'&&['insert','update'].includes(body.action)&&!validDriverRegionChange(body.record||{})){
+      let previous;if(body.action==='update'){const {data:current,error}=await db.from('drivers').select('region').eq('id',body.id).single();if(error)throw error;previous=current?.region;}
+      if(!validDriverRegionChange(body.record||{},previous))return json({error:'區域只能選擇北部、中部、南部、花東或其他'},400);
+    }
     if (body.action === "insert") {
       body.record = body.record || {};
       const linePushEnabled = body.record?.line_push_enabled !== false && body.record?.line_push_enabled !== "false";
