@@ -136,7 +136,7 @@
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261123-12"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261124-4"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -5658,7 +5658,7 @@
   function adminChatCurrentMarkup() {
     const id = state.adminChatContactId;
     const group = (state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===id);
-    return `${id ? adminChatAvatar(id) : ""}<strong data-admin-chat-current-name>${escapeHtml(id ? adminChatContactName(id) : "請選擇聯絡人")}</strong>${group ? `<button type="button" class="admin-chat-members-btn" data-action="admin-chat-group-members">成員 ${group.member_ids.length}</button>` : ""}`;
+    return `${id ? adminChatAvatar(id) : ""}<strong data-admin-chat-current-name>${escapeHtml(id ? adminChatContactName(id) : "請選擇聯絡人")}</strong>${group ? `<button type="button" class="admin-chat-members-btn" data-action="admin-chat-group-members">成員 ${(Array.isArray(group.member_ids)?group.member_ids:[]).length}</button>` : ""}`;
   }
 
   function adminChatMessages(contactId = state.adminChatContactId) {
@@ -5675,15 +5675,15 @@
 
   function chatGivenName(id){const name=adminChatContactName(id);if(name==='未命名')return '夥伴';if(id==='super-admin')return '管理員';if(/^[\u3400-\u9fff]{2,6}$/.test(name))return name.slice(['歐陽','司馬','上官','諸葛','司徒','司空'].some(prefix=>name.startsWith(prefix))?2:1);return name;}
   function chatReadReceipt(item,groupId){if(String(item.sender_id)!==currentAdminChatId())return '';if(!groupId)return item.read_at?'<span class="chat-read-receipt">已讀</span>':'';const names=(state.chatGroupReaders?.[groupId]||[]).filter(row=>row.user_id!==item.sender_id&&Number(row.last_read_seq)>=Number(item.seq)).map(row=>chatGivenName(row.user_id));return names.length?'<span class="chat-read-receipt">已讀 · '+names.map(escapeHtml).join('、')+'</span>':'';}
-  function paintChatMentions(input){let popup=document.querySelector('[data-chat-mentions]');popup?.remove();if(!state.adminChatContactId.startsWith('group:'))return;const match=input.value.slice(0,input.selectionStart).match(/@([^@\s]{0,20})$/);if(!match)return;const group=(state.data.admin_chat_groups||[]).find(row=>'group:'+row.id===state.adminChatContactId);const ids=(group?.member_ids||[]).filter(id=>id!==currentAdminChatId()&&adminChatContactName(id).includes(match[1]));if(!ids.length)return;popup=document.createElement('div');popup.dataset.chatMentions='';popup.className='chat-mention-menu';popup.setAttribute('role','listbox');popup.innerHTML=ids.map(id=>'<button type="button" data-chat-mention="'+escapeHtml(id)+'">'+escapeHtml(adminChatContactName(id))+'</button>').join('');input.closest('form').append(popup);popup.onclick=event=>{const b=event.target.closest('[data-chat-mention]');if(!b)return;const id=b.dataset.chatMention,end=input.selectionStart,start=end-match[0].length,text='@'+chatGivenName(id)+' ';input.setRangeText(text,start,end,'end');state.adminChatDraft=input.value;state.chatMentions=[...new Set([...(state.chatMentions||[]),id])];popup.remove();input.focus();};}
+  function paintChatMentions(input){let popup=document.querySelector('[data-chat-mentions]');popup?.remove();if(!state.adminChatContactId.startsWith('group:'))return;const match=input.value.slice(0,input.selectionStart).match(/@([^@\s]{0,20})$/);if(!match)return;const group=(state.data.admin_chat_groups||[]).find(row=>'group:'+row.id===state.adminChatContactId);const ids=(Array.isArray(group?.member_ids)?group.member_ids:[]).filter(id=>id!==currentAdminChatId()&&adminChatContactName(id).includes(match[1]));if(!ids.length)return;popup=document.createElement('div');popup.dataset.chatMentions='';popup.className='chat-mention-menu';popup.setAttribute('role','listbox');popup.innerHTML=ids.map(id=>'<button type="button" data-chat-mention="'+escapeHtml(id)+'">'+escapeHtml(adminChatContactName(id))+'</button>').join('');input.closest('form').append(popup);popup.onclick=event=>{const b=event.target.closest('[data-chat-mention]');if(!b)return;const id=b.dataset.chatMention,end=input.selectionStart,start=end-match[0].length,text='@'+chatGivenName(id)+' ';input.setRangeText(text,start,end,'end');state.adminChatDraft=input.value;state.chatMentions=[...new Set([...(state.chatMentions||[]),id])];popup.remove();input.focus();};}
 
   function adminChatMessagesMarkup(contactId = state.adminChatContactId) {
     const messages = contactId ? adminChatMessages(contactId) : [];
-    if (state.adminChatError) return `<div class="admin-chat-empty">${escapeHtml(state.adminChatError)}</div>`;
+    const errorMarkup=state.adminChatError?`<div class="admin-chat-load-error" role="status">${escapeHtml(state.adminChatError)}</div>`:"";
     if (!contactId) return `<div class="admin-chat-empty">請先選擇聯絡人</div>`;
-    if (!messages.length) return `<div class="admin-chat-empty">尚無訊息</div>`;
+    if (!messages.length) return errorMarkup+`<div class="admin-chat-empty">尚無訊息</div>`;
     const groupId = String(contactId).startsWith("group:") ? contactId.slice(6) : "";
-    return `${groupId && state.adminChatGroupMore?.[groupId] ? '<button type="button" class="admin-chat-history" data-action="admin-chat-group-history">載入更早的訊息</button>' : ''}` + messages.map((item) => {
+    return errorMarkup+`${groupId && state.adminChatGroupMore?.[groupId] ? '<button type="button" class="admin-chat-history" data-action="admin-chat-group-history">載入更早的訊息</button>' : ''}` + messages.map((item) => {
       const mine = String(item.sender_id || "") === currentAdminChatId();
       return `<article class="admin-chat-bubble ${mine ? "is-mine" : "is-other"}">
         ${adminChatAvatar(String(item.sender_id || ""))}<div class="admin-chat-bubble-copy"><small>${escapeHtml(mine ? "我" : adminChatContactName(item.sender_id))} · ${escapeHtml(formatDateTime(item.created_at))}</small>
@@ -5753,6 +5753,7 @@
       const markup = adminChatCurrentMarkup();
       if (contactTitle.chatMarkup !== markup) { contactTitle.innerHTML = markup; contactTitle.chatMarkup = markup; }
     }
+    const form=document.querySelector('#adminChatForm');if(form){const enabled=!!state.adminChatContactId;form.querySelector('input').disabled=!enabled;form.querySelector('[type=submit]').disabled=!enabled||form.dataset.sending==='true';}
     document.querySelector(".admin-chat-widget")?.classList.toggle("is-conversation", Boolean(state.adminChatMobileConversation));
   }
 
@@ -5791,7 +5792,7 @@
     state.chatNotificationInitialized=true;
     state.data.admin_chat_messages = result.incremental?[...new Map([...(state.data.admin_chat_messages||[]),...(result.admin_chat_messages||[])].map(row=>[row.id,row])).values()]:result.admin_chat_messages||[];
     if(result.snapshot_at)state.chatSince=result.snapshot_at;
-    state.data.admin_chat_groups = result.admin_chat_groups || [];
+    if(Array.isArray(result.admin_chat_groups))state.data.admin_chat_groups = result.admin_chat_groups;
     if (result.group_id) {
       state.chatGroupReaders={...state.chatGroupReaders,[result.group_id]:result.group_readers||[]};
       state.chatGroupCursors={...state.chatGroupCursors,[result.group_id]:Math.max(state.chatGroupCursors?.[result.group_id]||0,...(result.group_messages||[]).map(row=>Number(row.seq)))};
@@ -10956,13 +10957,16 @@
     }
     if (target.dataset.adminChatContactButton !== undefined) {
       state.adminChatContactId = target.dataset.adminChatContactButton || "";
+      const selected=state.adminChatContactId;state.adminChatError="";
       state.adminChatMobileConversation = true;
       state.adminChatEmojiOpen = false;
       updateAdminChatDom();
       try {
-        if (state.adminChatContactId.startsWith("group:")) await loadAdminGroupConversation(state.adminChatContactId);
+        if (selected.startsWith("group:")) await loadAdminGroupConversation(selected);
+        if(state.adminChatContactId!==selected)return;
         await markAdminChatRead(state.adminChatContactId);
       } catch (error) {
+        if(state.adminChatContactId!==selected)return;
         state.adminChatError = `即時通訊載入失敗：${error.message || error}`;
       }
       updateAdminChatDom();
@@ -10981,7 +10985,7 @@
     if (target.dataset.action === "create-admin-chat-group") { openAdminChatGroupEditor(); return; }
     if (target.dataset.action === "admin-chat-group-members") {
       const group=(state.data.admin_chat_groups || []).find(group=>`group:${group.id}`===state.adminChatContactId);
-      if (group) await showAlert(group.member_ids.map(id=>id===currentAdminChatId()?`${currentAdminChatName()}（我）`:adminChatContactName(id)).join("\n"),`${group.name} · ${group.member_ids.length} 位成員`);
+      if (group) await showAlert((Array.isArray(group.member_ids)?group.member_ids:[]).map(id=>id===currentAdminChatId()?`${currentAdminChatName()}（我）`:adminChatContactName(id)).join("\n"),`${group.name} · ${(Array.isArray(group.member_ids)?group.member_ids:[]).length} 位成員`);
       return;
     }
     if (target.dataset.action === "admin-chat-group-history") {

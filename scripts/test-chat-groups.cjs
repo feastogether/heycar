@@ -290,6 +290,7 @@ async function main() {
   assert(front.adminChatCurrentMarkup().includes("成員 2"));
   assert(front.adminChatMessagesMarkup().includes("&lt;script&gt;"));
   assert(front.adminChatContactsMarkup().includes("新群組訊息"));
+  const members=state.data.admin_chat_groups[0].member_ids;state.data.admin_chat_groups[0].member_ids=null;assert(front.adminChatCurrentMarkup().includes('成員'),'partial group metadata cannot throw during render');state.data.admin_chat_groups[0].member_ids=members;
   await front.markAdminChatRead();
   assert.equal(calls.at(-1).body.through_seq, 2);
   assert.equal(front.adminUnreadChatCount(), 0);

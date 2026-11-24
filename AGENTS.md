@@ -66,6 +66,10 @@
 - 班表格子色彩獨立於休假／保養狀態，使用 driver_roster_save_color 的 revision CAS 與 audit；舊 driver_roster_save 不可清除色彩。色彩限空字串或六碼 hex，狀態徽章保持可辨識。
 - 班表保養／調胎點擊需 calendar 權限才可開完整排程編輯；workspace_record 僅對 calendar_events 映射 calendar 授權，不把 driverReporting 當 calendar。取消用 cancel_vehicle_service_schedule 交易同步通知、保留原因／操作人／前後資料，已完成不能取消，舊客戶端不可重開已取消排程，不物理刪除照片／工單。
 
+- 班表每日格子改單擊備註／快捷，姓名雙擊僅改獨立班表位置；區域與 model 讀正式主檔，不能把位置寫回司機區域或車輛指派。前三個 sticky 欄寬與 left 必須同步，窄螢幕不重疊。
+- Excel 批次一次最多200格，單月份，notes與leave皆revision CAS；任何衝突整批回滾，其他日期／原審核結果不變，退回的申請不可悄悄改為同意。出車沒有實際休假變化時不得建立空的已報班紀錄。貼上預覽與同一原生 dialog 內確認，避免 top-layer 遮擋；Enter 開格子不可同次觸發快捷。範圍偏好變更重置選取，剪貼暫存按登入身分隔離。
+- 聊天錯誤保留已載訊息與聯絡人；群組成員 metadata 防呆、晚到聯絡人恢復輸入、快速切換忽略舊請求錯誤，傳送鎖及伺服器增量游標不可移除。
+
 ## 5. 測試與發布
 
 - 交付／返還檢查允許任意車牌配指定司機，不能因此新建車輛或改正式駕駛。基本十張與分頁損傷照片分開讀取，保留描述、領取權限、revision 與全部照片匯出；班表備註獨立於休假核准並留 audit。
