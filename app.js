@@ -136,7 +136,7 @@
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261124-4"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261124-5"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
