@@ -449,6 +449,14 @@ async function request(req, res) {
       if(result.status===200){await reporting.syncDriver(result.body.data);persistFixture();}
       return send(res,result.body,result.status);
     }
+    if(require('../supabase/functions/data-api/vehicle-changes.mjs').vehicleChangeActions.includes(body.action)){
+      await reporting.syncVehicles(fixture.vehicles||[]);
+      const result=await require('../supabase/functions/data-api/vehicle-changes.mjs').createVehicleChangeHandler({db:{rpc:reporting.assignmentRpc},adminCan:async s=>s.is_super_admin===true})(body,session);
+      if(result.status===200&&['save_vehicle_change','cancel_vehicle_change'].includes(body.action)){
+        const rows=(await reporting.query('select id,driver_history from vehicles')).rows;for(const row of rows){const v=fixture.vehicles.find(v=>v.id===row.id);if(v)v.driver_history=row.driver_history;}persistFixture();
+      }
+      return send(res,result.body,result.status);
+    }
     if (reporting.actions.includes(body.action)) {
       if(['load_driver_reporting','driver_roster_stamp'].includes(body.action)){await reporting.syncCalendar(fixture.calendar||[]);await reporting.syncVehicles(fixture.vehicles||[]);}
       const result = await reporting.handle(body, session);
@@ -652,7 +660,10 @@ async function request(req, res) {
     if(['payment_page','office_todos'].includes(body.action)){const result=await officeQuery(body,session);return send(res,result.body,result.status);}
     if (body.action === "load") {
       if(body.view==='adminUsers')await getStaff().ready;
-      if (session.session_type === 'driver') return send(res, { data: { drivers: reporting.drivers.filter(row=>row.id===session.driver_id), vehicles:fixture.vehicles.filter(v=>v.current_driver_id===session.driver_id||(v.driver_history||[]).some(h=>h.driver_id===session.driver_id)),vehicle_types:fixture.vehicle_types||[],insurance_partners: directory, marquee_messages:fixture.marquee_messages||[],feedbacks:(fixture.feedbacks||[]).filter(row=>row.driver_id===session.driver_id),maintenance_notifications: notifications.filter(row=>row.driver_id===session.driver_id), calendar_events: fixture.calendar.filter(row=>row.driver_id===session.driver_id) } });
+      if(session.session_type==='driver'){
+        await reporting.syncVehicles(fixture.vehicles||[]);const snapshot=(await reporting.assignmentRpc('driver_vehicle_snapshot',{p_driver:session.driver_id,p_known:null})).data;
+        return send(res,{vehicle_stamp:snapshot.stamp,vehicle_day:snapshot.day,data:{drivers:reporting.drivers.filter(row=>row.id===session.driver_id),vehicles:snapshot.vehicles,vehicle_types:fixture.vehicle_types||[],insurance_partners:directory,marquee_messages:fixture.marquee_messages||[],feedbacks:(fixture.feedbacks||[]).filter(row=>row.driver_id===session.driver_id),maintenance_notifications:notifications.filter(row=>row.driver_id===session.driver_id),calendar_events:fixture.calendar.filter(row=>row.driver_id===session.driver_id)}});
+      }
       const partner = directory.find(item => item.id === session.partner_id);
       const dealer = partner?.partner_type === "dealer";
       const vehicles = dealer ? fixture.vehicles.filter(item => item.dealer_partner_id === partner.id) : fixture.vehicles;

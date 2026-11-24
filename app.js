@@ -131,12 +131,13 @@
 
   function ensureOptionalLibrary(name) {
     const libraries = {
+      vehicleChanges:["HeycarVehicleChanges","./assets/vehicle-changes.js?v=20261124-7"],
       staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261121-6"],
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261124-5"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261124-7"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -870,6 +871,7 @@
       state.data = ["workspace","view","home"].includes(scope) && state.admin ? { ...state.data, ...result.data } : { ...emptyData(), ...result.data };
       if(state.admin){if(workspaceSession!==session){workspaceSession=session;workspaceReady.clear();workspacePending.clear();}workspaceReady.add(view);}
       if(result.dispatch_date&&Object.hasOwn(result.data||{},'dispatch_orders'))dispatchDayLoaded=state.apiSession+":"+(state.admin?"admin":"driver")+":"+result.dispatch_date;
+      if(result.vehicle_stamp){currentVehicleStamp=result.vehicle_stamp;currentVehicleDay=result.vehicle_day;currentVehicleIdentity=session;}
       if (result.user) state.user = result.user;
       if (result.partner) state.partner = result.partner;
       if (result.admin_profile) state.adminProfile = result.admin_profile;
@@ -1596,7 +1598,25 @@
     if(view==='boardManagement')names.push(['board','HeycarBoardManagement']);
     return names.filter(([,global])=>!window[global]);
   }
+  let currentVehicleStamp='',currentVehicleDay='',currentVehicleIdentity='',currentVehicleChecked=0,currentVehiclePending=false,assignmentRenderedDay='';
+  async function refreshCurrentVehicle(){
+    if(document.hidden||!state.apiSession||!state.user||state.admin||state.partner||currentVehiclePending)return;
+    const day=today(),identity=state.apiSession;
+    if(currentVehicleIdentity!==identity){currentVehicleStamp='';currentVehicleDay='';currentVehicleIdentity=identity;currentVehicleChecked=0;}
+    if(day===currentVehicleDay&&state.view!=='myVehicle')return;
+    if(Date.now()-currentVehicleChecked<300000)return;
+    currentVehicleChecked=Date.now();currentVehiclePending=true;
+    try{const result=(await apiRequest('refresh_current_vehicles',{stamp:currentVehicleStamp})).data;
+      if(state.apiSession!==identity)return;
+      currentVehicleDay=result.day;currentVehicleStamp=result.stamp;
+      if(!result.unchanged){state.data.vehicles=result.vehicles||[];if(!document.querySelector('dialog[open],.modal.is-open')&&['home','myVehicle'].includes(state.view))render();}
+    }catch(error){console.warn('目前車輛更新未完成');}finally{currentVehiclePending=false;}
+  }
+  setInterval(()=>{refreshCurrentVehicle();if(state.admin&&assignmentRenderedDay&&assignmentRenderedDay!==today()&&state.adminView==='vehicles'&&!document.querySelector('dialog[open],.modal.is-open'))render();},60000);
+  window.addEventListener('focus',refreshCurrentVehicle);document.addEventListener('visibilitychange',refreshCurrentVehicle);
   function render() {
+    assignmentRenderedDay=today();
+    if(state.user&&!state.admin&&!state.partner&&state.view==='myVehicle')queueMicrotask(refreshCurrentVehicle);
     if (isHiringPath()) {
       renderHiringPage();
       return;
@@ -1987,11 +2007,17 @@
     return '<div id="driverReportingRoot"></div>';
   }
 
+  async function openVehicleChanges(){
+    await ensureOptionalLibrary('vehicleChanges');
+    await window.HeycarVehicleChanges.open({api:apiRequest,onSaved:async()=>{for(const view of ['vehicles','drivers','calendar','fleetMaintenance','fleetReports'])workspaceReady.delete(view);if(state.adminView==='vehicles'){await ensureAdminWorkspaceData('vehicles');render();}}});
+  }
+  document.addEventListener('click',event=>{if(event.target.closest('[data-vehicle-changes]')&&state.admin&&adminCan('vehicles'))openVehicleChanges().catch(error=>showAlert(error.message));});
   function mountDriverReporting(driver) {
     if (!window.HeycarDriverReporting) return;
     window.HeycarDriverReporting.mount(document.getElementById("driverReportingRoot"), {
       back:()=>{state.view="home";render();}, driver, roster:!driver&&state.adminView==="driverRoster", identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}:${state.adminView==="driverRoster"?"roster":"reporting"}`,
       api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert,
+      changeVehicles: !driver&&adminCan("vehicles")?openVehicleChanges:null,
       editSchedule: !driver&&adminCan('calendar') ? async id=>{
         const session=state.apiSession,view=state.adminView;
         await ensureAdminWorkspaceData('calendar');
@@ -2330,24 +2356,12 @@
     }
   }
 
+  function vehicleHasDriverHistory(vehicle={}){const raw=vehicle.driver_history;if(raw&&typeof raw==='string'){try{const parsed=JSON.parse(raw);if(!Array.isArray(parsed))return true;}catch{return true;}}else if(raw!=null&&!Array.isArray(raw))return true;return parseVehicleDriverHistory(vehicle).some(item=>String(item.driver_name||item.driver_id||'').trim());}
   function vehicleMatchesDriver(vehicle = {}, driver = {}) {
-    const activeHistory = vehicleActiveDriverRecords(vehicle);
-    if (activeHistory.length) {
-      return activeHistory.some((item) =>
-        (item.driver_id && String(item.driver_id) === String(driver.id))
-        || (item.driver_name && item.driver_name === driver.name)
-      );
-    }
-    const assignedIds = parseAssignedDriverIds(vehicle);
-    const assignedNames = String(vehicle.assigned_driver_names || "")
-      .split("/")
-      .map((name) => name.trim())
-      .filter(Boolean);
-    return vehicle.current_driver_id === driver.id
-      || assignedIds.includes(driver.id)
-      || assignedNames.includes(driver.name || "");
+    const activeHistory=vehicleActiveDriverRecords(vehicle);
+    if(vehicleHasDriverHistory(vehicle))return activeHistory.some(item=>item.driver_id?String(item.driver_id)===String(driver.id):String(item.driver_name||'').trim()===driver.name);
+    return vehicle.current_driver_id===driver.id||parseAssignedDriverIds(vehicle).includes(driver.id)||String(vehicle.assigned_driver_names||'').split('/').map(n=>n.trim()).includes(driver.name||'');
   }
-
   function parseAssignedDriverIds(vehicle = {}) {
     const raw = vehicle.assigned_driver_ids;
     if (Array.isArray(raw)) return raw.map(String);
@@ -3954,10 +3968,7 @@
       .map(item => item.driver_name || (item.driver_id ? driverName(item.driver_id) : "")).filter(Boolean).join("／");
   }
 
-  function fleetCurrentDriver(vehicle) {
-    return vehicleActiveDriverRecords(vehicle).map(item => item.driver_name || driverName(item.driver_id)).filter(Boolean).join("／") ||
-      vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "") || "";
-  }
+  function fleetCurrentDriver(vehicle){return vehicleAssignedDriverLabel(vehicle,false);}
 
   function fleetDocumentLinks(file) {
     const href = /^https?:\/\//i.test(file.url || "") ? file.url : "";
@@ -6878,7 +6889,7 @@
           <button class="primary-btn" type="submit">套用篩選</button>
           <button class="ghost-btn" type="button" data-action="clear-vehicle-search">重設</button>
         </form>
-        <div class="actions"><button class="ghost-btn ${state.vehicleViewMode === "list" ? "active" : ""}" data-vehicle-view="list">列表</button><button class="ghost-btn ${state.vehicleViewMode === "visual" ? "active" : ""}" data-vehicle-view="visual">圖像</button><button class="ghost-btn" data-export="vehicles">匯出 Excel</button><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
+        <div class="actions"><button class="ghost-btn ${state.vehicleViewMode === "list" ? "active" : ""}" data-vehicle-view="list">列表</button><button class="ghost-btn ${state.vehicleViewMode === "visual" ? "active" : ""}" data-vehicle-view="visual">圖像</button><button class="ghost-btn" data-export="vehicles">匯出 Excel</button><button class="ghost-btn" data-vehicle-changes>換車安排</button><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
       </div>
       ${state.vehicleViewMode === "visual" ? vehicleManagementCards(page.rows) : vehicleManagementRows(page.rows)}
       ${page.controls}
@@ -7183,18 +7194,18 @@
 
   function vehicleDrivers(vehicle) {
     const activeDrivers = vehicleActiveDriverRecords(vehicle);
-    if (activeDrivers.length) {
+    if (vehicleHasDriverHistory(vehicle)) {
       const ids = activeDrivers.map((item) => String(item.driver_id || "")).filter(Boolean);
       const names = activeDrivers.map((item) => String(item.driver_name || "")).filter(Boolean);
-      return (state.data.drivers || []).filter((driver) => ids.includes(String(driver.id)) || names.includes(driver.name));
+      return (state.data.drivers || []).filter((driver) => activeDrivers.some(item=>item.driver_id?String(item.driver_id)===String(driver.id):String(item.driver_name||'').trim()===driver.name));
     }
     const names = String(vehicle.assigned_driver_names || "").split("/").map((name) => name.trim()).filter(Boolean);
     return (state.data.drivers || []).filter((driver) => vehicle.current_driver_id === driver.id || names.includes(driver.name));
   }
 
   function vehicleAssignedDriverLabel(vehicle, fallbackToDealer = true) {
-    const activeNames = vehicleActiveDriverRecords(vehicle).map((item) => item.driver_name || driverName(item.driver_id)).filter(Boolean);
-    const driverLabel = activeNames.join("/") || vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : "");
+    const activeNames = vehicleActiveDriverRecords(vehicle).map((item) => item.driver_id ? ((state.data.drivers||[]).find(d=>d.id===item.driver_id)?.name||item.driver_name||driverName(item.driver_id)) : item.driver_name).filter(Boolean);
+    const driverLabel = vehicleHasDriverHistory(vehicle)?activeNames.join("/"):(vehicle.assigned_driver_names || (vehicle.current_driver_id ? driverName(vehicle.current_driver_id) : ""));
     return driverLabel || (fallbackToDealer ? partnerName(vehicle.dealer_partner_id) : "") || "";
   }
 
@@ -7212,14 +7223,13 @@
     return [];
   }
 
-  function vehicleActiveDriverRecords(vehicle = {}) {
-    const currentDate = today();
+  function vehicleActiveDriverRecords(vehicle = {}, currentDate = today()) {
     return parseVehicleDriverHistory(vehicle)
       .filter((item) => String(item.driver_name || item.driver_id || "").trim())
       .filter((item) => {
         const startDate = formDate(item.start_at);
         const endDate = formDate(item.end_at);
-        return (!startDate || startDate <= currentDate) && (!endDate || endDate >= currentDate);
+        const valid=raw=>!raw||(/^\d{4}-\d{2}-\d{2}$/.test(String(raw).slice(0,10))&&Number.isFinite(Date.parse(String(raw).slice(0,10)))&&new Date(String(raw).slice(0,10)).toISOString().slice(0,10)===String(raw).slice(0,10));return valid(item.start_at)&&valid(item.end_at)&&(!startDate||startDate<=currentDate)&&(!endDate||endDate>=currentDate);
       });
   }
 
@@ -9423,7 +9433,8 @@
       const matched = active.map(match).filter(Boolean);
       return matched.find(driver => driver.id === vehicle.current_driver_id) || matched[0] || null;
     }
-    return drivers.find(driver => driver.id === vehicle.current_driver_id) || vehicleDrivers(vehicle).find(driver=>driver.driver_status!=='已離職') || null;
+    if(vehicleHasDriverHistory(vehicle))return null;
+    return drivers.find(driver=>driver.id===vehicle.current_driver_id)||vehicleDrivers(vehicle).find(driver=>!['已離職','離職'].includes(driver.driver_status))||null;
   }
 
   function syncMaintenanceDriverPicker(form, vehicle) {

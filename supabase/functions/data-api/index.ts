@@ -1,3 +1,4 @@
+import {createVehicleChangeHandler,vehicleChangeActions} from './vehicle-changes.mjs';
 import {validDriverRegionChange} from './driver-regions.mjs';
 import {createStaffManagementHandler} from './staff-management.mjs';
 import {workspaceViews,createWorkspaceQueryHandler} from './workspace-query.mjs';
@@ -237,15 +238,17 @@ async function getSession(req: Request) {
 }
 
 function driverOwnsVehicle(vehicle:Record<string,any>,driver:Record<string,any>,day:string){
-  let history=vehicle.driver_history;try{if(typeof history==='string')history=JSON.parse(history);}catch{history=[];}
-  const active=(Array.isArray(history)?history:[]).filter(row=>String(row.driver_name||row.driver_id||'').trim()&&(!row.start_at||String(row.start_at).slice(0,10)<=day)&&(!row.end_at||String(row.end_at).slice(0,10)>=day));
-  if(active.length)return active.some(row=>String(row.driver_id||'')===String(driver.id)||row.driver_name&&row.driver_name===driver.name);
-  return vehicle.current_driver_id===driver.id||String(vehicle.assigned_driver_names||'').split('/').map(name=>name.trim()).includes(driver.name);
+ let history=vehicle.driver_history,malformed=false;try{if(typeof history==='string')history=JSON.parse(history);}catch{malformed=true;history=[];}
+ if(history!=null&&!Array.isArray(history))malformed=true;const named=(Array.isArray(history)?history:[]).filter(row=>String(row.driver_name||row.driver_id||'').trim());
+ const valid=(raw:any)=>{if(!raw)return true;const d=String(raw).slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(d)&&Number.isFinite(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d;};
+ if(named.length||malformed)return named.some(row=>valid(row.start_at)&&valid(row.end_at)&&(!row.start_at||String(row.start_at).slice(0,10)<=day)&&(!row.end_at||String(row.end_at).slice(0,10)>=day)&&(row.driver_id?String(row.driver_id)===String(driver.id):String(row.driver_name||'').trim()===driver.name));
+ return vehicle.current_driver_id===driver.id||String(vehicle.assigned_driver_names||'').split('/').map(name=>name.trim()).includes(driver.name);
 }
 async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date())) {
   const { data: driver } = await db.from("drivers").select("*").eq("id", driverId).single();
   if (!driver) throw new Error("DRIVER_NOT_FOUND");
 
+  let assignmentSnapshot:any=null;
   const result: Record<string, unknown[]> = Object.fromEntries(tables.map((table) => [table, []]));
   result.drivers = [driver];
   const fleet = driver.fleet_name || "";
@@ -262,7 +265,7 @@ async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTime
   const onboardAt = driver.onboard_date ? new Date(`${driver.onboard_date}T00:00:00+08:00`).getTime() : 0;
   const canSeeLinks = Boolean(onboardAt && Date.now() < onboardAt + 4 * 24 * 60 * 60 * 1000);
   const queries = await Promise.all([
-    db.from("vehicles").select("id,plate_no,brand,model,status,current_driver_id,fleet_name,vehicle_region,assigned_driver_names,driver_history,fuel_type,registration_doc_url,registration_doc_name,vehicle_files,roadside_assistance_phone,compulsory_insurance_company,voluntary_insurance_company,insurance_company,dealer_partner_id,compulsory_insurance_expiry,voluntary_insurance_expiry,next_inspection_date"),
+    db.rpc('driver_vehicle_snapshot',{p_driver:driverId,p_known:null}).then(({data,error})=>{assignmentSnapshot=data;return{data:data?.vehicles||[],error};}),
     db.from("announcements").select("*").in("target_fleet", driverTargets),
     db.from("announcement_reads").select("*").eq("driver_id", driverId),
     db.from("maintenance_notifications").select("*").eq("driver_id", driverId),
@@ -297,7 +300,7 @@ async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTime
   });
   const currentDay=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
   result.vehicles=(result.vehicles||[]).filter(vehicle=>driverOwnsVehicle(vehicle,driver,currentDay));
-  return { data: result, user: driver, dispatch_date:dispatchDate };
+  return { data: result, user: driver, dispatch_date:dispatchDate,vehicle_stamp:assignmentSnapshot?.stamp,vehicle_day:assignmentSnapshot?.day };
 }
 
 async function loadAdminChatGroups(userId: string) {
@@ -1659,6 +1662,7 @@ Deno.serve(async (req) => {
       const result = await createOnboardingHandler({db,adminCan})(body,session);
       return json(result.body,result.status);
     }
+    if(vehicleChangeActions.includes(body.action)){const response=await createVehicleChangeHandler({db,adminCan,sign:signStorageUrls})(body,session);return json(response.body,response.status);}
     if (["cancel_service_schedule", "save_service_schedule", "sync_service_schedule", "complete_service_schedule", "load_avatar_profiles", "save_own_avatar"].includes(body.action)) {
       const result = await createEmployeeWorkflowHandler({db,adminCan})(body,session);
       return json(result.body,result.status);
