@@ -269,7 +269,7 @@ async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTime
     db.rpc('driver_vehicle_snapshot',{p_driver:driverId,p_known:null}).then(({data,error})=>{assignmentSnapshot=data;return{data:data?.vehicles||[],error};}),
     db.from("announcements").select("*").in("target_fleet", driverTargets),
     db.from("announcement_reads").select("*").eq("driver_id", driverId),
-    db.from("maintenance_notifications").select("*").eq("driver_id", driverId),
+    db.rpc('driver_service_notifications',{p_driver:driverId}),
     db.from("personal_messages").select("*").eq("driver_id", driverId),
     db.from("payment_notices").select("*").eq("driver_id", driverId),
     db.from("calendar_events").select("*").in("fleet_name", driverTargets),
@@ -485,7 +485,8 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
   if (!session.is_super_admin && session.admin_user_id) {
     const { data } = await db.from("admin_users").select("id,name,active,permissions,extension,avatar_url,avatar_name,department_id,job_title_id,permission_mode").eq("id", session.admin_user_id).single();
     if (!data?.active) throw new Error("ADMIN_DISABLED");
-    adminProfile = { ...adminProfile, ...data, permissions:await effectiveStaffPermissions(data), is_super_admin: false };
+    const labels=await db.rpc('staff_identity_labels',{p_staff:session.admin_user_id});if(labels.error)throw labels.error;
+    adminProfile = { ...adminProfile, ...data,...(labels.data||{}), permissions:await effectiveStaffPermissions(data), is_super_admin: false };
   }
   const navigation=scope==='home'?await db.rpc('office_navigation_read'):null;
   if(navigation?.error)throw navigation.error;

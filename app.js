@@ -26,6 +26,7 @@
     adminProfile: null,
     view: "home",
     adminView: "home",
+    driverMaintenanceTab:"pending",
     driverStatusFilter: "全部",
     driverDealerFilter: "",
     driverSearch: "",
@@ -136,9 +137,9 @@
       staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261121-6"],
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
-      benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261123-6"],
+      benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261125-5"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261125-2"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261125-5"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -450,6 +451,7 @@
       partnerView: state.partnerView,
       insuranceStatusFilter: state.insuranceStatusFilter,
       messageReadFilter: state.messageReadFilter,
+      driverMaintenanceTab:state.driverMaintenanceTab,
       loanStatusFilter: state.loanStatusFilter,
       onboardingFilter: state.onboardingFilter,
       onboardingDealerFilter: state.onboardingDealerFilter,
@@ -480,6 +482,7 @@
         if (fleetWorkspaceTabs().some(([key]) => key === section)) fleetOperationsState("maintenanceManagement").section = section;
       }
       if (saved.insuranceStatusFilter !== undefined) state.insuranceStatusFilter = saved.insuranceStatusFilter;
+      if(['pending','completed'].includes(saved.driverMaintenanceTab))state.driverMaintenanceTab=saved.driverMaintenanceTab;
       if (saved.messageReadFilter) state.messageReadFilter = saved.messageReadFilter;
       if (saved.loanStatusFilter !== undefined) state.loanStatusFilter = saved.loanStatusFilter;
       if (saved.onboardingFilter) state.onboardingFilter = saved.onboardingFilter;
@@ -899,6 +902,7 @@
   function ensureAdminWorkspaceData(view=state.adminView||'home') {
     if(!state.admin||!state.apiSession)return Promise.resolve();
     if(workspaceSession!==state.apiSession){workspaceSession=state.apiSession;workspaceReady.clear();workspacePending.clear();}
+    if(view==='driverRoster'&&state.adminProfile){workspaceReady.add(view);return ensureOptionalLibrary('reporting').then(()=>undefined);}
     if(workspaceReady.has(view))return Promise.resolve();
     if(!workspacePending.has(view)){
       const pending=loadAll({view,workspaceOnly:true}).finally(()=>{if(workspacePending.get(view)===pending)workspacePending.delete(view);});
@@ -1812,7 +1816,7 @@
               <button class="ghost-btn menu-btn" data-action="toggle-admin-sidebar" aria-label="${state.adminCollapsed ? "開啟選單" : "收合選單"}" aria-expanded="${!state.adminCollapsed}" aria-controls="adminSidebar">☰</button>
               <button class="brand-logo-button" data-admin-view="home" title="回到首頁"><img src="${logoUrl}" alt="heycar logo"></button>
               <div class="brand-copy">
-                <div class="brand-title">管理後台</div>
+                <div class="brand-title admin-position-label" title="${escapeHtml(adminPositionLabel())}">${escapeHtml(adminPositionLabel())}</div>
                 <div class="brand-subtitle">${escapeHtml(state.adminProfile?.name || "亞菲得車隊管理")}</div>
               </div>
             </div>
@@ -2576,17 +2580,23 @@
     `;
   }
 
+  function maintenancePlate(item){
+    const event=(state.data.calendar_events||[]).find(e=>e.id===item.service_schedule_id||e.maintenance_notification_id===item.id);
+    return item.plate_no||event?.plate_no||(state.data.vehicles||[]).find(v=>v.id===item.vehicle_id)?.plate_no||'未綁定車牌';
+  }
+  function adminPositionLabel(){return state.adminProfile?.is_super_admin?'系統管理 · 最高管理員':[state.adminProfile?.department_name||'未設定部門',state.adminProfile?.job_title_name||'未設定職稱'].join(' · ');}
+
   function driverTaskList(table, title) {
-    const items = mine(table).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-    const isMaint = table === "maintenance_notifications";
+    const isMaint=table==="maintenance_notifications",all=mine(table).filter(item=>!isMaint||!["cancelled","canceled"].includes(item.status));
+    const items=all.filter(item=>!isMaint||(state.driverMaintenanceTab==='completed'?item.status==='completed':item.status!=='completed')).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
     return `
-      ${pageHeader(title)}
+      ${pageHeader(title,isMaint?'<div class="driver-maintenance-tabs">'+[["pending","未完成"],["completed","已完成"]].map(([key,label])=>'<button type="button" class="ghost-btn" data-maintenance-tab="'+key+'" aria-pressed="'+(state.driverMaintenanceTab===key)+'">'+label+' '+all.filter(item=>key==='completed'?item.status==='completed':item.status!=='completed').length+'</button>').join('')+'</div>':'')}
       <div class="luxury-card-mesh">
         ${items.length ? items.map((item) => `
           <article class="modern-luxury-item ${isMaint?'driver-maintenance-card':''} ${item.status !== "pending" ? "is-muted" : ""}">
             <div class="lux-item-top">
               <div class="lux-item-title-group">
-                <div class="lux-item-title">${escapeHtml(item.title || item.subject || item.fee_type || vehicleName(item.vehicle_id))}</div>
+                <div class="lux-item-title">${escapeHtml(item.title || item.subject || item.fee_type || (isMaint?maintenancePlate(item):vehicleName(item.vehicle_id)))}</div>
                 <div class="lux-item-meta">${taskMeta(table, item)}</div>
               </div>
               ${statusBadge(item.status || "pending")}
@@ -2607,7 +2617,7 @@
 
   function taskMeta(table, item) {
     if (table === "maintenance_notifications") {
-      return `車輛：${escapeHtml(vehicleName(item.vehicle_id))}`;
+      return `車輛：${escapeHtml(maintenancePlate(item))}`;
     }
     if (table === "payment_notices") {
       return `金額：${canShowTaskDetail(table,item)?Number(item.amount || 0).toLocaleString():"驗證後查看"}｜日期：${fmtDate(item.due_date)}`;
@@ -2622,7 +2632,7 @@
         <div class="schedule-date"><strong>${escapeHtml(date.slice(8) || "--")}</strong><span>${escapeHtml(date.slice(0, 7).replace("-", " / "))}</span></div>
         <div class="schedule-details">
           <span>預計時間</span><strong>${escapeHtml(item.service_time || "尚未指定")}</strong>
-          <span>維修廠</span><strong>${escapeHtml(item.vendor || "尚未指定")}</strong>
+          <span>維修廠</span><strong class="maintenance-vendor">${escapeHtml(item.vendor || "尚未指定")}${item.vendor_address?`<a class="ghost-btn maintenance-navigate" href="https://www.google.com/maps/dir/?api=1&amp;destination=${encodeURIComponent(item.vendor_address)}&amp;travelmode=driving&amp;dir_action=navigate" target="_blank" rel="noopener" aria-label="導航至${escapeHtml(item.vendor||'維修廠')}">導航</a>`:'<button type="button" class="ghost-btn maintenance-navigate" disabled title="請由後台廠商管理填寫地址">導航</button>'}</strong>
         </div>
       </div>
     `;
@@ -4437,7 +4447,7 @@
     const dateCell=s=>{const date=s.scheduled?.event_date||s.forecast?.date;return `<span class="forecast-date ${fleetServiceScheduleExpired(s)?'is-overdue':''}">${escapeHtml(date||'尚未登記')}${s.scheduled?' ▣':''}</span>`;};
     const remaining=s=>`<strong class="${s.forecast?.remaining<0?'is-overdue':''}">${number(s.forecast?.remaining)}</strong>`;
     const recordActions=s=>!adminCan('serviceRecords')?'':s.baselineSuspect&&s.last?.id?'<button class="ghost-btn" data-modal="serviceRecord" data-id="'+escapeHtml(s.last.id)+'">核對里程</button>':s.last?.completion_only?'<button class="ghost-btn" data-workorder-schedule="'+escapeHtml(s.last.service_schedule_id)+'">登打工單</button>':'';
-    return `<div class="fleet-table-scroll fleet-forecast-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格"><table class="fleet-data-table fleet-forecast-table forecast-ledger"><thead><tr>${['狀態','車牌','司機','平均日里程','平均週里程','平均月里程','最近加油里程','最近保養里程','上次保養','下次保養','保養剩餘里程','預計保養時間','上次調胎','下次調胎','調胎剩餘里程','預計調胎時間','操作'].map((label,i)=>`<th scope="col" ${i>=7&&i<=11?'data-kind="maintenance"':i>=12&&i<=15?'data-kind="tires"':''}>${label}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>{const m=service(row,'maintenance'),t=service(row,'tires');return `<tr><td class="forecast-status">${fleetStatusButton(row)}</td><th scope="row"><button class="fleet-plate-link" data-fleet-go="fuel" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button></th><td class="forecast-driver">${escapeHtml(row.driver||'—')}</td><td class="km-daily">${number(row.avg_daily_km)}</td><td class="km-weekly">${number(row.avg_daily_km==null?null:row.avg_daily_km*7)}</td><td class="km-monthly">${number(row.avg_daily_km==null?null:row.avg_daily_km*30)}</td><td><strong>${number(row.last_fill_mileage)}</strong><small>${escapeHtml(row.last_fill_date||'尚無紀錄')}</small></td><td data-kind="maintenance"><strong>${number(m.last?.odometer)}</strong></td><td data-kind="maintenance">${escapeHtml(m.last?.service_date||'—')}</td><td data-kind="maintenance"><strong>${number(m.forecast?.target)}</strong></td><td data-kind="maintenance">${remaining(m)}</td><td data-kind="maintenance">${dateCell(m)}</td><td data-kind="tires"><strong>${number(t.last?.odometer)}</strong><small>${escapeHtml(t.last?.service_date||'—')}</small></td><td data-kind="tires"><strong>${number(t.forecast?.target)}</strong></td><td data-kind="tires">${remaining(t)}</td><td data-kind="tires">${dateCell(t)}</td><td class="forecast-table-actions">${(adminCan("calendar")?[m,t]:[]).map(s=>`<button class="ghost-btn" ${s.scheduled?`data-modal="calendarEvent" data-id="${escapeHtml(s.scheduled.id)}"`:`data-fleet-schedule="${escapeHtml(row.vehicle_id)}" data-kind="${s.kind}"`} title="${s.kind==='maintenance'?'保養':'調胎'}排程" aria-label="${s.kind==='maintenance'?'保養':'調胎'}排程">${s.kind==='maintenance'?'保養排程':'調胎排程'}</button>`).join('')}${[m,t].map(recordActions).join('')}</td></tr>`;}).join('')}</tbody></table></div>`;
+    return `<div class="fleet-table-scroll fleet-forecast-scroll" tabindex="0" role="region" aria-label="保養總覽完整表格"><table class="fleet-data-table fleet-forecast-table forecast-ledger"><thead><tr>${['狀態','車牌','司機','平均日里程','平均週里程','平均月里程','最近加油里程','最近保養里程','上次保養','下次保養','保養剩餘里程','預計保養時間','上次調胎','下次調胎','調胎剩餘里程','預計調胎時間','操作'].map((label,i)=>`<th scope="col" ${i>=7&&i<=11?'data-kind="maintenance"':i>=12&&i<=15?'data-kind="tires"':''}>${label}</th>`).join('')}</tr></thead><tbody>${rows.map(row=>{const m=service(row,'maintenance'),t=service(row,'tires');return `<tr><td class="forecast-status">${fleetStatusButton(row)}</td><th scope="row"><button class="fleet-plate-link" data-fleet-go="fuel" data-plate="${escapeHtml(row.plate)}">${escapeHtml(row.plate)}</button></th><td class="forecast-driver">${escapeHtml(row.driver||'—')}</td><td class="km-daily">${number(row.avg_daily_km)}</td><td class="km-weekly">${number(row.avg_daily_km==null?null:row.avg_daily_km*7)}</td><td class="km-monthly">${number(row.avg_daily_km==null?null:row.avg_daily_km*30)}</td><td><strong>${number(row.last_fill_mileage)}</strong><small>${escapeHtml(row.last_fill_date||'尚無紀錄')}</small></td><td data-kind="maintenance"><strong>${number(m.last?.odometer)}</strong></td><td data-kind="maintenance">${escapeHtml(m.last?.service_date||'—')}</td><td data-kind="maintenance"><strong>${number(m.forecast?.target)}</strong></td><td data-kind="maintenance">${remaining(m)}</td><td data-kind="maintenance">${dateCell(m)}</td><td data-kind="tires"><strong>${number(t.last?.odometer)}</strong><small>${escapeHtml(t.last?.service_date||'—')}</small></td><td data-kind="tires"><strong>${number(t.forecast?.target)}</strong></td><td data-kind="tires">${remaining(t)}</td><td data-kind="tires">${dateCell(t)}</td><td class="forecast-table-actions"><div class="forecast-action-grid">${[m,t].map(s=>`<div>${adminCan("calendar")?`<button class="ghost-btn" ${s.scheduled?`data-modal="calendarEvent" data-id="${escapeHtml(s.scheduled.id)}"`:`data-fleet-schedule="${escapeHtml(row.vehicle_id)}" data-kind="${s.kind}"`}>${s.kind==='maintenance'?'保養排程':'調胎排程'}</button>`:""}${recordActions(s)}</div>`).join('')}</div></td></tr>`;}).join('')}</tbody></table></div>`;
   }
 
   function fleetForecastMetrics(rows) {
@@ -9547,6 +9557,7 @@
       + select("partner_type", "單位類型", item.partner_type || "dealer", [["dealer", "車商"], ["broker", "保經"], ["repair_shop", "保養廠"], ["insurance_company", "保險公司"]])
       + input("contact_name", "聯絡人", item.contact_name)
       + input("phone", "電話", item.phone, "tel")
+      + input("address", "地址（保養廠導航使用）", item.address)
       + input("email", "電子信箱", item.email, "email")
       + partnerLogoField(item)
       + input("login_code", item.id ? "登入代碼（留空則不變更）" : "登入代碼", "", "password", !item.id)
@@ -10354,6 +10365,7 @@
 
   document.addEventListener("click", async (e) => {
     const target = e.target.closest("button, a");
+    if(target?.dataset.maintenanceTab){state.driverMaintenanceTab=target.dataset.maintenanceTab;render();return;}
     if (target?.dataset.flightFollow || target?.dataset.flightUnfollow) {
       target.disabled = true;
       try {

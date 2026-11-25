@@ -53,7 +53,7 @@ export function createEmployeeWorkflowHandler({db,adminCan}) {
     } else if(body.action==='complete_service_schedule') {
       if(session.session_type!=='driver')return fail('僅通知的司機可回報完成',403);
       if(typeof body.odometer!=='number'||!Number.isFinite(body.odometer)||body.odometer<0)return fail('請輸入有效的完成里程');
-      if(!Array.isArray(body.photos)||body.photos.length!==(body.work_order_missing===true?4:5)||body.photos.some(id=>!uuid(id)))return fail('請完成四顆輪胎及保養工單照片');
+      if(!Array.isArray(body.photos)||body.photos.length!==(body.work_order_missing===true?5:6)||body.photos.some(id=>!uuid(id)))return fail('請完成四顆輪胎、儀表里程照片及工單（或註記尚未有工單）');
       if(body.work_order_missing!==undefined&&typeof body.work_order_missing!=='boolean')return fail('請確認工單選項');name='hey_complete_service_with_order';args={p_id:body.id,p_driver:session.driver_id,p_odometer:body.odometer,p_photos:body.photos,p_missing:body.work_order_missing===true};
     } else return fail('ACTION_NOT_ALLOWED',403);
     const {data,error}=await db.rpc(name,args);
