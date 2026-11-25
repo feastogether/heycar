@@ -68,3 +68,48 @@
 .dispatch-admin-row>.actions button{border-radius:8px;box-shadow:none}
 @media(max-width:500px){.driver-workspace .driver-toolbar.driver-dispatch-toolbar{grid-template-columns:42px 28px minmax(0,1fr) 28px 42px}.dispatch-order-card.dispatch-trip-card>button{grid-template-columns:64px minmax(0,1fr)!important;gap:10px!important;padding:12px!important}.dispatch-trip-card .dispatch-clock strong{font-size:21px!important}.dispatch-trip-card .dispatch-card-route{font-size:14px!important}.dispatch-trip-card .dispatch-card-heading{gap:6px}.dispatch-trip-card .dispatch-clock{padding-right:9px}.dispatch-trip-card .dispatch-status-chip{margin-left:0}.dispatch-trip-card .dispatch-card-people{gap:3px 10px}}
 .driver-workspace .driver-toolbar .driver-back{font-size:13px;font-weight:600}
+
+/* Driver UI contract: 42px controls, 8px control/12px surface radii, 8/16px spacing. */
+.is-driver-session{--driver-control:42px;--driver-radius:8px;--driver-surface-radius:12px;--driver-gap:8px;--driver-space:16px;--driver-line:#dce2e9;--driver-ink:#35465a;--driver-accent:#94703c;--driver-muted:#718096}
+.is-driver-session .driver-workspace{font-size:14px;line-height:1.5;color:var(--driver-ink)}
+.is-driver-session .driver-workspace :is(.ghost-btn,.primary-btn,.soft-btn,.filter-btn,.danger-btn),.is-driver-session :is(.modal,.app-dialog,.vi-photo-viewer) :is(.ghost-btn,.primary-btn,.soft-btn,.danger-btn){min-height:var(--driver-control);border-radius:var(--driver-radius);padding:9px 12px;font:600 13px/1.4 system-ui,sans-serif;box-shadow:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;touch-action:manipulation}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) :is(.ghost-btn,.soft-btn,.filter-btn){border:1px solid var(--driver-line);background:#fff;color:var(--driver-ink)}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) .primary-btn{border:1px solid #344454;background:#344454;color:white}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) :is(.ghost-btn,.soft-btn,.filter-btn)[aria-pressed=true]{background:#f4efe5;border-color:#ba9c65;color:#76562b}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) :is(button,a)[class*=btn]>svg{width:18px;height:18px;flex:0 0 18px;stroke-width:1.8}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) :is(button,a,input,select,textarea,summary):focus-visible{outline:2px solid var(--driver-accent);outline-offset:2px}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=hidden]),select){min-height:var(--driver-control);min-width:0;max-width:100%;box-sizing:border-box;border-radius:var(--driver-radius);border:1px solid var(--driver-line);padding:9px 10px;background:#fff;color:var(--driver-ink);font:400 16px/1.4 system-ui,sans-serif}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) textarea{box-sizing:border-box;width:100%;min-width:0;border-radius:var(--driver-radius);border:1px solid var(--driver-line);padding:10px;font:400 16px/1.5 system-ui,sans-serif}
+.is-driver-session :is(.driver-workspace,.modal,.app-dialog) :is(input[type=checkbox],input[type=radio]){width:18px;height:18px;min-height:0;flex:0 0 18px;margin:0;accent-color:var(--driver-accent)}
+.is-driver-session .driver-workspace :is(.modern-luxury-item,.benefit-panel,.benefit-card,.vi-surface,.dr-panel,.flight-card,.qa-item,.driver-vehicle-card){border:1px solid var(--driver-line);border-radius:var(--driver-surface-radius);padding:var(--driver-space);box-shadow:none;min-width:0;box-sizing:border-box}
+.is-driver-session .driver-workspace :is(.luxury-card-mesh,.benefits-workspace,.vi-list){gap:12px}
+.is-driver-session .driver-workspace .hey-wallet{border-radius:var(--driver-surface-radius);padding:var(--driver-space);box-shadow:none}.is-driver-session .driver-workspace .hey-wallet strong{font-size:32px}
+.is-driver-session .driver-workspace :is(.lux-item-actions,.flight-follow-actions,.benefit-actions){display:flex;align-items:center;justify-content:flex-end;gap:var(--driver-gap);flex-wrap:wrap}
+.is-driver-session .flight-follow-actions>button{flex:1;min-width:0;white-space:nowrap}
+.is-driver-session .modal-backdrop{padding:12px;box-sizing:border-box}
+.is-driver-session .modal-backdrop>.modal{border:1px solid var(--driver-line);border-radius:var(--driver-surface-radius);width:min(720px,100%);max-width:100%;max-height:calc(100dvh - 24px);box-sizing:border-box}
+.is-driver-session .modal-title{padding:var(--driver-space);gap:var(--driver-gap);border-bottom:1px solid var(--driver-line)}
+.is-driver-session .modal-title h3{font-size:18px;line-height:1.4;margin:0}
+.is-driver-session .modal-form-body{padding:var(--driver-space);min-height:0;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.is-driver-session .modal-actions{padding:12px var(--driver-space);display:flex;align-items:center;justify-content:flex-end;gap:var(--driver-gap);border-top:1px solid var(--driver-line);background:#fff;flex-wrap:wrap}
+.is-driver-session :is(.icon-close-btn,.vi-photo-viewer header>button){width:42px;height:42px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 42px}
+.is-driver-session :is(.driver-workspace,.modal) :is(.vi-photo-grid,.benefit-photo-grid){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.is-driver-session :is(.vi-photo-card,.benefit-photo-tile){border:1px solid var(--driver-line);border-radius:var(--driver-surface-radius);overflow:hidden;min-width:0;box-shadow:none;background:#fff}
+.is-driver-session .benefit-photo-tile{padding:10px;display:flex;flex-direction:column;gap:8px;cursor:pointer;min-height:148px;justify-content:center}
+.is-driver-session .benefit-photo-tile>span{font-size:13px;font-weight:600;line-height:1.4;color:var(--driver-ink)}
+.is-driver-session .benefit-photo-tile img{width:100%;height:auto;aspect-ratio:4/3;object-fit:cover;border-radius:6px}
+.is-driver-session .benefit-photo-tile [data-photo-status],.is-driver-session .vi-photo-caption{font-size:12px;line-height:1.5;min-height:24px}
+.is-driver-session .benefit-photo-tile [data-photo-status]{color:var(--driver-accent)}
+.is-driver-session .vi-photo-caption{padding:10px;gap:6px}.is-driver-session .vi-photo-caption small{font-size:12px}
+.is-driver-session .benefit-photo-tile input[type=file]{position:absolute;opacity:0;width:1px;height:1px;min-height:0;pointer-events:none}
+.is-driver-session .driver-workspace .driver-toolbar :is(.driver-back,.driver-refresh){width:42px;min-width:42px;max-width:42px;height:42px;padding:0}
+.is-driver-session .driver-workspace .driver-toolbar .driver-back{font-size:13px}.is-driver-session .driver-workspace .driver-toolbar .driver-refresh{font-size:23px}
+@media(min-width:600px){.is-driver-session :is(.driver-workspace,.modal) :is(.vi-photo-grid,.benefit-photo-grid){grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(min-width:1100px){.is-driver-session .driver-workspace .vi-photo-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(prefers-reduced-motion:reduce){.is-driver-session :is(.driver-workspace,.modal) *{scroll-behavior:auto;transition:none}}
+
+.is-driver-session .driver-upload-state{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #e4d8c2;border-radius:8px;background:#faf7f1;color:#856432;font-size:13px}.driver-upload-spinner{width:16px;height:16px;display:inline-block;box-sizing:border-box;flex:0 0 16px;border:2px solid #b6976044;border-top-color:#94703c;border-radius:50%;animation:driver-upload-spin .8s linear infinite}.is-driver-session .benefit-photo-tile:has(input:focus-visible){outline:2px solid var(--driver-accent);outline-offset:2px}@keyframes driver-upload-spin{to{transform:rotate(360deg)}}
+
+.is-driver-session{--driver-font:system-ui,-apple-system,"Segoe UI","Noto Sans TC","Microsoft JhengHei",sans-serif}.is-driver-session .driver-workspace{font-family:var(--driver-font)}.is-driver-session .driver-workspace :is(button,input,textarea,select){font-family:var(--driver-font)}.is-driver-session .topbar .ghost-btn{min-height:42px;border-radius:8px;font:600 13px/1.4 var(--driver-font);box-shadow:none}.is-driver-session .driver-workspace :is(.vi-task-card,.equipment-card){border-radius:12px;box-shadow:none;border:1px solid var(--driver-line);padding:16px}
+
+.is-driver-session .driver-workspace :is(.my-vehicle-card,.message-center-row,.helper-article-card,.feedback-card,.broadcast-item,.reward-card,.calendar-panel){border-radius:12px;border:1px solid var(--driver-line);box-shadow:none;min-width:0;box-sizing:border-box}.is-driver-session .driver-workspace :is(.message-center-row,.feedback-card,.reward-card){padding:16px}.is-driver-session .driver-workspace :is(.my-vehicle-head,.my-vehicle-info,.my-vehicle-schedule,.broadcast-caption){padding:16px}.is-driver-session .driver-workspace .helper-article-card{padding:0}.is-driver-session .driver-workspace .helper-article-card>summary{padding:16px}.is-driver-session .driver-workspace .helper-content{padding:0 16px 16px}

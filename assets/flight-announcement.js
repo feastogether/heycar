@@ -14,7 +14,7 @@ export function spokenTerminal(value) {
 export function arrivalAnnouncement(watch) {
   // Missing or unrecognised terminal data must never be guessed.
   const terminal = spokenTerminal(watch.flight?.terminal);
-  return `${watch.flight?.airline || '航班'}，${spokenFlightNumber(watch.flightNo)}，已抵達${terminal ? '桃園機場' + terminal : ''}。請司機 ${watch.driverName} 準備聯繫客戶與出發。`;
+  return `${watch.flight?.airline || '航班'}，${spokenFlightNumber(watch.flightNo)}，已抵達${terminal ? '桃園機場' + terminal : ''}。${watch.announceDriver===false?'請司機準備聯繫客戶與出發。':`請司機 ${watch.driverName||''} 準備聯繫客戶與出發。`}`;
 }
 
 export const announcementKey = watch => watch.cancelledAt ? `${watch.id}:cancelled:${watch.cancelledAt}` : watch.id;
@@ -26,6 +26,6 @@ export function withinTrackingWindow(watch, now = Date.now()) {
 }
 export function flightAnnouncement(watch) {
   return watch.cancelledAt
-    ? `${watch.flight?.airline || '航班'}，${spokenFlightNumber(watch.flightNo)}，航班已取消。請司機 ${watch.driverName} 確認派趟安排。`
+    ? `${watch.flight?.airline || '航班'}，${spokenFlightNumber(watch.flightNo)}，航班已取消。${watch.announceDriver===false?'請司機確認派趟安排。':`請司機 ${watch.driverName||''} 確認派趟安排。`}`
     : arrivalAnnouncement(watch);
 }

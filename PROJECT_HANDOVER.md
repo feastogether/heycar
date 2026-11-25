@@ -1,5 +1,12 @@
 # HEYCAR 專案交接文件
 
+## 2026-11-25 即時搜尋、司機共用介面與兩種追蹤（最新）
+
+車輛／駕駛管理180ms即時篩選，保留focus／游標／中文組字，車商條件可組合，不新增每字查詢。司機前台集中使用assets/driver-ui.css tokens，規範見docs/DRIVER_UI_GUIDELINES.md：42px按鈕、8/12px圓角、16px表單輸入、共用卡片／視窗／照片及上傳狀態，僅body.is-driver-session生效。15功能四尺寸Edge/WebKit檢查，保養6張／車檢10張與補拍／草稿重整流程通過。
+
+桃園抵達查詢後提供有聲／無聲追蹤，差別僅播報有無司機姓名；取消同樣遵守，無聲仍播報航班。R2 watch新增announceDriver，舊預設有姓名，舊重送不覆蓋明確模式，ETag防覆蓋且createdAt及事件保留。伺服器MP3與瀏覽器fallback共用格式，原5分鐘共用來源／5秒R2輕讀／8小時窗口／3分鐘消失不變。無DB結構／業務資料修改，現有追蹤與配對不批次改寫。正式七資產SHA及未授權拒絕驗證通過，未建立正式追蹤或廣播。資產20261125-7；前端a5b3ce59-1340-4f24-b9ea-85f171772a9b、Storage cef9c108-4637-4a09-8d0a-bd425af7f0a9。電視需重新整理以載入新fallback，原配對不變。詳見docs/2026-11-25-live-search-driver-ui-flight-modes.md。
+
+
 ## 2026-11-25 工單 BOM 關鍵字搜尋修復（最新）
 
 車輛履歷按需載入遺漏 bom_parts／bom_packages，現已補齊；僅 serviceRecords view 且有 serviceRecords 權限可讀最小選項投影，不授予 BOM 管理寫入。搜尋目前保修廠優先但保留其他廠商，NFKC／空白／大小寫規格比對。正式唯讀確認97筆零件、4筆符合5w；乾淨登入直進履歷及帶入價格瀏覽器測試通過，正式 scoped API／前端雜湊核對通過。無 DB schema／業務資料修改。app版本20261125-6；Worker 1f2ffd56-eaae-4fee-bc0c-26c98900d658。

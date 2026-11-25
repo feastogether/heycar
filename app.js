@@ -138,7 +138,7 @@
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261125-5"],
-      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261123-4"],
+      inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261125-7"],
       reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261125-5"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
@@ -1632,6 +1632,7 @@
   setInterval(()=>{refreshCurrentVehicle();if(state.admin&&assignmentRenderedDay&&assignmentRenderedDay!==today()&&state.adminView==='vehicles'&&!document.querySelector('dialog[open],.modal.is-open'))render();},60000);
   window.addEventListener('focus',refreshCurrentVehicle);document.addEventListener('visibilitychange',refreshCurrentVehicle);
   function render() {
+    document.body.classList.toggle("is-driver-session",Boolean(state.user&&!state.admin&&!state.partner));
     assignmentRenderedDay=today();
     if(state.user&&!state.admin&&!state.partner&&state.view==='myVehicle')queueMicrotask(refreshCurrentVehicle);
     if (isHiringPath()) {
@@ -10230,7 +10231,7 @@
             ${flightDetailItems(flight, flight.direction || "arrival")}
           </div>
           <div class="flight-update">資料來源：${escapeHtml(flight.source || "TDX")} ｜ 更新：${escapeHtml(formatFlightTime(flight.updateTime))}</div>
-          ${state.user && !state.admin && !state.partner && flight.direction === "arrival" && flight.sourceType === "taoyuan" ? `<div class="flight-follow-actions"><button class="primary-btn" data-flight-follow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}">追蹤並顯示於電視</button></div>` : ""}
+          ${state.user && !state.admin && !state.partner && flight.direction === "arrival" && flight.sourceType === "taoyuan" ? `<div class="flight-follow-actions"><button class="primary-btn" data-flight-follow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}" data-announce-driver="true" title="播報航班與司機姓名">有聲追蹤</button><button class="ghost-btn" data-flight-follow="${escapeHtml(flight.flightNo)}" data-flight-date="${escapeHtml(date)}" data-announce-driver="false" title="僅播報航班，不念司機姓名">無聲追蹤</button></div>` : ""}
         </article>
       `).join("") : `<div class="empty">${escapeHtml(sourceName)}查無符合的航班。請確認日期、機場與班號是否正確。</div>`;
     } catch (error) {
@@ -10362,13 +10363,13 @@
     const target = e.target.closest("button, a");
     if(target?.dataset.maintenanceTab){state.driverMaintenanceTab=target.dataset.maintenanceTab;render();return;}
     if (target?.dataset.flightFollow || target?.dataset.flightUnfollow) {
-      target.disabled = true;
+      const followButtons=[...(target.closest('.flight-follow-actions')||target.parentElement).querySelectorAll('[data-flight-follow],[data-flight-unfollow]')];followButtons.forEach(b=>b.disabled=true);
       try {
-        const response = await fetch('/api/flight-board', { method:'POST', headers:{'Content-Type':'application/json','x-afide-session':state.apiSession}, body:JSON.stringify({action:target.dataset.flightFollow?'follow':'unfollow',flight_no:target.dataset.flightFollow||target.dataset.flightUnfollow,date:target.dataset.flightDate}), signal:AbortSignal.timeout(25000) });
+        const response = await fetch('/api/flight-board', { method:'POST', headers:{'Content-Type':'application/json','x-afide-session':state.apiSession}, body:JSON.stringify({action:target.dataset.flightFollow?'follow':'unfollow',flight_no:target.dataset.flightFollow||target.dataset.flightUnfollow,date:target.dataset.flightDate,...(target.dataset.flightFollow?{announce_driver:target.dataset.announceDriver!=='false'}:{})}), signal:AbortSignal.timeout(25000) });
         const result = await response.json(); if (!response.ok) throw new Error(result.error || '追蹤失敗');
-        if(target.dataset.flightFollow){target.textContent="已追蹤 · 抵達後自動提醒";if(window.BroadcastChannel){const channel=new BroadcastChannel("heycar-flight-watches");channel.postMessage("changed");channel.close();}}
-        await showAlert(target.dataset.flightFollow?'已追蹤，數秒內顯示於看板。抵達廣播後三分鐘自動移除。':'已取消此航班追蹤。','航班追蹤');
-      } catch(error) { await showAlert(error.message,'航班追蹤'); } finally { target.disabled=false; }
+        if(target.dataset.flightFollow){followButtons.forEach(b=>{b.textContent=b.dataset.announceDriver==='false'?'無聲追蹤':'有聲追蹤';b.setAttribute('aria-pressed',String(b===target));});target.textContent=target.dataset.announceDriver==='false'?'已無聲追蹤':'已有聲追蹤';if(window.BroadcastChannel){const channel=new BroadcastChannel("heycar-flight-watches");channel.postMessage("changed");channel.close();}}
+        await showAlert(target.dataset.flightFollow?(target.dataset.announceDriver==='false'?'已追蹤，抵達時僅播報航班，不念司機姓名。':'已追蹤，抵達時播報航班與司機姓名。'):'已取消此航班追蹤。','航班追蹤');
+      } catch(error) { await showAlert(error.message,'航班追蹤'); } finally { followButtons.forEach(b=>b.disabled=false); }
       return;
     }
     if (target?.dataset.vehiclePolicy || target?.dataset.vehicleFines) {
@@ -11768,6 +11769,19 @@
       suggestions.innerHTML = "";
     }
   }
+
+  let managementSearchTimer;
+  function applyManagementSearch(form,keepFocus=false){
+    if(!form?.isConnected||!state.admin)return;
+    const field=form.querySelector(form.id==='driverSearchForm'?'[name=search]':'[name=plate]'),value=field.value,start=field.selectionStart,end=field.selectionEnd,id=form.id;
+    if(id==='driverSearchForm')state.driverSearch=value;else{const values=new FormData(form);state.vehiclePage=1;state.vehicleSearch=value;state.vehicleStatusFilter=String(values.get('status')||'');state.vehicleRegionFilter=String(values.get('region')||'');state.vehicleFuelFilter=String(values.get('fuel')||'');state.vehicleDealerFilter=String(values.get('dealer')||'');}
+    render();if(keepFocus){const next=document.querySelector('#'+id+' [name='+field.name+']');if(next){next.focus({preventScroll:true});try{next.setSelectionRange(start,end);}catch{}}}
+  }
+  function queueManagementSearch(event){const field=event.target.closest('#driverSearchForm [name=search],#vehicleSearchForm [name=plate]');if(!field)return;clearTimeout(managementSearchTimer);if(event.isComposing)return;const form=field.form;managementSearchTimer=setTimeout(()=>applyManagementSearch(form,document.activeElement===field),180);}
+  document.addEventListener('input',queueManagementSearch);
+  document.addEventListener('compositionstart',event=>{if(event.target.closest('#driverSearchForm,#vehicleSearchForm'))clearTimeout(managementSearchTimer);});
+  document.addEventListener('compositionend',queueManagementSearch);
+  document.addEventListener('change',event=>{if(event.target.matches('#vehicleSearchForm select')){clearTimeout(managementSearchTimer);applyManagementSearch(event.target.form);}});
 
   document.addEventListener("input", (e) => {
     if (e.target.closest("[name='labor_cost'],[name='parts_cost'],[name='other_cost'],[name='tax_mode']")) {

@@ -1,6 +1,6 @@
 import {createBoardAudio} from './board-audio-player.js?v=20261123-1';
 import { mountLiveNews } from './flight-board-news.js?v=20261123-3';
-import { flightAnnouncement, announcementKey, eventTime, withinTrackingWindow } from './flight-announcement.js?v=20261121-2';
+import { flightAnnouncement, announcementKey, eventTime, withinTrackingWindow } from './flight-announcement.js?v=20261125-7';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 const $ = id => document.getElementById(id);
 const time = value => value ? new Date(value).toLocaleTimeString('zh-TW', { timeZone:'Asia/Taipei', hour:'2-digit', minute:'2-digit', hour12:false }) : '—';

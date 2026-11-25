@@ -102,3 +102,5 @@
 - 2026-11-25 保養通知車牌由本人限定 driver_service_notifications 讀取排程凍結車牌／原 vehicle_id；不能猜為目前配車或恢復下載全部車輛。導航地址使用廠商管理 insurance_partners.address。新照片儀表位置為 odometer，四輪＋儀表必備、工單可明確尚未取得，SQL trigger／RPC 與前端需一致，舊完成紀錄不重判。照片 Modal 上傳中鎖定並轉圈，表單本文獨立捲動、底部送出保持可見，重試不得清除已存照片。班表 freeze 偏好按帳號保存，凍結第一列與前三欄；表頭鏡像須在離頁清除，不新增內部垂直捲軸，右鍵只用原快捷選單。後台品牌列顯示員工部門／職稱，不能以顯示名稱取代真正權限。
 
 - 車輛履歷 serviceRecords 的按需依賴必須含 bom_parts／bom_packages，工單可讀最小選項欄位但不因此開 BOM 管理權。零件搜尋採保修廠優先排序，不能先限制供應商而隱藏其他符合結果；規格關鍵字支援大小寫／全形／空白。需測乾淨登入直進履歷搜尋，不能先進 BOM 頁暖快取。
+
+- 車輛／駕駛管理即時搜尋保留IME組字、focus／游標及既有條件，使用已載資料，不為每個按鍵下載全量。司機UI遵守docs/DRIVER_UI_GUIDELINES.md與driver-ui.css集中tokens；body.is-driver-session限制作用域，後台／登入不混用，位置圖／日期格／頭像保持語意例外。航班announce_driver只接受boolean並保存R2 announceDriver；無聲意為播報航班但不念姓名，抵達／取消與MP3／瀏覽器fallback一致。舊watch預設有姓名，舊客戶端省略模式不能覆蓋已選模式；重選用ETag，保留createdAt／事件，事件後不可改，不改來源快取與名單輪詢頻率。

@@ -11,6 +11,7 @@ const { pathToFileURL } = require('node:url');
   assert.match(arrivalAnnouncement(watch), /已抵達桃園機場第一航廈/);
   assert.match(arrivalAnnouncement(watch), /C，I，七，零，二/);
   assert.doesNotMatch(arrivalAnnouncement({ ...watch, flight: {} }), /航廈|undefined|null/);
+  assert.doesNotMatch(arrivalAnnouncement({...watch,announceDriver:false}),/測試司機|undefined|null/);assert.match(arrivalAnnouncement({...watch,announceDriver:false}),/第一航廈/);assert.match(arrivalAnnouncement({...watch,announceDriver:true}),/測試司機/);assert.doesNotMatch(flightAnnouncement({...watch,announceDriver:false,cancelledAt:123}),/測試司機/);
   const cancelled={...watch,id:'test',cancelledAt:123};
   assert.match(flightAnnouncement(cancelled),/航班已取消/);
   assert.doesNotMatch(flightAnnouncement(cancelled),/已抵達|準備聯繫客戶與出發/);

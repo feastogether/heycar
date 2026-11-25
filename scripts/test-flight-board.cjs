@@ -17,7 +17,7 @@ class Bucket {
   const {flightBoard,flightKey,mapArrival,parseCsv}=await load('cloudflare/flight-board.js');
   assert.equal(flightKey('CI 0001'),'CI1');assert.equal(flightKey('5J0310'),'5J310');
   assert.equal(parseCsv('\uFEFFa,b\r\n"a,b","c""d"\r\n')[0].b,'c"d');
-  const date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
+  const date=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date(Date.now()+3600000));
   const pending={'方向':'A','航空公司代碼':'CI','班次':'0001','航空公司中文':'測試航空','表訂日期':date+'+08:00','表訂時間':'23:50:00+08:00','預計日期':date+'+08:00','預計時間':'23:45:00+08:00','航班動態中文':'預計已抵達','往來地點中文':'測試城市','航廈':'T2'};
   pending['預計時間']=new Date(Date.now()+3600000).toLocaleTimeString('en-GB',{timeZone:'Asia/Taipei',hour12:false})+'+08:00';
   assert.equal(mapArrival(pending).landed,false);assert.equal(mapArrival({...pending,'備註':'已到','航班動態中文':'抵達機坪'}).landed,true);
@@ -44,6 +44,7 @@ class Bucket {
     assert.equal((await call({...follow,driver_name:'偽造姓名'}, {'x-afide-session':'driver'})).status,200);
     assert.equal(sourceCalls,1,'shared feed cache');
     let snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(snapshot.status,200);assert.equal(snapshot.data.watches.length,1);assert.equal(snapshot.data.watches[0].driverName,'合成司機');assert.equal(snapshot.data.marquee[0],'電視專用跑馬燈');
+    const created=snapshot.data.watches[0].createdAt;assert.equal((await call({...follow,announce_driver:'false'},{'x-afide-session':'driver'})).status,400);assert.equal((await call({...follow,announce_driver:false},{'x-afide-session':'driver'})).status,200);let silent=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(silent.data.watches[0].announceDriver,false);assert.equal(silent.data.watches[0].createdAt,created);assert.equal((await call(follow,{'x-afide-session':'driver'})).status,200);silent=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(silent.data.watches[0].announceDriver,false,'legacy retry preserves explicit silent choice');await call({...follow,announce_driver:true},{'x-afide-session':'driver'});
     const beforePulse=restCalls;const immediate=await call({action:'pulse'},{'x-board-token':pair.data.token});assert.equal(immediate.data.watches.length,1,'follow is visible on the next lightweight pulse');assert.equal(restCalls,beforePulse,'pulse only reads R2');assert.equal(sourceCalls,1,'pulse cannot download flight source');
     const before=restCalls;await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(restCalls,before,'paired TV refresh must not reread Supabase');
     await call({action:'unfollow',flight_no:'CI1',date},{'x-afide-session':'other'});snapshot=await call({action:'snapshot'},{'x-board-token':pair.data.token});assert.equal(snapshot.data.watches.length,1,'another driver cannot remove watch');

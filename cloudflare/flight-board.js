@@ -161,12 +161,16 @@ export async function flightBoard(request, env) {
     const id = await hash(`${actor.driver_id}|${date}|${flightNo}`), key = `${PREFIX}watches/${date}/${id}`;
     if (body.action === 'unfollow') { await env.ATTACHMENTS.delete(key); return reply({ ok: true }); }
     if (body.action !== 'follow') return reply({ error: 'UNKNOWN_ACTION' }, 400);
+    if(body.announce_driver!==undefined&&typeof body.announce_driver!=='boolean')return reply({error:'請選擇有聲或無聲追蹤'},400);
     const feed = await arrivals(env), flight = feed.flights.find(f => f.date === date && f.flightNo === flightNo);
     if (!flight || flight.landed || flight.cancelled) return reply({ error: '航班已抵達、取消或尚未公布，無法新增追蹤' }, 409);
     const driver = (await rest(env, 'drivers', { id: `eq.${actor.driver_id}`, select: 'name', limit: '1' }))[0];
     if (!driver) return reply({ error: '找不到司機資料' }, 403);
-    const watch = { id, flightNo, date, driverName: clean(driver.name).slice(0, 60), createdAt: Date.now() };
-    await env.ATTACHMENTS.put(key, JSON.stringify(watch), { onlyIf: { etagDoesNotMatch: '*' }, customMetadata: { watch: JSON.stringify(watch) } });
-    return reply({ ok: true, id });
+    const existing=await env.ATTACHMENTS.get(key),prior=existing?await existing.json():null;
+    if(prior&&(prior.landedAt||prior.cancelledAt))return reply({error:'航班事件已開始播報，無法變更追蹤方式'},409);
+    const watch = { ...(prior||{}),id, flightNo, date, driverName: clean(driver.name).slice(0, 60),announceDriver:body.announce_driver??prior?.announceDriver??true,createdAt:prior?.createdAt||Date.now() };
+    const saved=await env.ATTACHMENTS.put(key, JSON.stringify(watch), { onlyIf: existing?{etagMatches:existing.etag}:{etagDoesNotMatch:'*'}, customMetadata: { watch: JSON.stringify(watch) } });
+    if(!saved)return reply({error:'追蹤狀態已更新，請再選一次'},409);
+    return reply({ ok: true, id,announce_driver:watch.announceDriver });
   } catch(error) {if(/^(尚未設定|請確認|請上傳|請輸入|語音|音檔|檔案|播報|廣播|今日|公告照片|MP3)/.test(error?.message||''))return reply({error:error.message},409);if(error?.message==='INVALID_SETTINGS')return reply({error:'請確認跑馬燈最多20則、每則500字；公告最多12則，標題100字、內容2000字。'},400); const code=/^(SOURCE_[A-Z0-9_]+|RESPONSE_TOO_LARGE)$/.test(error?.message||'')?error.message:'BOARD_'+stage.toUpperCase();console.warn(JSON.stringify({event:'flight_board_error',code}));return reply({ error: '航班看板暫時無法連線，請稍後重試',code }, 503); }
 }
