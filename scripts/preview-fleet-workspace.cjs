@@ -16,6 +16,7 @@ const end = backend.indexOf("function dispatchImportDriver", start);
 assert(start >= 0 && end > start);
 function persistFixture() { if (!process.argv.includes("--check")) fs.writeFileSync(fixturePath,JSON.stringify(fixture)); }
 const staffUsers = fixture.staff_users ||= [];
+let officeOrders;const getOfficeOrders=()=>officeOrders ||= require("./preview-office-orders-db.cjs")(staffUsers);
 const admin = { id: "local-review", name: "整合預覽", is_super_admin: true, active: true, permissions: {} };
 const a = fixture.dealers.find(item => item.name === "亞菲得股份有限公司");
 const b = fixture.dealers.find(item => item.name === "士弘國際租賃有限公司");
@@ -457,6 +458,7 @@ async function request(req, res) {
       }
       return send(res,result.body,result.status);
     }
+    if(require('../supabase/functions/data-api/office-operations.mjs').officeActions.includes(body.action)){const result=await getOfficeOrders().handle(body,session);return send(res,result.body,result.status);}
     if (reporting.actions.includes(body.action)) {
       if(['load_driver_reporting','driver_roster_stamp'].includes(body.action)){await reporting.syncCalendar(fixture.calendar||[]);await reporting.syncVehicles(fixture.vehicles||[]);}
       const result = await reporting.handle(body, session);
@@ -675,6 +677,7 @@ async function request(req, res) {
       };
       if(session.session_type==='admin'&&['home','view'].includes(body.scope)){const views=require('../supabase/functions/data-api/workspace-query.mjs').workspaceViews;const selected=views[body.scope==='home'?'home':body.view]||[];response.data=Object.fromEntries(Object.entries(response.data).filter(([table])=>selected.includes(table)));}
       if(body.scope==='view'&&!['drivers','driverOnboarding'].includes(body.view)&&response.data.drivers){response.data.drivers=response.data.drivers.map(row=>Object.fromEntries(['id','name','phone','dealer_partner_id','fleet_name','driver_status','updated_at',...(['vehicles','vehicleLoans'].includes(body.view)?['photo_url']:[])].map(key=>[key,row[key]])));response.partial_tables=['drivers'];}
+      if(session.session_type==='admin'&&body.scope==='home')response.navigation=(await getOfficeOrders().rpc('office_navigation_read')).data;
       return send(res,response);
     }
     return send(res, {error:"本機預覽尚未支援此操作"},400);

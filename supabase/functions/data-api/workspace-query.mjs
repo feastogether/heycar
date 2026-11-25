@@ -2,6 +2,7 @@
 const vehicle=['vehicles','vehicle_types','drivers','insurance_partners'];
 const fleet=[...vehicle,'vehicle_service_records','calendar_events','maintenance_notifications','maintenance_notification_batches'];
 export const workspaceViews={
+ mealOrdering:[],navigationManagement:[],
  home:['admin_users','staff_announcements','staff_calendar_events','staff_notes'],
  vehicles:vehicle,drivers:[...vehicle],driverOnboarding:[...vehicle,'admin_users'],vehicleTypes:['vehicle_types'],
  dispatchCenter:[...vehicle,'dispatch_orders'],calendar:[...vehicle,'calendar_events','maintenance_notifications'],

@@ -1,0 +1,7 @@
+const fs=require('fs'),{PGlite}=require('../.fleet-preview/node_modules/@electric-sql/pglite'),{createOfficeHandler,officeActions}=require('../supabase/functions/data-api/office-operations.mjs');
+module.exports=function(staff=[]){const db=new PGlite(),ready=(async()=>{await db.waitReady;await db.exec('create role anon;create role authenticated;create role service_role;');await db.exec(fs.readFileSync('supabase/migrations/20261125010000_office_meals_navigation.sql','utf8'));})();
+const signature={office_meal_shop:["uuid"],office_meal_read:['uuid'],office_meal_write:['text','jsonb','jsonb','uuid'],office_navigation_read:[],office_navigation_save:['jsonb','integer','jsonb']};
+const rpc=async(name,args={})=>{await ready;try{const types=signature[name];if(!types)throw Error('Unsupported RPC');const values=Object.values(args).map((v,i)=>types[i]==='jsonb'?JSON.stringify(v):v);return{data:(await db.query('select public.'+name+'('+types.map((t,i)=>'$'+(i+1)+'::'+t).join(',')+')as result',values)).rows[0].result};}catch(e){return{error:{code:e.code,message:e.message}};}};
+const handle=createOfficeHandler({db:{rpc,from:()=>({select(){return this;},eq(k,v){this.id=v;return this;},maybeSingle(){return Promise.resolve({data:staff.find(s=>s.id===this.id)||null});}})}});
+return{actions:officeActions,handle,rpc,query:async(sql,args=[])=>{await ready;return db.query(sql,args);},close:async()=>{await ready;await db.close();}};
+};

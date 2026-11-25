@@ -48,6 +48,11 @@ export function createDriverReportingHandler({ db, adminCan }) {
       rpc = 'driver_reporting_review';
       args = { p_id: body.id, p_status: body.status, p_reason: String(body.reason || '').trim(), p_revision: body.revision, p_actor: actor };
     }
+    if(body.action==='load_driver_reporting'&&!driver&&body.roster===true){
+      if(body.known!==undefined&&body.known!==''&&!/^[a-f0-9]{32}$/.test(body.known))return fail('班表版本格式錯誤');
+      const result=await db.rpc('driver_roster_page',{p_month:month+'-01',p_known:body.known||null});
+      return result.error?fail(result.error.message,503):{body:{data:result.data},status:200};
+    }
     const { data, error } = await db.rpc(rpc, args);
     if (error) {
       if (['42883','42P01','PGRST202'].includes(error.code)) return fail('司機報班尚未完成資料庫安裝，請先套用本機 migration',503);

@@ -1,3 +1,4 @@
+import {createOfficeHandler,officeActions} from './office-operations.mjs';
 import {createVehicleChangeHandler,vehicleChangeActions} from './vehicle-changes.mjs';
 import {validDriverRegionChange} from './driver-regions.mjs';
 import {createStaffManagementHandler} from './staff-management.mjs';
@@ -486,7 +487,9 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
     if (!data?.active) throw new Error("ADMIN_DISABLED");
     adminProfile = { ...adminProfile, ...data, permissions:await effectiveStaffPermissions(data), is_super_admin: false };
   }
-  return { data: result, admin_profile: adminProfile,partial_tables:scope==='view'&&!["drivers","driverOnboarding"].includes(view)&&Object.hasOwn(result,"drivers")?["drivers"]:[] };
+  const navigation=scope==='home'?await db.rpc('office_navigation_read'):null;
+  if(navigation?.error)throw navigation.error;
+  return { data: result,...(navigation?{navigation:navigation.data}:{}), admin_profile: adminProfile,partial_tables:scope==='view'&&!["drivers","driverOnboarding"].includes(view)&&Object.hasOwn(result,"drivers")?["drivers"]:[] };
 }
 
 async function effectiveStaffPermissions(profile:Record<string,unknown>) {
@@ -1662,6 +1665,7 @@ Deno.serve(async (req) => {
       const result = await createOnboardingHandler({db,adminCan})(body,session);
       return json(result.body,result.status);
     }
+    if(officeActions.includes(body.action)){const result=await createOfficeHandler({db})(body,session);return json(result.body,result.status);}
     if(vehicleChangeActions.includes(body.action)){const response=await createVehicleChangeHandler({db,adminCan,sign:signStorageUrls})(body,session);return json(response.body,response.status);}
     if (["cancel_service_schedule", "save_service_schedule", "sync_service_schedule", "complete_service_schedule", "load_avatar_profiles", "save_own_avatar"].includes(body.action)) {
       const result = await createEmployeeWorkflowHandler({db,adminCan})(body,session);

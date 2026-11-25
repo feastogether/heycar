@@ -148,6 +148,8 @@ function fixture(adminCode = "unit-secure-admin", bindings = {}) {
     validDriverRegionChange:require('../supabase/functions/data-api/driver-regions.mjs').validDriverRegionChange,
     vehicleChangeActions:require('../supabase/functions/data-api/vehicle-changes.mjs').vehicleChangeActions,
     createVehicleChangeHandler:require('../supabase/functions/data-api/vehicle-changes.mjs').createVehicleChangeHandler,
+    officeActions:require('../supabase/functions/data-api/office-operations.mjs').officeActions,
+    createOfficeHandler:require('../supabase/functions/data-api/office-operations.mjs').createOfficeHandler,
     ...bindings,
   });
   return {
