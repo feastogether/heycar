@@ -437,8 +437,13 @@
     localStorage.setItem("afide-session", JSON.stringify({ type, user, token, adminProfile }));
   }
 
+  function viewStateIdentity(){
+    return state.admin?'admin:'+(state.adminProfile?.is_super_admin?'super-admin':state.adminProfile?.id||'unknown'):state.partner?'partner:'+state.partner.id:state.user?'driver:'+state.user.id:'';
+  }
+
   function currentViewState() {
     return {
+      identity:viewStateIdentity(),
       type: state.admin ? "admin" : state.partner ? "partner" : state.user ? "driver" : "",
       view: state.view,
       adminView: state.adminView,
@@ -456,13 +461,16 @@
 
   function saveViewState() {
     if (!state.user && !state.admin && !state.partner) return;
-    localStorage.setItem("afide-view-state", JSON.stringify(currentViewState()));
+    const value=JSON.stringify(currentViewState());
+    try{sessionStorage.setItem("afide-tab-view-state",value);}catch{}
+    try{localStorage.setItem("afide-view-state",value);}catch{}
   }
 
   function restoreViewState(type) {
     try {
-      const saved = JSON.parse(localStorage.getItem("afide-view-state") || "{}");
-      if (!saved || saved.type !== type) return;
+      let raw;try{raw=sessionStorage.getItem("afide-tab-view-state");}catch{}
+      const saved = JSON.parse(raw||localStorage.getItem("afide-view-state")||"{}");
+      if (!saved || saved.type !== type || saved.identity&&saved.identity!==viewStateIdentity()) return;
       if (saved.view) state.view = saved.view;
       if (saved.adminView) state.adminView = ({ fleetOperations: "idleManagement", calendar: "maintenanceManagement",
         maintenanceNotifications: "maintenanceManagement" })[saved.adminView] || saved.adminView;
@@ -502,6 +510,7 @@
   function clearSession() {
     localStorage.removeItem("afide-session");
     localStorage.removeItem("afide-view-state");
+    try{sessionStorage.removeItem("afide-tab-view-state");}catch{}
   }
 
   function restoreSession() {
@@ -516,7 +525,7 @@
         state.user = null;
         state.partner = null;
         restoreViewState("admin");
-        state.adminView = initialAdminView || "home";
+        state.adminView = initialAdminView || state.adminView || "home";
         return;
       }
       if (saved.type === "partner" && saved.user) {
