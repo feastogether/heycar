@@ -434,6 +434,10 @@ async function loadAdminData(session: Record<string, unknown>, scope = "all", di
       result[table] = data || [];
       return;
     }
+    // Work-order entry may read BOM choices without granting BOM management writes.
+    if(scope==='view'&&view==='serviceRecords'&&['bom_parts','bom_packages'].includes(table)&&await adminCan(session,'serviceRecords')){
+      result[table]=await dispatchRows(table,table==='bom_parts'?'id,supplier,part_no,name,unit_price':'id,supplier,package_code,content,price');return;
+    }
     if (permission && !(await adminCan(session, permission))) {
       if (["vehicles", "drivers", "insurance_partners"].includes(table) &&
           ((await adminCan(session, "maintenanceNotifications")) || (await adminCan(session, "calendar")))) {

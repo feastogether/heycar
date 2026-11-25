@@ -671,7 +671,7 @@ async function request(req, res) {
       const vehicles = dealer ? fixture.vehicles.filter(item => item.dealer_partner_id === partner.id) : fixture.vehicles;
       const requests = dealer ? insuranceCases.filter(item => item.dealer_partner_id === partner.id).map(sanitizeDealerInsuranceRequest) : insuranceCases;
       const response = {
-        data: { vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers,staff_departments:fixture.staff_departments||[],staff_job_titles:fixture.staff_job_titles||[],vehicle_types:fixture.vehicle_types||[],feedbacks:fixture.feedbacks||[],marquee_messages:fixture.marquee_messages||[],insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
+        data: { bom_parts:fixture.bom_parts||[],bom_packages:fixture.bom_packages||[],vehicles, drivers: reporting.drivers, insurance_partners: directory, admin_users: staffUsers,staff_departments:fixture.staff_departments||[],staff_job_titles:fixture.staff_job_titles||[],vehicle_types:fixture.vehicle_types||[],feedbacks:fixture.feedbacks||[],marquee_messages:fixture.marquee_messages||[],insurance_requests: requests, vehicle_loans: partner ? [] : (fixture.vehicle_loans||[]), key_access_codes: partner ? [] : (fixture.key_access_codes||[]),
           calendar_events: partner ? [] : fixture.calendar, vehicle_service_records: partner ? [] : fixture.baselines, maintenance_notifications: partner ? [] : notifications },
         ...(partner ? { partner } : { admin_profile: admin }),
       };

@@ -6,7 +6,7 @@ export const workspaceViews={
  home:['admin_users','staff_announcements','staff_calendar_events','staff_notes'],
  vehicles:vehicle,drivers:[...vehicle],driverOnboarding:[...vehicle,'admin_users'],vehicleTypes:['vehicle_types'],
  dispatchCenter:[...vehicle,'dispatch_orders'],calendar:[...vehicle,'calendar_events','maintenance_notifications'],
- serviceRecords:[...fleet],maintenanceManagement:fleet,idleManagement:fleet,fleetOperations:fleet,
+ serviceRecords:[...fleet,'bom_parts','bom_packages'],maintenanceManagement:fleet,idleManagement:fleet,fleetOperations:fleet,
  fleetCases:['insurance_partners','vehicles','drivers'],fleetPolicies:['vehicles','insurance_partners'],
  insuranceCenter:[...vehicle,'insurance_requests'],insurancePartners:['insurance_partners'],
  vehicleLoans:[...vehicle,'vehicle_loans','key_access_codes'],payments:[],

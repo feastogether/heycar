@@ -9284,20 +9284,15 @@
   }
 
   function searchBomParts(query, supplier) {
-    const keyword = normalizedText(query);
-    if (!keyword) return [];
-    const normalizedSupplier = normalizedText(supplier);
-    const rows = (state.data.bom_parts || []).filter((item) => item.active !== false);
-    const supplierRows = normalizedSupplier ? rows.filter((item) => normalizedText(item.supplier) === normalizedSupplier) : rows;
-    const source = supplierRows.length ? supplierRows : rows;
-    return source
-      .filter((item) => normalizedText(item.part_no).includes(keyword) || normalizedText(item.name).includes(keyword))
-      .sort((a, b) => {
-        const aExact = normalizedText(a.part_no) === keyword || normalizedText(a.name) === keyword ? 0 : 1;
-        const bExact = normalizedText(b.part_no) === keyword || normalizedText(b.name) === keyword ? 0 : 1;
-        return aExact - bExact || String(a.part_no || "").localeCompare(String(b.part_no || ""), "zh-Hant");
-      })
-      .slice(0, 30);
+    const normalize=value=>normalizedText(String(value??'').normalize('NFKC'));
+    const keyword=normalize(query);if(!keyword)return [];
+    const normalizedSupplier=normalize(supplier);
+    return (state.data.bom_parts||[]).filter(item=>item.active!==false)
+      .filter(item=>normalize(item.part_no).includes(keyword)||normalize(item.name).includes(keyword))
+      .sort((a,b)=>{
+        const rank=item=>[normalizedSupplier&&normalize(item.supplier)!==normalizedSupplier?1:0,normalize(item.part_no)===keyword||normalize(item.name)===keyword?0:1];
+        const x=rank(a),y=rank(b);return x[0]-y[0]||x[1]-y[1]||String(a.part_no||'').localeCompare(String(b.part_no||''),'zh-Hant');
+      }).slice(0,30);
   }
 
   function applyBomPartToServiceRow(row, part) {
@@ -9327,7 +9322,7 @@
         <div>
           <small>BOM 零件搜尋</small>
           <h3>${escapeHtml(query)}</h3>
-          <p>${supplier ? `已優先比對 ${escapeHtml(supplier)} 的零件庫` : "從全部供應商零件庫搜尋"}</p>
+          <p>${supplier ? `優先顯示 ${escapeHtml(supplier)}，並列出其他供應商符合的零件` : "從全部供應商零件庫搜尋"}</p>
         </div>
         <button class="icon-close-btn" data-close-modal aria-label="關閉"><svg viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
       </div>
