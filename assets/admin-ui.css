@@ -21,3 +21,12 @@ body:has(.admin-shell) .modal-actions>.error{flex:1 1 100%;margin:0}
 @media(max-width:600px){.admin-workspace .section-head{gap:10px}.admin-workspace .section-head h2{font-size:20px}.admin-workspace .section-head>.actions{gap:6px}.admin-workspace .section-head>.actions>button{font-size:12px;padding:7px 9px}body:has(.admin-shell) .modal-backdrop>.modal:has(.modal-form){width:calc(100vw - 20px)}body:has(.admin-shell) :is(.modal-form-body,.modal-title,.modal-actions){padding:14px}}
 
 .vehicle-last-use{display:block;font-size:11px;color:#7b8795;line-height:1.7;margin-top:4px}
+
+.admin-workspace .driver-management-toolbar{display:grid;grid-template-columns:auto minmax(170px,1fr) minmax(140px,210px) auto;gap:10px;align-items:center;margin:0 0 12px}
+.admin-workspace .driver-management-toolbar h2{font-size:22px;white-space:nowrap;margin:0 6px 0 0}
+.admin-workspace .driver-management-toolbar>input,.admin-workspace .driver-management-toolbar>select{width:100%;min-width:0;height:38px}
+.admin-workspace .driver-management-toolbar>.actions{display:flex;flex-wrap:nowrap;gap:8px;margin:0;width:auto}
+.admin-workspace .driver-management-toolbar .actions button{width:auto;min-height:38px}
+@media(max-width:650px){.admin-workspace .driver-management-toolbar{grid-template-columns:minmax(0,1fr) auto;gap:8px}.admin-workspace .driver-management-toolbar h2{font-size:18px;grid-column:1;grid-row:1}.admin-workspace .driver-management-toolbar>.actions{grid-column:2;grid-row:1;gap:5px}.admin-workspace .driver-management-toolbar>.actions button{padding:7px 8px;font-size:12px}.admin-workspace .driver-management-toolbar>input{grid-column:1;grid-row:2}.admin-workspace .driver-management-toolbar>select{grid-column:2;grid-row:2;max-width:170px}}
+
+@media(min-width:651px){.admin-workspace .driver-management-toolbar>h2{grid-column:1;grid-row:1}.admin-workspace .driver-management-toolbar>input{grid-column:2;grid-row:1}.admin-workspace .driver-management-toolbar>select{grid-column:3;grid-row:1}.admin-workspace .driver-management-toolbar>.actions{grid-column:4;grid-row:1}}

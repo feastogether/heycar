@@ -2141,12 +2141,24 @@ Deno.serve(async (req) => {
     }
     if (session.session_type === "partner") return json({ error: "ACTION_NOT_ALLOWED" }, 403);
 
-if(body.table==='drivers'&&['insert','update'].includes(body.action)&&!validDriverRegionChange(body.record||{})){
+if(body.table==='drivers'&&['insert','update'].includes(body.action)&&Object.hasOwn(body.record||{},'national_id')&&!String(body.record.national_id||'').trim())body.record.national_id=null;
+    if(body.table==='drivers'&&['insert','update'].includes(body.action)&&!validDriverRegionChange(body.record||{})){
       let previous;if(body.action==='update'){const {data:current,error}=await db.from('drivers').select('region').eq('id',body.id).single();if(error)throw error;previous=current?.region;}
       if(!validDriverRegionChange(body.record||{},previous))return json({error:'區域只能選擇北部、中部、南部、花東或其他'},400);
     }
     if (body.action === "insert") {
       body.record = body.record || {};
+      if (body.table === "drivers") {
+        body.record.name = String(body.record.name || "").trim();
+        body.record.phone = String(body.record.phone || "").trim();
+        if (!body.record.name || !body.record.phone || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(String(body.record.dealer_partner_id || ""))) return json({error:"請填寫姓名、手機並選擇所屬車隊／車商"},400);
+        const {data:dealer,error:dealerError}=await db.from('insurance_partners').select('id,name,active,partner_type').eq('id',body.record.dealer_partner_id).single();
+        if(dealerError)throw dealerError;
+        if(!dealer||dealer.active===false||dealer.partner_type!=='dealer')return json({error:"請選擇啟用中的所屬車隊／車商"},400);
+        body.record.fleet_name=dealer.name;
+        body.record.national_id=String(body.record.national_id||'').trim()||null;
+        body.record.driver_status=body.record.driver_status||'待上線';
+      }
       const linePushEnabled = body.record?.line_push_enabled !== false && body.record?.line_push_enabled !== "false";
       delete body.record.line_push_enabled;
       if (body.table === "key_access_codes") {

@@ -581,7 +581,7 @@ async function request(req, res) {
     if (body.action === "load_maintenance_notifications" && session.session_type === "admin") {
       return send(res, { data: { maintenance_notifications: notifications, maintenance_notification_batches: [] } });
     }
-    const writable = { payment_notices:fixture.payment_notices||=[], calendar_events: fixture.calendar, vehicle_service_records: fixture.baselines, insurance_partners: directory,
+    const writable = { drivers:reporting.drivers,payment_notices:fixture.payment_notices||=[], calendar_events: fixture.calendar, vehicle_service_records: fixture.baselines, insurance_partners: directory,
       maintenance_notifications: notifications, admin_users: staffUsers };
     if (Object.hasOwn(writable, body.table) && ["insert", "update", "delete"].includes(body.action)) {
       if (session.session_type !== "admin") return send(res, { error: "ADMIN_PERMISSION_DENIED" }, 403);
@@ -623,13 +623,20 @@ async function request(req, res) {
         record.vendor_partner_id = shop[0]?.id || null;
       }
       if (body.action === "insert") {
+        if(body.table==='drivers'){
+          const dealer=directory.find(d=>d.id===record.dealer_partner_id&&d.active!==false&&d.partner_type==='dealer');
+          if(!String(record.name||'').trim()||!String(record.phone||'').trim()||!dealer)return send(res,{error:'請填寫姓名、手機並選擇所屬車隊／車商'},400);
+          record.national_id=String(record.national_id||'').trim()||null;record.fleet_name=dealer.name;record.driver_status||='待上線';
+        }
         if(body.table==='vehicle_service_records' && record.service_schedule_id) {
           const event=fixture.calendar.find(row=>row.id===record.service_schedule_id);
           if(!event?.completed_at||event.vehicle_id!==record.vehicle_id||event.service_record_id)return send(res,{error:'此排程尚未完成或已登打工單'},409);
         }
         const row = { ...record, id: randomUUID() };
         if(body.table==='vehicle_service_records' && record.service_schedule_id)fixture.calendar.find(event=>event.id===record.service_schedule_id).service_record_id=row.id;
-        rows.push(row);persistFixture();
+        rows.push(row);
+        if(body.table==='drivers'){fixture.drivers=rows;await reporting.query('insert into drivers(id,name,dealer_partner_id,fleet_name,driver_status)values($1,$2,$3,$4,$5)',[row.id,row.name,row.dealer_partner_id,row.fleet_name,row.driver_status]);}
+        persistFixture();
         return send(res, { data: row });
       }
       const index = rows.findIndex(row => row.id === body.id);

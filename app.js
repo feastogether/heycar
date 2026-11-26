@@ -5710,7 +5710,11 @@
 
   function groupedAdminNav(nav) {
     const byKey = Object.fromEntries(nav.map((item) => [item[0], item]));
-    const configured=state.navigation?.config?.groups,groups=Array.isArray(configured)?configured.map(g=>[g.title,g.keys]):adminNavDepartments;
+    const configured=state.navigation?.config?.groups,groups=Array.isArray(configured)?configured.map(g=>[g.title,[...g.keys]]):adminNavDepartments;
+    if (!groups.some(([, keys]) => keys.includes('driverOffboarding'))) {
+      const group = groups.find(([, keys]) => keys.includes('driverOnboarding'));
+      if (group) group[1].splice(group[1].indexOf('driverOnboarding') + 1, 0, 'driverOffboarding');
+    }
     const seen=new Set(groups.flatMap(g=>g[1]));const missing=nav.map(x=>x[0]).filter(k=>!seen.has(k));
     return [...groups,...(missing.length?[['其他功能',missing]]:[])].map(([department, keys]) => {
       const items = keys.map((key) => byKey[key]).filter(Boolean);
@@ -6343,17 +6347,17 @@
       return result;
     }, {});
     return `
-      <div class="section-head"><h2>駕駛管理</h2><div class="actions"><button class="ghost-btn" data-export="drivers">匯出 Excel</button><button class="primary-btn" data-modal="driver">新增駕駛</button></div></div>
+
+      <form id="driverSearchForm" class="driver-search-bar driver-management-toolbar admin-toolbar">
+        <h2>駕駛管理</h2>
+        <input name="search" type="search" aria-label="搜尋駕駛" value="${escapeHtml(state.driverSearch || "")}" placeholder="姓名、手機、車牌或區域">
+        <select aria-label="所屬車商篩選" data-driver-dealer-filter>${dealerPartnerOptions(state.driverDealerFilter, "全部車商").map(([value,label])=>`<option value="${escapeHtml(value)}" ${value === state.driverDealerFilter ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select>
+        <div class="actions">${state.driverSearch ? `<button class="ghost-btn" type="button" data-action="clear-driver-search" aria-label="清除搜尋">×</button>` : ""}<button class="primary-btn" type="button" data-modal="driver">新增駕駛</button><button class="ghost-btn" type="button" data-export="drivers">匯出 Excel</button></div>
+      </form>
       <div class="driver-filter-bar" aria-label="駕駛狀態篩選">
         <span>狀態篩選</span>
         ${filters.map((status) => `<button class="filter-btn ${state.driverStatusFilter === status ? "active" : ""}" data-driver-filter="${status}">${status}<b>${status === "全部" ? drivers.length : (counts[status] || 0)}</b></button>`).join("")}
       </div>
-      <form id="driverSearchForm" class="driver-search-bar">
-        <label class="driver-dealer-filter">所屬車商<select aria-label="所屬車商篩選" data-driver-dealer-filter>${dealerPartnerOptions(state.driverDealerFilter, "全部車商").map(([value,label])=>`<option value="${escapeHtml(value)}" ${value === state.driverDealerFilter ? "selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
-        <input name="search" type="search" value="${escapeHtml(state.driverSearch || "")}" placeholder="\u641c\u5c0b\u59d3\u540d\u3001\u96fb\u8a71\u3001\u8eca\u724c\u3001\u5340\u57df\u6216\u7de8\u7d44">
-        <button class="primary-btn" type="submit">\u641c\u5c0b</button>
-        ${state.driverSearch ? `<button class="ghost-btn" type="button" data-action="clear-driver-search">\u6e05\u9664</button>` : ""}
-      </form>
       ${driverManagementRows()}
     `;
   }
@@ -8048,6 +8052,10 @@
         render();
         if (keyCodeMessage) await showAlert(keyCodeMessage, "取鑰密碼");
         if (pushMessage) await showAlert(pushMessage, "LINE 推播結果");
+        if (type === "driver" && saved) {
+          const missing = driverMissingDocuments(saved);
+          if (missing.length) await showAlert("資料已儲存。尚未上傳：" + missing.join("、") + "。請依實際適用項目補齊；缺文件不影響本次建檔。", "缺少文件提醒");
+        }
       } catch (err) {
         const message = err.message || err;
         const inlineError = form.querySelector(".modal-save-error");
@@ -8069,6 +8077,7 @@
     if (tableName === "drivers") {
       blankToNull(record, [
         "dealer_partner_id",
+        "national_id",
         "license_expiry",
         "license_review_date",
         "license_valid_until",
@@ -8370,8 +8379,8 @@
     return `<div class="field full"><label>${label}</label><textarea name="${name}">${escapeHtml(value)}</textarea></div>`;
   }
 
-  function select(name, label, value, options) {
-    return `<div class="field"><label>${label}</label><select name="${name}">${options.map(([v, t]) => `<option value="${escapeHtml(v)}" ${value === v ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select></div>`;
+  function select(name, label, value, options, required = false) {
+    return `<div class="field"><label>${label}</label><select name="${name}" ${required ? "required" : ""}>${options.map(([v, t]) => `<option value="${escapeHtml(v)}" ${value === v ? "selected" : ""}>${escapeHtml(t)}</option>`).join("")}</select></div>`;
   }
 
   function checkbox(name, label, checked = true) {
@@ -9038,6 +9047,15 @@
     `;
   }
 
+  function driverMissingDocuments(driver = {}) {
+    let ids = driver.id_card_files; if (typeof ids === "string") { try { ids = JSON.parse(ids); } catch { ids = []; } }
+    const missing = Array.isArray(ids) && ids.some(file => file.url) ? [] : ["身分證正面／反面"];
+    for (const [key, label] of [["license_file", "駕照"], ["police_clearance", "良民證"], ["accident_free", "無肇事證明"], ["custody_contract", "保管合約"], ["contracting_contract", "承攬合約"], ["lease_purchase_contract", "租購合約"]]) {
+      if (!String(driver[key + "_url"] || "").trim()) missing.push(label);
+    }
+    return missing;
+  }
+
   function driverForm(d) {
     const assignedVehicles = d.id ? (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d)) : [];
     return `
@@ -9077,8 +9095,8 @@
       ${input("email", "電子信箱", d.email, "email")}
       ${select("guide_license", "導遊證", d.guide_license || "", [["", "未設定"], ["有", "有"], ["無", "無"]])}
       <div class="form-section-title field full">聯絡與個人資料</div>
-      ${select("dealer_partner_id", "所屬車商", d.dealer_partner_id || "", dealerPartnerOptions(d.dealer_partner_id || ""))}
-      <div class="field"><label>區域</label><select name="region" required><option value="">請選擇區域</option>${["北部","中部","南部","花東","其他"].map(region=>`<option ${d.region===region?"selected":""}>${region}</option>`).join("")}</select></div>
+      ${select("dealer_partner_id", "所屬車隊／車商", d.dealer_partner_id || "", dealerPartnerOptions(d.dealer_partner_id || "", "請選擇所屬車隊／車商"), true)}
+      <div class="field"><label>區域</label><select name="region"><option value="">未設定</option>${d.region && !["北部","中部","南部","花東","其他"].includes(d.region) ? `<option selected value="${escapeHtml(d.region)}">${escapeHtml(d.region)}（原資料）</option>` : ""}${["北部","中部","南部","花東","其他"].map(region=>`<option ${d.region===region?"selected":""}>${region}</option>`).join("")}</select></div>
       ${input("group_name", "編組", d.group_name)}
       ${select("driver_status", "狀態", d.driver_status || "待上線", [["跑趟中", "跑趟中"], ["停派中", "停派中"], ["待上線", "待上線"], ["已離職", "已離職"], ["留停中", "留停中"], ["其他", "其他"]])}
       ${input("service_shift", "服務時段", d.service_shift)}
