@@ -1,60 +1,27 @@
-const fs = require('node:fs');
-const path = require('node:path');
-const vm = require('node:vm');
-const assert = require('node:assert/strict');
-
-const root = path.resolve(__dirname, '..');
-const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
-
-function functionSource(source, name) {
-  const start = source.indexOf(`function ${name}(`);
-  assert(start >= 0, `missing ${name}`);
-  const rest = source.slice(start);
-  const next = rest.slice(1).search(/\n(?:  )?(?:async )?function /);
-  return rest.slice(0, next < 0 ? undefined : next + 1);
-}
-
-async function main() {
-  const state = { data: { login_slogans: [
-    { message: '第二句', active: true, sort_order: 2, created_at: '2026-09-20' },
-    { message: '<第一句>', active: true, sort_order: 1, created_at: '2026-09-19' },
-    { message: '停用句', active: false, sort_order: 0, created_at: '2026-09-20' },
-    { message: '第三句', active: true, sort_order: 3, created_at: '2026-09-18' },
-    { message: '第四句', active: true, sort_order: 4, created_at: '2026-09-17' }
-  ] } };
-  const context = vm.createContext({ state, escapeHtml: value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') });
-  vm.runInContext(functionSource(appSource, 'loginSloganMarkup'), context);
-  const slogans = context.loginSloganMarkup();
-  assert(slogans.includes('&lt;第一句&gt;'));
-  assert(slogans.indexOf('第一句') < slogans.indexOf('第二句'));
-  assert(slogans.includes('第三句'));
-  assert(!slogans.includes('停用句') && !slogans.includes('第四句'));
-
-  const css = fs.readFileSync(path.join(root, 'styles.css'), 'utf8');
-  for (const file of ['login-a350-tail.webp', 'login-cabin.webp', 'login-wing-cloud.webp', 'login-engine-wing.webp']) {
-    assert(css.includes(`./assets/${file}`), `${file} must be referenced`);
-    assert(fs.statSync(path.join(root, 'assets', file)).size < 180000, `${file} is too large`);
+const fs=require('fs'),path=require('path'),http=require('http'),vm=require('vm'),assert=require('assert/strict');
+const {chromium,webkit}=require('playwright');
+const root=path.resolve(__dirname,'..'),source=fs.readFileSync(path.join(root,'app.js'),'utf8');
+function fn(name){const start=source.indexOf('  function '+name+'(');assert(start>=0,name);const next=source.indexOf('\n  function ',start+10);return source.slice(start,next);}
+(async()=>{
+ const ctx=vm.createContext({Intl,Date});vm.runInContext(fn('loginSceneAt'),ctx);
+ for(const [time,key]of[['04:59:59','evening'],['05:00:00','morning'],['11:59:59','morning'],['12:00:00','afternoon'],['17:59:59','afternoon'],['18:00:00','evening'],['23:59:59','evening']]){const value=ctx.loginSceneAt(new Date('2026-11-26T'+time+'+08:00'));assert.equal(value.key,key);assert(value.nextIn>0&&value.nextIn<=11*3600000+100);assert.match(value.greeting,/，歡迎回來$/);}
+ const mime={'.html':'text/html','.js':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.webp':'image/webp','.png':'image/png'};
+ const server=http.createServer((req,res)=>{const pathname=new URL(req.url,'http://local').pathname,p=path.resolve(root,'.'+(pathname==='/'?'/index.html':pathname));if(!p.startsWith(root+path.sep)||!fs.existsSync(p)||!fs.statSync(p).isFile()){res.writeHead(404);res.end();return;}res.setHeader('content-type',mime[path.extname(p)]||'application/octet-stream');fs.createReadStream(p).pipe(res);});await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ const screenshots=path.join(root,'.fleet-preview/login-20261126');fs.mkdirSync(screenshots,{recursive:true});
+ try{for(const engine of [chromium,webkit]){const browser=await engine.launch(engine===chromium?{channel:'msedge',headless:true}:{headless:true});try{
+  for(const [hour,key,greeting]of[[8,'morning','早安，歡迎回來'],[14,'afternoon','午安，歡迎回來'],[20,'evening','晚安，歡迎回來']]){
+   const context=await browser.newContext({timezoneId:'America/Los_Angeles',viewport:{width:1440,height:900}}),page=await context.newPage(),images=[],actions=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
+   await page.clock.install({time:new Date('2026-11-26T'+hour.toString().padStart(2,'0')+':00:00+08:00')});
+   await page.route('**/*',async route=>{const request=route.request(),u=new URL(request.url());if(u.origin!==base)return route.abort();if(u.pathname==='/config.js')return route.fulfill({contentType:'application/javascript',body:"window.AFIDE_CONFIG={DATA_API_URL:'/test-api',STORAGE_API_URL:'/test-storage'};"});if(u.pathname==='/test-api'){const body=request.postDataJSON();actions.push(body.action);if(body.action==='public_login_slogans'){await new Promise(r=>setTimeout(r,600));return route.fulfill({json:{login_slogans:[{message:'安全抵達，從每一次出發開始。',active:true,sort_order:1},{message:'<測試標語>',active:true,sort_order:2}]}});}await new Promise(r=>setTimeout(r,250));return route.fulfill({status:401,json:{error:'LOGIN_FAILED'}});}if(u.pathname.startsWith('/api/'))return route.fulfill({json:{}});if(u.pathname.includes('login-fleet-'))images.push(u.pathname);return route.continue();});
+   await page.goto(base);await page.locator('#loginCode').fill('123456');await page.locator('.login-slogans').filter({hasText:'安全抵達'}).waitFor();assert.equal(await page.locator('#loginCode').inputValue(),'123456','late slogans preserve input');assert.equal(await page.locator('.login-slogans img').count(),0);assert.equal(await page.locator('#loginTitle').textContent(),greeting);assert.equal(await page.locator('.modern-air-login').getAttribute('data-login-period'),key);assert(images.every(p=>p.includes(key)),'only selected period downloaded');assert.equal(new Set(images).size,1,'desktop loads one background');
+   for(const [width,height]of[[320,568],[390,844],[430,932],[768,1024],[1024,768],[1366,768],[1440,900],[1920,1080]]){await page.setViewportSize({width,height});await page.waitForFunction(()=>document.querySelector('.login-airport-picture img')?.complete);assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no page overflow '+width);const panel=await page.locator('.login-panel').boundingBox(),picture=await page.locator('.login-airport-picture').boundingBox();const layout=await page.locator('.modern-air-login').evaluate(el=>getComputedStyle(el).display);if(layout==='flex'){const header=await page.locator('.login-brand-bar').boundingBox();assert(picture.y>=header.y+header.height-1,'header above mobile photo');assert(panel.y>=picture.y+picture.height+16,'mobile form below all cars '+width);}else{const displayedH=Math.min(picture.height,picture.width*941/1672),fleetTop=picture.y+picture.height-displayedH*.35;assert(panel.y+panel.height<=fleetTop,'desktop form avoids fleet '+width+' '+JSON.stringify({panel,fleetTop}));}const style=await page.locator('.login-panel').evaluate(el=>{const s=getComputedStyle(el);return{s:s.borderTopWidth,r:s.borderRightWidth};});assert.equal(style.s,style.r,'no colored thick top stripe');const logo=await page.locator('.public-brand-lockup img').boundingBox();assert(Math.abs(logo.width-(width<=700?150:174))<1,'existing logo size '+width);assert.equal(await page.locator('#loginCode').evaluate(el=>getComputedStyle(el).fontSize),'16px');if([390,1440].includes(width))await page.screenshot({path:path.join(screenshots,engine.name()+'-'+key+'-'+width+'.png'),fullPage:true});}
+   await page.setViewportSize({width:390,height:430});await page.locator('#loginCode').focus();await page.locator('#loginForm button').scrollIntoViewIfNeeded();assert(await page.locator('#loginForm button').evaluate(el=>{const r=el.getBoundingClientRect();return document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)?.closest('button')===el;}),'button usable with reduced viewport');
+   await page.locator('#loginForm').evaluate(el=>{el.requestSubmit();el.requestSubmit();});await page.locator('.login-submit:disabled').waitFor();await page.locator('.login-submit:not(:disabled)').waitFor();assert.equal(actions.filter(x=>x==='login_admin').length,1,'one login flow despite double submit');assert(await page.locator('.error').isVisible());assert.deepEqual(errors,[]);assert(images.every(p=>p.includes(key)),'no unselected background preloaded');
+   await context.close();
   }
-  const total = ['login-a350-tail.webp', 'login-cabin.webp', 'login-wing-cloud.webp', 'login-engine-wing.webp']
-    .reduce((sum, file) => sum + fs.statSync(path.join(root, 'assets', file)).size, 0);
-  assert(total < 400000, `login backgrounds total ${total} bytes`);
-  assert(css.includes('.login-bg-slides.is-ready .login-bg-cabin'), 'secondary backgrounds must load after first paint');
-
-  const { chromium } = require('playwright');
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
-  try {
-    const page = await browser.newPage();
-    const html = `<div class="login-wrap modern-air-login"><div class="login-bg-slides"><span class="login-bg-slide login-bg-a350"></span></div><header class="login-brand-bar"><div class="login-brand-lockup"><img alt="logo"></div></header><section class="login-panel single-login-panel"><div class="login-card"><div class="login-card-copy"><span class="login-eyebrow">HEY!CAR SERVICE PORTAL</span><h1>歡迎回來</h1>${slogans}</div><form class="form-grid"><div class="field full login-code-field"><label>登入代碼</label><div class="login-input-wrap"><svg></svg><input placeholder="請輸入手機號碼或登入代碼"></div></div><button class="primary-btn field full login-submit">登入系統</button></form></div></section></div>`;
-    for (const width of [320, 390, 430, 1440]) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.setContent(`<style>${css}</style>${html}`);
-      assert(await page.locator('.login-panel').isVisible());
-      assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `login overflow at ${width}`);
-    }
-  } finally {
-    await browser.close();
-  }
-  console.log(`PASS: backend slogans render safely; four rotating WebP backgrounds total ${Math.round(total / 1024)} KB and login fits mobile/desktop`);
-}
-
-main().catch(error => { console.error(error); process.exitCode = 1; });
+  const page=await browser.newPage();await page.clock.install({time:new Date('2026-11-26T11:59:59+08:00')});await page.route('**/config.js*',r=>r.fulfill({contentType:'application/javascript',body:"window.AFIDE_CONFIG={DATA_API_URL:'/test-api'};"}));await page.route('**/test-api',r=>r.fulfill({json:{login_slogans:[]}}));await page.goto(base);await page.locator('#loginCode').fill('987654');await page.clock.runFor(1500);assert.equal(await page.locator('#loginTitle').textContent(),'午安，歡迎回來');assert.equal(await page.locator('#loginCode').inputValue(),'987654','period change preserves draft');await page.close();
+ }finally{await browser.close();}}
+ for(const key of ['morning','afternoon','evening'])for(const suffix of ['', '-small']){const n=fs.statSync(path.join(root,'assets/login-fleet-'+key+suffix+'-20261126.webp')).size;assert(n<(suffix?90000:260000),'image budget '+key+suffix);}
+ console.log('PASS: Taipei greeting boundaries, three time scenes, one selected image, Edge/WebKit responsive fleet-safe forms and unchanged logo, late slogan/draft preservation, time-boundary update, reduced-height touch controls and single login flow');
+ }finally{await new Promise(r=>server.close(r));}
+})().catch(e=>{console.error(e);process.exitCode=1;});

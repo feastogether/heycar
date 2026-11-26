@@ -1,169 +1,55 @@
-/* Shared airport visual and black/gold identity; authentication is unchanged. */
+/* Time-aware fleet login. Header branding and authentication remain shared. */
 .modern-air-login {
-  --login-ink: #211c13;
-  --login-gold: #e0ad48;
-  min-height: 100svh;
-  padding: 122px max(28px, 7vw) 64px;
-  align-items: center;
-  justify-items: start;
-  background: #eee0c4;
+  --login-ink:#292720;
+  --login-gold:#aa936c;
+  min-height:100svh;
+  padding:116px max(28px,7vw) clamp(200px,23vw,320px);
+  align-items:center;
+  justify-items:start;
+  background:#eeeae3;
 }
-.modern-air-login::before {
-  display: none;
+.modern-air-login::before{display:none}
+.modern-air-login::after{inset:86px 0 0;background:linear-gradient(90deg,#faf7ef12,transparent 60%);pointer-events:none}
+.login-airport-picture{position:absolute;inset:86px 0 0;z-index:0}
+.login-airport-picture img{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom}
+.modern-air-login[data-login-period=afternoon]{background:#e8ecee}
+.modern-air-login[data-login-period=evening]{background:#323c4c}
+.modern-air-login .login-brand-bar{background:#fffdf8;border-color:#eee8de;backdrop-filter:none}
+.modern-air-login .single-login-panel{width:min(340px,100%);background:rgba(253,251,247,.94);border:1px solid #ded8cd;border-radius:13px;box-shadow:0 9px 30px #29251b18;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.modern-air-login .login-card{padding:24px}
+.modern-air-login .login-card-copy{gap:6px;margin-bottom:16px}
+.modern-air-login .login-eyebrow{color:#776f60;font-size:10px;letter-spacing:.07em;font-weight:600}
+.modern-air-login .login-card-copy h1{color:var(--login-ink);font-size:22px;font-weight:650;line-height:1.4;letter-spacing:0;margin:0}
+.modern-air-login .login-slogans{color:#756e63;font-size:12px;font-weight:400;line-height:1.7;min-height:0;margin-top:4px;overflow-wrap:anywhere}
+.modern-air-login .login-slogans-loading{min-height:12px}
+.modern-air-login #loginForm{gap:12px}
+.modern-air-login .login-input-wrap{min-height:44px;padding:0 10px;grid-template-columns:18px minmax(0,1fr);gap:6px;border:1px solid #dbd7d0;background:#fffdfb;border-radius:8px;box-shadow:none}
+.modern-air-login .login-input-wrap:focus-within{border-color:#ac9570;box-shadow:0 0 0 3px #b09a7424}
+.modern-air-login .login-input-wrap svg{width:18px;height:18px;stroke:#968771}
+.modern-air-login .login-input-wrap input{height:42px;min-height:0;color:var(--login-ink);font-size:16px;font-weight:400}
+.modern-air-login .login-input-wrap input::placeholder{color:#928b80;font-size:13px;font-weight:400}
+.modern-air-login .login-submit{min-height:44px;height:auto;padding:10px 14px;margin:0;border-radius:8px;background:#aa936c;border:1px solid #aa936c;color:#fff;font-size:14px;line-height:22px;font-weight:600;box-shadow:none}
+.modern-air-login .login-submit:hover{background:#97805c;border-color:#97805c;color:#fff}
+.modern-air-login .login-submit:focus-visible{outline:3px solid #7d6948;outline-offset:3px}
+.modern-air-login .login-submit:disabled{opacity:.65;cursor:wait}
+.modern-air-login .login-loading-panel,.modern-air-login .login-line-note{color:#695b45;border-color:#ded5c6;background:#faf6ee;font-size:12px}
+.modern-air-login .login-security-note{left:max(28px,7vw);right:auto;bottom:16px;color:#514b42;text-shadow:0 1px 5px #fff9}
+.modern-air-login[data-login-period=evening] .login-security-note{color:#f2ece2;text-shadow:0 1px 5px #17202d}
+@media(max-width:1000px),(max-aspect-ratio:6/5){
+  .modern-air-login{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:0 0 24px;background:#f6f3ed;overflow:visible}
+  .modern-air-login[data-login-period=afternoon],.modern-air-login[data-login-period=evening]{background:#f6f3ed}
+  .modern-air-login::after{display:none}
+  .modern-air-login .login-brand-bar{position:relative;order:-1;flex:0 0 auto;width:100%;min-height:86px}
+  .login-airport-picture{position:relative;inset:auto;display:block;width:100%;flex:0 0 auto;aspect-ratio:1672/941}
+  .login-airport-picture img{height:auto;aspect-ratio:1672/941;object-fit:contain}
+  .modern-air-login .single-login-panel{flex:0 0 auto;width:min(340px,calc(100% - 40px));margin:22px 20px 0;background:#fdfbf8;border-color:#e1dbd1;box-shadow:0 5px 22px #38302209}
+  .modern-air-login .login-card{padding:22px}
+  .modern-air-login .login-card-copy h1{font-size:21px}
+  .modern-air-login .login-security-note,.modern-air-login[data-login-period=evening] .login-security-note{position:static;transform:none;left:auto;right:auto;width:auto;margin:22px 16px 0;text-align:center;color:#8b8377;text-shadow:none;font-size:10px}
 }
-.modern-air-login::after {
-  inset: 86px 0 0;
-  background: linear-gradient(
-    90deg,
-    rgba(250, 244, 227, 0.28),
-    transparent 62%
-  );
-}
-.login-airport-picture {
-  position: absolute;
-  inset: 86px 0 0;
-  z-index: 0;
-}
-.login-airport-picture img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-}
-.modern-air-login .login-brand-bar {
-  background: #fffdf8;
-  border-color: #e6ddc9;
-  backdrop-filter: none;
-}
-.modern-air-login .login-brand-lockup img {
-  width: 172px;
-  height: auto;
-}
-.modern-air-login .single-login-panel {
-  width: min(420px, 100%);
-  background: rgba(255, 253, 247, 0.97);
-  border: 1px solid #e6d9bb;
-  border-top: 4px solid var(--login-gold);
-  border-radius: 24px;
-  box-shadow: 0 22px 70px #46381d29;
-  backdrop-filter: blur(8px);
-}
-.modern-air-login .login-card {
-  padding: 36px;
-}
-.modern-air-login .login-eyebrow {
-  color: #87611d;
-  letter-spacing: 0.12em;
-}
-.modern-air-login .login-card-copy h1 {
-  color: var(--login-ink);
-  font-size: 32px;
-}
-.modern-air-login .login-slogans {
-  color: #756b57;
-  font-weight: 500;
-}
-.modern-air-login .login-input-wrap {
-  border-color: #e4d9c2;
-  background: #fff;
-  border-radius: 12px;
-  box-shadow: none;
-}
-.modern-air-login .login-input-wrap:focus-within {
-  border-color: #ac7c23;
-  box-shadow: 0 0 0 3px #e0ad4829;
-}
-.modern-air-login .login-input-wrap svg {
-  stroke: #95783f;
-}
-.modern-air-login .login-input-wrap input {
-  color: var(--login-ink);
-}
-.modern-air-login .login-input-wrap input::placeholder {
-  color: #948a77;
-  font-size: 14px;
-}
-.modern-air-login .login-submit {
-  color: var(--login-ink);
-  background: var(--login-gold);
-  border: 1px solid var(--login-gold);
-  border-radius: 999px;
-  box-shadow: none;
-  min-height: 52px;
-}
-.modern-air-login .login-submit:hover {
-  background: #d2a03e;
-  color: #211c13;
-}
-.modern-air-login .login-submit:focus-visible {
-  outline: 3px solid #805b18;
-  outline-offset: 4px;
-}
-.modern-air-login .login-submit:disabled {
-  opacity: 0.65;
-  cursor: wait;
-}
-.modern-air-login .login-loading-panel {
-  color: #69532a;
-  border-color: #e5d6b5;
-  background: #fcf6e9;
-}
-.modern-air-login .login-line-note {
-  color: #69532a;
-  background: #f9f0da;
-  border-color: #e5d6b5;
-}
-.modern-air-login .login-security-note {
-  left: max(28px, 7vw);
-  right: auto;
-  color: #51432d;
-  text-shadow: 0 1px 8px #fffc;
-}
-@media (max-width: 700px) {
-  .modern-air-login {
-    padding: 104px 16px 58px;
-    align-items: end;
-    justify-items: center;
-  }
-  .login-airport-picture {
-    inset: 82px 0 0;
-  }
-  .login-airport-picture img {
-    object-position: 64% top;
-  }
-  .modern-air-login::after {
-    inset: 82px 0 0;
-    background: linear-gradient(
-      180deg,
-      transparent 10%,
-      #f8edda33 45%,
-      #f8edda88
-    );
-  }
-  .modern-air-login .login-brand-lockup img {
-    width: 152px;
-  }
-  .modern-air-login .single-login-panel {
-    width: min(390px, 100%);
-  }
-  .modern-air-login .login-card {
-    padding: 28px 22px;
-  }
-  .modern-air-login .login-card-copy h1 {
-    font-size: 28px;
-  }
-  .modern-air-login .login-security-note {
-    left: 50%;
-    width: calc(100% - 24px);
-    bottom: 20px;
-  }
-}
-@media (max-height: 600px) and (min-width: 701px) {
-  .modern-air-login {
-    padding-block: 110px 52px;
-  }
-}
+@media(max-width:700px){.modern-air-login .login-brand-bar{min-height:82px}.modern-air-login .login-card{padding:20px}.modern-air-login .login-card-copy h1{font-size:20px}.modern-air-login .login-input-wrap input::placeholder{font-size:12px}}
+@media(max-height:740px)and(min-width:1001px){.modern-air-login{padding-top:106px;padding-bottom:200px}}
+
 .modern-air-login .cute-car-body {
   background: linear-gradient(135deg, #b88629, #edc775);
 }

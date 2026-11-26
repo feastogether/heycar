@@ -651,7 +651,10 @@
       const result = await apiRequest("public_login_slogans");
       state.data = state.data && Object.keys(state.data).length ? state.data : emptyData();
       state.data.login_slogans = result.login_slogans || [];
-      if (!state.user && !state.admin && !state.partner) renderLogin();
+      if (!state.user && !state.admin && !state.partner) {
+        const old = document.querySelector('.modern-air-login .login-slogans');
+        if (old) old.outerHTML = loginSloganMarkup();
+      }
     } catch (error) {
       console.warn("Login slogans unavailable", error);
     }
@@ -1899,12 +1902,38 @@
     return `<div class="marquee-alert"><div class="marquee-track"><span>${text}</span><span>${text}</span><span>${text}</span><span>${text}</span></div></div>`;
   }
 
+  // All clients use Taiwan time; only the selected static image is requested.
+  let loginSceneTimer;
+  function loginSceneAt(now = new Date()) {
+    const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(now).filter(p => p.type !== 'literal').map(p => [p.type, Number(p.value)]));
+    const hour = parts.hour;
+    const key = hour >= 5 && hour < 12 ? 'morning' : hour >= 12 && hour < 18 ? 'afternoon' : 'evening';
+    const nextHour = hour < 5 ? 5 : hour < 12 ? 12 : hour < 18 ? 18 : 29;
+    return { key, greeting: ({ morning: '早安', afternoon: '午安', evening: '晚安' })[key] + '，歡迎回來', nextIn: ((nextHour - hour) * 3600 - parts.minute * 60 - parts.second) * 1000 - now.getMilliseconds() + 100 };
+  }
+
+  function refreshLoginScene() {
+    clearTimeout(loginSceneTimer);
+    const root = document.querySelector('.modern-air-login[data-login-period]');
+    if (!root) return;
+    const scene = loginSceneAt();
+    if (root.dataset.loginPeriod !== scene.key) {
+      root.dataset.loginPeriod = scene.key;
+      root.querySelector('#loginTitle').textContent = scene.greeting;
+      root.querySelector('picture source').srcset = './assets/login-fleet-' + scene.key + '-small-20261126.webp';
+      root.querySelector('picture img').src = './assets/login-fleet-' + scene.key + '-20261126.webp';
+    }
+    loginSceneTimer = setTimeout(refreshLoginScene, scene.nextIn);
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshLoginScene(); });
+
   function renderLogin() {
     loadPublicLoginSlogans();
     const loadingText = "正在驗證登入身分";
+    const scene = loginSceneAt();
     app.innerHTML = `
-      <div class="login-wrap modern-air-login">
-        <picture class="login-airport-picture" aria-hidden="true"><source media="(max-width:700px)" srcset="./assets/hiring-airport-mobile.webp"><img src="./assets/hiring-airport-hero.webp" alt="" width="1600" height="700" fetchpriority="high" decoding="async"></picture>
+      <div class="login-wrap modern-air-login" data-login-period="${scene.key}">
+        <picture class="login-airport-picture" aria-hidden="true"><source media="(max-width:700px)" srcset="./assets/login-fleet-${scene.key}-small-20261126.webp"><img src="./assets/login-fleet-${scene.key}-20261126.webp" alt="" width="1672" height="941" fetchpriority="high" decoding="async"></picture>
         <header class="login-brand-bar">
           <div class="login-brand-lockup">
             ${publicBrandMarkup()}
@@ -1915,7 +1944,7 @@
           <div class="login-card">
             <div class="login-card-copy">
               <span class="login-eyebrow">HEY!CAR SERVICE PORTAL</span>
-              <h1 id="loginTitle">歡迎回來</h1>
+              <h1 id="loginTitle">${scene.greeting}</h1>
               ${loginSloganMarkup() || `<div class="login-slogans login-slogans-loading" aria-hidden="true"><span></span></div>`}
             </div>
             <form id="loginForm" class="form-grid ${state.loginLoading ? "is-loading" : ""}">
@@ -1939,6 +1968,7 @@
         <small class="login-security-note">安全連線 · 亞菲得車隊營運系統</small>
       </div>
     `;
+    refreshLoginScene();
   }
 
   function renderDriver() {
