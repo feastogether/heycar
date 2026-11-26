@@ -141,7 +141,7 @@
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261125-5"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261125-7"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261126-6"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261126-8"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -917,6 +917,7 @@
   }
 
   async function insert(table, record) {
+    if(table==="insurance_partners")window.HeycarDriverReporting?.invalidate();
     if(table==='payment_notices')window.HeycarPayments?.invalidate();
     const item = { id: uid(), created_at: now(), ...record };
     if (hasApi && state.apiSession) {
@@ -934,6 +935,7 @@
   }
 
   async function update(table, id, patch, options = {}) {
+    if(table==="insurance_partners")window.HeycarDriverReporting?.invalidate();
     if(table==='payment_notices')window.HeycarPayments?.invalidate();
     const item = { ...patch, updated_at: now() };
     if (hasApi && state.apiSession) {
@@ -2075,6 +2077,7 @@
       back:()=>{state.view="home";render();}, driver, roster:!driver&&state.adminView==="driverRoster", identity: driver ? `driver:${state.user.id}` : `admin:${currentAdminChatId()}:${state.adminView==="driverRoster"?"roster":"reporting"}`,
       api: apiRequest, confirm: showConfirm, prompt: showPrompt, alert: showAlert,
       changeVehicles: !driver&&adminCan("vehicles")?openVehicleChanges:null,
+      manageDealers: !driver&&adminCan('insurancePartners') ? ()=>document.querySelector('[data-admin-view="insurancePartners"]')?.click() : null,
       editSchedule: !driver&&adminCan('calendar') ? async id=>{
         const session=state.apiSession,view=state.adminView;
         await ensureAdminWorkspaceData('calendar');
@@ -2214,7 +2217,6 @@
     if (!dealer || dealer.partner_type !== "dealer" || dealer.active === false) return false;
     let permissions = dealer.frontend_permissions;
     if (typeof permissions === "string") { try { permissions = JSON.parse(permissions); } catch { permissions = {}; } }
-    if (dealer.name !== "亞菲得股份有限公司") return false;
     return Object.prototype.hasOwnProperty.call(permissions || {}, "driverReporting")
       ? permissions.driverReporting === true : dealer.name === "亞菲得股份有限公司";
   }
@@ -6989,11 +6991,11 @@
       <div class="vehicle-toolbar">
         <div><h2>車輛管理</h2><small>共 ${vehicles.length} 輛符合條件</small></div>
         <form id="vehicleSearchForm" class="vehicle-search-bar">
-          <input name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="搜尋車牌、品牌、車款或駕駛" autocomplete="off">
-          <select name="status"><option value="">全部狀態</option>${statuses.map((value) => `<option ${state.vehicleStatusFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
-          <select name="dealer"><option value="">全部車商</option>${dealers.map((dealer) => `<option value="${dealer.id}" ${state.vehicleDealerFilter === dealer.id ? "selected" : ""}>${escapeHtml(dealer.name)}</option>`).join("")}</select>
-          <select name="region"><option value="">全部區域</option>${regions.map((value) => `<option ${state.vehicleRegionFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
-          <select name="fuel"><option value="">全部油品</option>${fuels.map((value) => `<option ${state.vehicleFuelFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <input aria-label="搜尋車輛" name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="搜尋車牌、品牌、車款或駕駛" autocomplete="off">
+          <select aria-label="車輛狀態篩選" name="status"><option value="">全部狀態</option>${statuses.map((value) => `<option ${state.vehicleStatusFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select aria-label="所屬車商篩選" name="dealer"><option value="">全部車商</option>${dealers.map((dealer) => `<option value="${dealer.id}" ${state.vehicleDealerFilter === dealer.id ? "selected" : ""}>${escapeHtml(dealer.name)}</option>`).join("")}</select>
+          <select aria-label="車輛區域篩選" name="region"><option value="">全部區域</option>${regions.map((value) => `<option ${state.vehicleRegionFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select aria-label="油品篩選" name="fuel"><option value="">全部油品</option>${fuels.map((value) => `<option ${state.vehicleFuelFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
           <button class="primary-btn" type="submit">套用篩選</button>
           <button class="ghost-btn" type="button" data-action="clear-vehicle-search">重設</button>
         </form>

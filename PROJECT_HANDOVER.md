@@ -1,5 +1,14 @@
 # HEYCAR 專案交接文件
 
+## 2026-11-26 車輛篩選與多車商報班（目前最新）
+
+正式Worker `83dfb056-7680-4e64-aeec-90e8c642802c`，app／admin-ui／driver-reporting JS與CSS版本20261126-8；increment 20261126060000已套用。這次只部署前端與SQL，不重部署未變data-api／Storage。車輛篩選移除誤套共用flex，改回響應式grid，六尺寸欄位不溢出、38px一致。
+
+最新要求取代「後台僅亞菲得」：報班／班表列所有啟用dealer的待上線／跑趟中，兩頁車商下拉含零人公司，班表條件按帳號記憶。後台提前排班與司機前台開關分離；廠商管理的driverReporting個別開關現在支援其他車商，預設與既有狀態不變，原共用月份開放／禁休／送出鎖定不變。齒輪捷徑按insurancePartners權限顯示；廠商儲存會invalidate快取，stamp含報班開關。新目錄RPC只回最小資料、限service_role；司機只讀本人，沒有其他公司目錄。
+
+副本演練及正式全部public原資料雜湊守衛通過，兩頁正式指定車商均18位；沒有改權限、休假、配車或重播私單。Edge/WebKit車輛六尺寸、多車商篩選／開關／快取／零人公司、53人完整班表及既有業務回歸通過。五資產雜湊、正式角色／頁面查核通過，臨時session已清除。詳見docs/2026-11-26-vehicle-filters-reporting-dealers.md。
+
+
 ## 2026-11-26 三欄駕駛建檔與操作列（目前最新）
 
 已發布Worker `eba84d42-0d19-4093-b6ee-19990e841861`、data-api及增量 `20261126050000_driver_optional_identity`，app／admin-ui.css 20261126-7。新增駕駛只需姓名、手機、所屬車隊／車商，區域及證件選填；national_id改可NULL但保留非空唯一約束，前後端明確空字串轉NULL，不製造假身分號。後端核對啟用dealer並帶fleet_name，既有資料未提供欄位不清空，舊區域可原樣保留。新增／編輯成功後彈出缺少附件提醒，實際適用合約後補。

@@ -5,10 +5,10 @@
 .admin-workspace .section-head>h2,.admin-workspace .section-head>div:first-child{margin:0;min-width:0}
 .admin-workspace .section-head>.actions{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:8px;margin:0 0 0 auto;align-items:center;width:auto}
 .admin-workspace .section-head>.actions>button{width:auto;flex:0 0 auto;margin:0}
-.admin-workspace :is(.driver-search-bar,.vehicle-search-bar,.filter-row,.filter-bar){display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
-.admin-workspace :is(.driver-search-bar,.vehicle-search-bar,.filter-row,.filter-bar)>:is(button,input,select,label){min-width:0;margin:0}
-.admin-workspace :is(.driver-search-bar,.vehicle-search-bar)>input[type=search]{flex:1 1 220px}
-.admin-workspace :is(.driver-search-bar,.vehicle-search-bar) label{flex:0 1 220px}
+.admin-workspace :is(.driver-search-bar,.filter-row,.filter-bar){display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
+.admin-workspace :is(.driver-search-bar,.filter-row,.filter-bar)>:is(button,input,select,label){min-width:0;margin:0}
+.admin-workspace :is(.driver-search-bar)>input[type=search]{flex:1 1 220px}
+.admin-workspace :is(.driver-search-bar) label{flex:0 1 220px}
 .admin-workspace :is(.driver-search-bar,.vehicle-search-bar) :is(input,select){height:38px;min-height:38px;font-size:14px;border-radius:9px;box-sizing:border-box}
 body:has(.admin-shell) :is(.modal-backdrop>.modal,dialog[open]){border-radius:14px;border:1px solid #dce3eb;box-shadow:0 14px 55px #21324729;color:#263748;max-height:calc(100dvh - 32px)}
 body:has(.admin-shell) .modal-backdrop>.modal:has(.modal-form){width:min(920px,calc(100vw - 32px))}
@@ -30,3 +30,11 @@ body:has(.admin-shell) .modal-actions>.error{flex:1 1 100%;margin:0}
 @media(max-width:650px){.admin-workspace .driver-management-toolbar{grid-template-columns:minmax(0,1fr) auto;gap:8px}.admin-workspace .driver-management-toolbar h2{font-size:18px;grid-column:1;grid-row:1}.admin-workspace .driver-management-toolbar>.actions{grid-column:2;grid-row:1;gap:5px}.admin-workspace .driver-management-toolbar>.actions button{padding:7px 8px;font-size:12px}.admin-workspace .driver-management-toolbar>input{grid-column:1;grid-row:2}.admin-workspace .driver-management-toolbar>select{grid-column:2;grid-row:2;max-width:170px}}
 
 @media(min-width:651px){.admin-workspace .driver-management-toolbar>h2{grid-column:1;grid-row:1}.admin-workspace .driver-management-toolbar>input{grid-column:2;grid-row:1}.admin-workspace .driver-management-toolbar>select{grid-column:3;grid-row:1}.admin-workspace .driver-management-toolbar>.actions{grid-column:4;grid-row:1}}
+
+/* Vehicle filters require a grid: generic flex plus width:100% made each select occupy a row. */
+.admin-workspace .vehicle-toolbar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px 14px;align-items:center;min-width:0}
+.admin-workspace .vehicle-toolbar>.actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;margin:0;min-width:0}
+.admin-workspace #vehicleSearchForm{display:grid;grid-column:1/-1;grid-row:2;grid-template-columns:minmax(180px,1.6fr) repeat(4,minmax(105px,1fr)) auto auto;gap:8px;align-items:center;min-width:0;margin:0}
+.admin-workspace #vehicleSearchForm>:is(input,select,button){grid-column:auto;min-width:0;width:100%;height:38px;box-sizing:border-box;margin:0}
+@media(max-width:1050px){.admin-workspace #vehicleSearchForm{grid-template-columns:repeat(4,minmax(0,1fr))}.admin-workspace #vehicleSearchForm>input{grid-column:span 2}}
+@media(max-width:650px){.admin-workspace .vehicle-toolbar{grid-template-columns:minmax(0,1fr)}.admin-workspace .vehicle-toolbar>.actions{grid-column:1;justify-content:flex-start}.admin-workspace .vehicle-toolbar>.actions button{font-size:12px;padding:7px 9px}.admin-workspace #vehicleSearchForm{grid-row:auto;grid-template-columns:repeat(2,minmax(0,1fr))}.admin-workspace #vehicleSearchForm>input{grid-column:1/-1}.admin-workspace .vehicle-toolbar h2{font-size:20px}}
