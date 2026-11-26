@@ -1904,6 +1904,7 @@
 
   // All clients use Taiwan time; only the selected static image is requested.
   let loginSceneTimer;
+  let loginRenderSignature;
   function loginSceneAt(now = new Date()) {
     const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(now).filter(p => p.type !== 'literal').map(p => [p.type, Number(p.value)]));
     const hour = parts.hour;
@@ -1921,7 +1922,7 @@
       root.dataset.loginPeriod = scene.key;
       root.querySelector('#loginTitle').textContent = scene.greeting;
       root.querySelector('picture source').srcset = './assets/login-fleet-' + scene.key + '-small-20261126.webp';
-      root.querySelector('picture img').src = './assets/login-fleet-' + scene.key + '-20261126.webp';
+      root.querySelector('picture img').src = './assets/login-fleet-' + scene.key + '-detail-20261126.webp';
     }
     loginSceneTimer = setTimeout(refreshLoginScene, scene.nextIn);
   }
@@ -1931,16 +1932,21 @@
     loadPublicLoginSlogans();
     const loadingText = "正在驗證登入身分";
     const scene = loginSceneAt();
+    const previous = document.querySelector('.modern-air-login');
+    const signature = JSON.stringify([state.loginLoading, state.error || '', state.lineBindingMessage || '']);
+    if (previous && signature === loginRenderSignature) { refreshLoginScene(); return; }
+    loginRenderSignature = signature;
+    const entering = !previous;
     app.innerHTML = `
       <div class="login-wrap modern-air-login" data-login-period="${scene.key}">
-        <picture class="login-airport-picture" aria-hidden="true"><source media="(max-width:700px)" srcset="./assets/login-fleet-${scene.key}-small-20261126.webp"><img src="./assets/login-fleet-${scene.key}-20261126.webp" alt="" width="1672" height="941" fetchpriority="high" decoding="async"></picture>
+        <picture class="login-airport-picture" aria-hidden="true"><source media="(max-width:700px)" srcset="./assets/login-fleet-${scene.key}-small-20261126.webp"><img src="./assets/login-fleet-${scene.key}-detail-20261126.webp" alt="" width="1672" height="941" fetchpriority="high" decoding="async"></picture>
         <header class="login-brand-bar">
           <div class="login-brand-lockup">
             ${publicBrandMarkup()}
           </div>
           <span></span>
         </header>
-        <section class="login-panel single-login-panel" aria-labelledby="loginTitle">
+        <section class="login-panel single-login-panel${entering ? ' login-panel-entering' : ''}" aria-labelledby="loginTitle">
           <div class="login-card">
             <div class="login-card-copy">
               <span class="login-eyebrow">HEY!CAR SERVICE PORTAL</span>
