@@ -12,3 +12,5 @@
 - 新功能遵守上述元件結構；舊專屬介面保留其必要資料密度，不為統一而刪掉操作或資訊。
 
 駕駛管理採 `.driver-management-toolbar.admin-toolbar`：桌面標題／搜尋／下拉／actions一排，而不是兩顆按鈕雖並排卻仍獨占一個區塊。手機兩排（標題＋actions，搜尋＋下拉）；測試要比較搜尋和按鈕的bounding box位置，不能只驗證按鈕彼此對齊。
+
+車輛管理依最新要求使用單列 `.vehicle-management-toolbar` grid：搜尋180／140px、狀態／區域／油品短欄、車商160／130px及全部操作同排，38px高。窄螢幕可單一橫滑該列，不把操作拆到上方；動作按鈕type=button、套用才submit，重繪保留橫滑位置。

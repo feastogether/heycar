@@ -124,3 +124,5 @@
 
 - 車輛篩選vehicle-search-bar必須使用專用grid，不能再被一般flex＋100%寬input/select規則污染；六種寬度驗證每欄實際邊界及高度，不只看class。
 - 多車商報班／班表後台提前排程與司機自助開放分開：後台列所有啟用dealer的待上線／跑趟中；前台沿用frontend_permissions.driverReporting（亞菲得預設true、其他需opt-in），不可重新硬編公司名拒絕其他已開公司。公司選單含零人車商；本人API不可回其他人或車商目錄。既有共用月份限制及送出鎖定不變，關閉前台不刪休假。廠商儲存需invalidate班表快取，stamp含個別報班開關；不要新增全量輪詢。
+
+- 車輛管理最新要求為搜尋／四下拉／套用／重設／列表／圖像／匯出／換車／新增全在同一列，不能再拆上方操作列。搜尋與短下拉縮寬，38px高；桌面1024px起完整顯示，窄螢幕只橫滑工具列且保留scrollLeft。使用專用grid，不恢復先前多列vehicle-toolbar規格；五個動作必須type=button，避免放入form後誤觸提交。

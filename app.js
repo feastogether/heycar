@@ -6219,6 +6219,7 @@
   function renderAdmin() {
     const sidebarScroll = document.querySelector(".side-nav")?.scrollTop || 0;
     const sidebarOuterScroll = document.querySelector(".admin-sidebar")?.scrollTop || 0;
+    const vehicleToolbarScroll = document.querySelector(".vehicle-toolbar-compact")?.scrollLeft || 0;
     const nav = [
       ["home", "首頁", "🏠", ""],
       ["adminUsers", "員工管理", "👥", "super"],
@@ -6328,6 +6329,8 @@
     const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
+    const vehicleToolbar = document.querySelector(".vehicle-toolbar-compact");
+    if (vehicleToolbar) vehicleToolbar.scrollLeft = vehicleToolbarScroll;
     const noticeRoot=document.getElementById('staffNotificationRoot');if(noticeRoot)ensureOptionalLibrary('notifications').then(()=>{if(noticeRoot.isConnected)window.HeycarStaffNotifications.mountBell(noticeRoot,{api:apiRequest,identity:state.apiSession,navigate:view=>document.querySelector('[data-admin-view="'+view+'"]')?.click()});}).catch(()=>{if(noticeRoot.isConnected){noticeRoot.innerHTML='<button class="ghost-btn" type="button" aria-label="通知載入失敗，點選重試">通知重試</button>';noticeRoot.querySelector('button').onclick=render;}});
     if(state.adminView==='adminUsers')window.HeycarStaffManagement.mount(document.getElementById('staffDepartmentsRoot'),{data:state.data,api:apiRequest,catalog:adminPermissionCatalog(),enabled:adminPermissionEnabled,confirm:showConfirm,alert:showAlert,mountNotifications:root=>ensureOptionalLibrary('notifications').then(()=>window.HeycarStaffNotifications.mountManagement(root,{api:apiRequest,users:state.data.admin_users||[],confirm:showConfirm,enabled:adminPermissionEnabled,catalog:{departments:state.data.staff_departments||[]}})),onReload:async()=>{workspaceReady.delete('adminUsers');await ensureAdminWorkspaceData('adminUsers');render();}});
     if(state.adminView==='driverOffboarding')window.HeycarOffboarding.mount(document.getElementById('driverOffboardingRoot'),{api:apiRequest,canApprove:adminCan('driverOffboardingApprove'),alert:showAlert});
@@ -6988,18 +6991,17 @@
     const dealers = dealerPartners();
     const page = fleetListPage(vehicles, state.vehiclePage, 24, "data-vehicle-page");
     return `
-      <div class="vehicle-toolbar">
-        <div><h2>車輛管理</h2><small>共 ${vehicles.length} 輛符合條件</small></div>
-        <form id="vehicleSearchForm" class="vehicle-search-bar">
-          <input aria-label="搜尋車輛" name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="搜尋車牌、品牌、車款或駕駛" autocomplete="off">
-          <select aria-label="車輛狀態篩選" name="status"><option value="">全部狀態</option>${statuses.map((value) => `<option ${state.vehicleStatusFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+      <div class="vehicle-toolbar vehicle-toolbar-compact">
+        <form id="vehicleSearchForm" class="vehicle-search-bar vehicle-management-toolbar" aria-label="車輛管理篩選與操作">
+          <input aria-label="搜尋車輛" name="plate" value="${escapeHtml(state.vehicleSearch)}" placeholder="車牌／車款／司機" autocomplete="off">
+          <select aria-label="車輛狀態篩選" name="status"><option value="">狀態</option>${statuses.map((value) => `<option ${state.vehicleStatusFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
           <select aria-label="所屬車商篩選" name="dealer"><option value="">全部車商</option>${dealers.map((dealer) => `<option value="${dealer.id}" ${state.vehicleDealerFilter === dealer.id ? "selected" : ""}>${escapeHtml(dealer.name)}</option>`).join("")}</select>
-          <select aria-label="車輛區域篩選" name="region"><option value="">全部區域</option>${regions.map((value) => `<option ${state.vehicleRegionFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
-          <select aria-label="油品篩選" name="fuel"><option value="">全部油品</option>${fuels.map((value) => `<option ${state.vehicleFuelFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select aria-label="車輛區域篩選" name="region"><option value="">區域</option>${regions.map((value) => `<option ${state.vehicleRegionFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
+          <select aria-label="油品篩選" name="fuel"><option value="">油品</option>${fuels.map((value) => `<option ${state.vehicleFuelFilter === value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>
           <button class="primary-btn" type="submit">套用篩選</button>
           <button class="ghost-btn" type="button" data-action="clear-vehicle-search">重設</button>
+          <div class="actions"><button type="button" class="ghost-btn ${state.vehicleViewMode === "list" ? "active" : ""}" data-vehicle-view="list">列表</button><button type="button" class="ghost-btn ${state.vehicleViewMode === "visual" ? "active" : ""}" data-vehicle-view="visual">圖像</button><button type="button" class="ghost-btn" data-export="vehicles">匯出 Excel</button><button type="button" class="ghost-btn" data-vehicle-changes>換車安排</button><button type="button" class="primary-btn" data-modal="vehicle">新增車輛</button></div>
         </form>
-        <div class="actions"><button class="ghost-btn ${state.vehicleViewMode === "list" ? "active" : ""}" data-vehicle-view="list">列表</button><button class="ghost-btn ${state.vehicleViewMode === "visual" ? "active" : ""}" data-vehicle-view="visual">圖像</button><button class="ghost-btn" data-export="vehicles">匯出 Excel</button><button class="ghost-btn" data-vehicle-changes>換車安排</button><button class="primary-btn" data-modal="vehicle">新增車輛</button></div>
       </div>
       ${state.vehicleViewMode === "visual" ? vehicleManagementCards(page.rows) : vehicleManagementRows(page.rows)}
       ${page.controls}
