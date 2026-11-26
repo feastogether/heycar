@@ -358,6 +358,7 @@ function previewConfig(role) {
     + "document.body.insertAdjacentHTML('afterbegin'," + JSON.stringify(style + nav + '<aside class="local-fleet-preview"><span>報班獨立示範（非正式司機）</span><a href="/?review=driver">司機一</a><a href="/?review=driver2">司機二</a><a href="/?review=otherdriver">其他車商司機</a></aside>') + ");";
 }
 
+let notificationPreview;const getNotifications=()=>notificationPreview ||= require('./preview-notifications-db.cjs')(fixture);
 let staffQueries;
 function getStaff(){return staffQueries||=require("./preview-staff-db.cjs")(fixture);}
 let officeQueries;
@@ -458,6 +459,7 @@ async function request(req, res) {
       }
       return send(res,result.body,result.status);
     }
+    if(require('../supabase/functions/data-api/staff-notifications.mjs').notificationActions.includes(body.action)){const result=await getNotifications().handle(body,session);return send(res,result.body,result.status);}
     if(require('../supabase/functions/data-api/office-operations.mjs').officeActions.includes(body.action)){const result=await getOfficeOrders().handle(body,session);return send(res,result.body,result.status);}
     if (reporting.actions.includes(body.action)) {
       if(['load_driver_reporting','driver_roster_stamp'].includes(body.action)){await reporting.syncCalendar(fixture.calendar||[]);await reporting.syncVehicles(fixture.vehicles||[]);}

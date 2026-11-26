@@ -134,12 +134,13 @@
     const libraries = {
       officeOrders:["HeycarOfficeOrders","./assets/office-orders.js?v=20261125-1"],
       vehicleChanges:["HeycarVehicleChanges","./assets/vehicle-changes.js?v=20261124-7"],
-      staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261121-6"],
+      staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261126-1"],
+      notifications:["HeycarStaffNotifications","./assets/staff-notifications.js?v=20261126-1"],
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261125-5"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261125-7"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261125-5"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261126-1"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -1822,7 +1823,7 @@
               </div>
             </div>
             <div class="userbox">
-              <div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
+              <section id="staffNotificationRoot"></section><div class="airport-weather" id="airportWeather">${weatherMarkup()}</div>
               ${ownAvatarButton()}<button class="ghost-btn" data-action="logout">登出</button>
             </div>
           </header>
@@ -6000,7 +6001,7 @@
     people.sort((a,b) => Number(b.id === me) - Number(a.id === me));
     const dateLabel = new Intl.DateTimeFormat("zh-TW", { timeZone: "Asia/Taipei", month: "long", day: "numeric", weekday: "long" }).format(new Date());
     return `<div class="staff-home">
-      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-welcome-widgets"><section id="officeTodosRoot"></section><aside class="staff-office-weather"><div class="staff-weather-heading"><strong>台中市北區</strong><span>${escapeHtml(dateLabel)}</span></div><div data-office-weather>${officeWeatherMarkup()}</div></aside></div></header>
+      <header class="staff-welcome"><div><h1>HEYCAR · 員工辦公室</h1><p>公司消息、團隊行程與同事聯繫，都在這裡。</p></div><div class="staff-welcome-widgets"><aside class="staff-office-weather"><div class="staff-weather-heading"><strong>台中市北區</strong><span>${escapeHtml(dateLabel)}</span></div><div data-office-weather>${officeWeatherMarkup()}</div></aside></div></header>
       <section class="staff-card staff-people"><div class="staff-section-head"><div><h2>我們的夥伴 <span class="staff-count">${people.length}</span></h2><p>點自己留小紙條，點同事開啟對話</p></div></div>
         <div class="staff-people-list">${people.map(staffPersonMarkup).join("")}</div>
       </section>
@@ -6277,8 +6278,8 @@
     const sidebar = document.querySelector(".side-nav"), sidebarOuter = document.querySelector(".admin-sidebar");
     if (sidebar) sidebar.scrollTop = sidebarScroll;
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
-    if(state.adminView==='home')mountOfficeTodos();
-    if(state.adminView==='adminUsers')window.HeycarStaffManagement.mount(document.getElementById('staffDepartmentsRoot'),{data:state.data,api:apiRequest,catalog:adminPermissionCatalog(),enabled:adminPermissionEnabled,confirm:showConfirm,alert:showAlert,onReload:async()=>{workspaceReady.delete('adminUsers');await ensureAdminWorkspaceData('adminUsers');render();}});
+    const noticeRoot=document.getElementById('staffNotificationRoot');if(noticeRoot)ensureOptionalLibrary('notifications').then(()=>{if(noticeRoot.isConnected)window.HeycarStaffNotifications.mountBell(noticeRoot,{api:apiRequest,identity:state.apiSession,navigate:view=>document.querySelector('[data-admin-view="'+view+'"]')?.click()});}).catch(()=>{if(noticeRoot.isConnected){noticeRoot.innerHTML='<button class="ghost-btn" type="button" aria-label="通知載入失敗，點選重試">通知重試</button>';noticeRoot.querySelector('button').onclick=render;}});
+    if(state.adminView==='adminUsers')window.HeycarStaffManagement.mount(document.getElementById('staffDepartmentsRoot'),{data:state.data,api:apiRequest,catalog:adminPermissionCatalog(),enabled:adminPermissionEnabled,confirm:showConfirm,alert:showAlert,mountNotifications:root=>ensureOptionalLibrary('notifications').then(()=>window.HeycarStaffNotifications.mountManagement(root,{api:apiRequest,users:state.data.admin_users||[],confirm:showConfirm,enabled:adminPermissionEnabled,catalog:{departments:state.data.staff_departments||[]}})),onReload:async()=>{workspaceReady.delete('adminUsers');await ensureAdminWorkspaceData('adminUsers');render();}});
     if(state.adminView==='payments')window.HeycarPayments.mount(document.getElementById('paymentsRoot'),{api:apiRequest,identity:state.apiSession,escapeHtml,fmtDate,table,statusBadge,rowActions,attachmentLink,today,alert:showAlert,onRows:rows=>{state.data.payment_notices=rows;}});
     if(state.adminView==="dispatchCenter")void refreshDispatchDay();
     if(state.adminView==="boardManagement")window.HeycarBoardManagement.mount(document.getElementById("boardManagementRoot"),{token:state.apiSession,confirm:showConfirm});
@@ -6474,7 +6475,7 @@
     const catalog = adminPermissionCatalog();
     return `
       <div class="section-head"><div><h2>員工管理</h2><small>管理員工、部門、職稱與功能權限</small></div><button class="primary-btn" data-modal="adminUser">新增員工</button></div>
-      <div class="staff-management-tabs"><button class="ghost-btn" data-staff-tab="employees" aria-pressed="true">員工管理</button><button class="ghost-btn" data-staff-tab="departments" aria-pressed="false">部門管理</button></div><section id="staffDepartmentsRoot" hidden></section><section data-staff-employees>
+      <div class="staff-management-tabs"><button class="ghost-btn" data-staff-tab="employees" aria-pressed="true">員工管理</button><button class="ghost-btn" data-staff-tab="departments" aria-pressed="false">部門管理</button><button class="ghost-btn" data-staff-tab="notifications" aria-pressed="false">通知管理</button></div><section id="staffDepartmentsRoot" hidden></section><section id="staffNotificationsRoot" hidden></section><section data-staff-employees>
       <div class="access-card-grid">
         ${users.length ? users.map((item) => {
           const department=(state.data.staff_departments||[]).find(row=>row.id===item.department_id),title=(state.data.staff_job_titles||[]).find(row=>row.id===item.job_title_id);

@@ -150,6 +150,8 @@ function fixture(adminCode = "unit-secure-admin", bindings = {}) {
     createVehicleChangeHandler:require('../supabase/functions/data-api/vehicle-changes.mjs').createVehicleChangeHandler,
     officeActions:require('../supabase/functions/data-api/office-operations.mjs').officeActions,
     createOfficeHandler:require('../supabase/functions/data-api/office-operations.mjs').createOfficeHandler,
+    notificationActions:require('../supabase/functions/data-api/staff-notifications.mjs').notificationActions,
+    createNotificationHandler:require('../supabase/functions/data-api/staff-notifications.mjs').createNotificationHandler,
     ...bindings,
   });
   return {

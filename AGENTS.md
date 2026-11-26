@@ -57,7 +57,7 @@
 - 後台按 workspaceViews 白名單讀取各 view 依賴，不得為方便恢復每次全 workspace 查詢。局部資料合併；partial_tables 缺少欄位不是清空，精簡司機資料須使完整頁快取失效。driver／vehicle／vehicleFolder 編輯先 workspace_record 取完整資料，失敗不得以清單內容開表單。
 - 精簡 drivers 投影須保留各 view 實際使用的欄位：vehicles／vehicleLoans 的車輛頭像需 photo_url；其他 view 不必載照片，更不能為修頭像改回全量 drivers 或帶入身分證／駕照附件。測試實際投影與瀏覽器圖片載入，不只檢查 HTML 有 img。
 - 費用使用 office_payment_page 真正資料庫篩選／分頁與全符合範圍統計，不可只將當頁當總額；保留穩定排序、頁碼界線、原始 request 與快取失效。唯讀 RPC 僅 service_role 可執行，data-api 另驗證 admin 與功能權限。
-- 首頁待辦只用天氣左邊的同尺寸小框顯示名稱與總數，不展開明細；點擊只刷新數字。待辦按現有權限與業務狀態產生，不能自動改案件或臆造負責人；已繳待核對不當作繳款逾期，保養完成待補工單不自動寫履歷。
+- 2026-11-26 最新要求已取代舊首頁待辦框：提醒改為後台上方小鈴鐺與數字，點開查看；首頁不再掛 officeTodosRoot。員工管理／通知管理僅最高管理員設定，未設定員工預設無通知，最高管理員可看十類；通知設定與實際功能權限取交集，不能順便授權功能。department 模式仍不與 personal OR 合併。設定採 revision CAS 與 audit，不改員工登入碼、權限或既有業務資料。
 - 選用功能 JS 經 ensureOptionalLibrary 去重／延後載入，保留失敗重試；新增依賴必須同時檢查首次開啟、直接連結及手機。首次首頁不得預載檢查、報班、點數等不相干模組。
 
 - 員工管理沿用 adminUsers 相容鍵，僅最高管理員可管理員工／部門／職稱。既有 personal 權限不因分部門而覆蓋；department 模式只沿用部門，不與個人權限 OR 合併；後端必須與登入 profile 使用同一 effectiveStaffPermissions。部門／職稱 soft delete、有員工使用時禁止刪除、revision CAS、員工 expected_updated_at、欄位白名單與 audit 不得移除；audit 不存登入碼雜湊、extension 或頭像原始內容。
@@ -104,3 +104,7 @@
 - 車輛履歷 serviceRecords 的按需依賴必須含 bom_parts／bom_packages，工單可讀最小選項欄位但不因此開 BOM 管理權。零件搜尋採保修廠優先排序，不能先限制供應商而隱藏其他符合結果；規格關鍵字支援大小寫／全形／空白。需測乾淨登入直進履歷搜尋，不能先進 BOM 頁暖快取。
 
 - 車輛／駕駛管理即時搜尋保留IME組字、focus／游標及既有條件，使用已載資料，不為每個按鍵下載全量。司機UI遵守docs/DRIVER_UI_GUIDELINES.md與driver-ui.css集中tokens；body.is-driver-session限制作用域，後台／登入不混用，位置圖／日期格／頭像保持語意例外。航班announce_driver只接受boolean並保存R2 announceDriver；無聲意為播報航班但不念姓名，抵達／取消與MP3／瀏覽器fallback一致。舊watch預設有姓名，舊客戶端省略模式不能覆蓋已選模式；重選用ETag，保留createdAt／事件，事件後不可改，不改來源快取與名單輪詢頻率。
+
+- 通知彙總只回傳計數與各類前五筆，60秒記憶快取與請求去重，不新增定時輪詢。駕照審驗／驗車30天、保險60天含逾期；配車按今日有效歷程，報班按待審司機去重，借車排除已回報歸還與未來預借，待工單只讀已完成且未綁履歷的排程。不得為提醒自動改狀態或新增工單。
+- 通知正式查詢須保留20261126020000效能修正：有效指派資料只解析一次，傳入最小指派欄位，不把整個車輛含附件物件反覆轉JSON；只針對此RPC停用JIT，不放寬全庫timeout。SQLite/PGlite通過不代表正式PostgreSQL效能已驗證。
+- 司機報班後台清單姓名／車牌／天數／操作固定同列，手機在表格容器橫滑，不恢復舊堆疊卡片；獨立司機班表不受此改動。首頁單一天氣卡只占一欄，上方鈴鐺／天氣／登出42px置中對齊，400px以下保留隱藏後台天氣規則。

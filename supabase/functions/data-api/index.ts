@@ -1,3 +1,4 @@
+import {createNotificationHandler,notificationActions} from './staff-notifications.mjs';
 import {createOfficeHandler,officeActions} from './office-operations.mjs';
 import {createVehicleChangeHandler,vehicleChangeActions} from './vehicle-changes.mjs';
 import {validDriverRegionChange} from './driver-regions.mjs';
@@ -1769,6 +1770,8 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json(await signStorageUrls({ user: data }));
     }
+    if(notificationActions.includes(body.action)){const result=await createNotificationHandler({db,adminCan})(body,session);return json(result.body,result.status);}
+    if(['staff_notification_settings','staff_notification_audit'].includes(body.table))return json({error:'請使用通知管理操作'},403);
     if(['department_save','department_delete','title_save','title_delete'].includes(body.action)||(['insert','update'].includes(body.action)&&body.table==='admin_users')){
       if(session.session_type!=='admin'||!session.is_super_admin)return json({error:'ADMIN_PERMISSION_DENIED'},403);
       const result=await createStaffManagementHandler({db,hashCode,normalizeLoginCode})(body,session);return json(await signStorageUrls(result.body),result.status);
