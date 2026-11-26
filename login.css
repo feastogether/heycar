@@ -11,7 +11,7 @@
 .modern-air-login::before{display:none}
 .modern-air-login::after{inset:86px 0 0;background:linear-gradient(90deg,#faf7ef12,transparent 60%);pointer-events:none}
 .login-airport-picture{position:absolute;inset:86px 0 0;z-index:0}
-.login-airport-picture img{display:block;width:100%;height:100%;object-fit:contain;object-position:center bottom}
+.login-airport-picture img{display:block;width:100%;height:100%;object-fit:cover;object-position:center bottom}
 .modern-air-login[data-login-period=afternoon]{background:#e8ecee}
 .modern-air-login[data-login-period=evening]{background:#323c4c}
 .modern-air-login .login-brand-bar{background:#fffdf8;border-color:#eee8de;backdrop-filter:none}
@@ -48,7 +48,7 @@
   .modern-air-login .login-security-note,.modern-air-login[data-login-period=evening] .login-security-note{position:static;transform:none;left:auto;right:auto;width:auto;margin:22px 16px 0;text-align:center;color:#8b8377;text-shadow:none;font-size:10px}
 }
 @media(max-width:700px){.modern-air-login .login-brand-bar{min-height:82px}.modern-air-login .login-card{padding:20px}.modern-air-login .login-card-copy h1{font-size:20px}.modern-air-login .login-input-wrap input::placeholder{font-size:12px}}
-@media(max-height:740px)and(min-width:1001px){.modern-air-login{padding-top:106px;padding-bottom:200px}}
+@media(max-height:740px) and (min-width:1001px){.modern-air-login{padding-top:106px;padding-bottom:200px}}
 
 .modern-air-login .cute-car-body {
   background: linear-gradient(135deg, #b88629, #edc775);
@@ -108,3 +108,6 @@
 /* Supplied complete wordmark; no recreated text or square cropping. */
 .public-brand-lockup > img, .modern-air-login .public-brand-lockup > img { width:174px;height:auto;object-fit:contain;object-position:center; }
 @media(max-width:700px){.public-brand-lockup > img,.modern-air-login .public-brand-lockup > img{width:150px;height:auto;}}
+
+/* Fill wide desktop screens edge to edge while keeping the form above the fleet. */
+@media(min-width:1001px) and (min-aspect-ratio:2/1){.modern-air-login{align-items:start}}
