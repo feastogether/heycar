@@ -1,0 +1,23 @@
+/* Shared admin action, filter and dialog sizing. Keep driver UI independent. */
+.admin-shell{--admin-control:38px;--admin-radius:9px;--admin-gap:8px;--admin-dialog:920px}
+.admin-workspace :is(.primary-btn,.ghost-btn,.soft-btn,.danger-btn){min-height:var(--admin-control);border-radius:var(--admin-radius);padding:8px 12px;font-size:13px;line-height:20px;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.admin-workspace .section-head{display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;text-align:left}
+.admin-workspace .section-head>h2,.admin-workspace .section-head>div:first-child{margin:0;min-width:0}
+.admin-workspace .section-head>.actions{display:flex;flex:0 0 auto;flex-wrap:wrap;gap:8px;margin:0 0 0 auto;align-items:center;width:auto}
+.admin-workspace .section-head>.actions>button{width:auto;flex:0 0 auto;margin:0}
+.admin-workspace :is(.driver-search-bar,.vehicle-search-bar,.filter-row,.filter-bar){display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;min-width:0}
+.admin-workspace :is(.driver-search-bar,.vehicle-search-bar,.filter-row,.filter-bar)>:is(button,input,select,label){min-width:0;margin:0}
+.admin-workspace :is(.driver-search-bar,.vehicle-search-bar)>input[type=search]{flex:1 1 220px}
+.admin-workspace :is(.driver-search-bar,.vehicle-search-bar) label{flex:0 1 220px}
+.admin-workspace :is(.driver-search-bar,.vehicle-search-bar) :is(input,select){height:38px;min-height:38px;font-size:14px;border-radius:9px;box-sizing:border-box}
+body:has(.admin-shell) :is(.modal-backdrop>.modal,dialog[open]){border-radius:14px;border:1px solid #dce3eb;box-shadow:0 14px 55px #21324729;color:#263748;max-height:calc(100dvh - 32px)}
+body:has(.admin-shell) .modal-backdrop>.modal:has(.modal-form){width:min(920px,calc(100vw - 32px))}
+body:has(.admin-shell) :is(.modal-title,dialog>header){padding:18px 22px;border-bottom:1px solid #e6ebf0}
+body:has(.admin-shell) :is(.modal-title h3,dialog h3){font-size:19px;line-height:1.4;margin:0}
+body:has(.admin-shell) .modal-form-body{padding:20px 22px;min-height:0;overflow-y:auto;overscroll-behavior:contain}
+body:has(.admin-shell) :is(.modal-actions,dialog footer){display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap;padding:14px 22px;border-top:1px solid #e6ebf0}
+body:has(.admin-shell) :is(.modal-backdrop,dialog) :is(.primary-btn,.ghost-btn,.danger-btn,.soft-btn){min-height:38px;border-radius:9px;padding:8px 12px;font-size:13px;line-height:20px;width:auto;flex:0 0 auto}
+body:has(.admin-shell) .modal-actions>.error{flex:1 1 100%;margin:0}
+@media(max-width:600px){.admin-workspace .section-head{gap:10px}.admin-workspace .section-head h2{font-size:20px}.admin-workspace .section-head>.actions{gap:6px}.admin-workspace .section-head>.actions>button{font-size:12px;padding:7px 9px}body:has(.admin-shell) .modal-backdrop>.modal:has(.modal-form){width:calc(100vw - 20px)}body:has(.admin-shell) :is(.modal-form-body,.modal-title,.modal-actions){padding:14px}}
+
+.vehicle-last-use{display:block;font-size:11px;color:#7b8795;line-height:1.7;margin-top:4px}

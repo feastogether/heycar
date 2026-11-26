@@ -43,6 +43,7 @@ const getLoans=()=>loans ||= require("./preview-loans-db.cjs")(fixture);
 let benefits;
 const getBenefits=()=>benefits ||= require("./preview-benefits-db.cjs")({fixture,port,directory,filesPath:process.env.BENEFIT_PREVIEW_FILES||(process.env.REPORTING_PREVIEW_DB==='memory'?fixturePath+'.benefit-files':undefined)});
 let inspections;
+let offboarding;const getOffboarding=()=>offboarding ||= require('./preview-offboarding-db.cjs')(getInspections());
 const getInspections=()=>inspections ||= require('./preview-inspections-db.cjs')({vehicles:fixture.vehicles,drivers:reporting.drivers,directory,port,filesPath:process.env.INSPECTION_PREVIEW_FILES||(process.env.REPORTING_PREVIEW_DB==='memory'?fixturePath+'.inspection-files':undefined)});
 const eligibleDrivers=reporting.drivers.filter(row=>row.dealer_partner_id===a.id&&['跑趟中','待上線'].includes(row.driver_status));
 const previewDrivers={driver:eligibleDrivers[0]||reporting.drivers[0],driver2:eligibleDrivers[1]||eligibleDrivers[0]||reporting.drivers[1],otherdriver:reporting.drivers.find(row=>row.dealer_partner_id!==a.id)||reporting.drivers[2]};
@@ -444,6 +445,7 @@ async function request(req, res) {
     }
     if(require('../supabase/functions/data-api/driver-benefits.mjs').benefitActions.includes(body.action)){const result=await getBenefits().handle(body,session);if(body.action==='operation_storage'&&result.status===200){const inspections=getInspections();await inspections.sync();const rows=(await inspections.db.query("select p.storage_path as path,'vehicle-inspections' as bucket,t.plate_no||'／'||b.batch_no||'／'||p.name as name,p.size,p.uploaded_at as created_at,'車輛檢查' as source from vehicle_inspection_photos p join vehicle_inspection_tasks t on t.id=p.task_id join vehicle_inspection_batches b on b.id=t.batch_id where p.purged_at is null")).rows;const signed=await inspections.api.storage.from().createSignedUrls(rows.map(row=>row.path),600);rows.forEach((row,index)=>row.url=signed.data[index]?.signedUrl||'');result.body.files.push(...rows);}return send(res,result.body,result.status);}
     if(body.action==='complete_service_schedule'){const result=await require('../supabase/functions/data-api/employee-workflow.mjs').createEmployeeWorkflowHandler({db:getBenefits().api,adminCan:async s=>s.is_super_admin})(body,session);if(result.status===200){Object.assign((fixture.notifications||[]).find(row=>row.id===body.id)||{},result.body.notification);if(result.body.event?.id)Object.assign(fixture.calendar.find(row=>row.id===result.body.event.id)||{},result.body.event);persistFixture();}return send(res,result.body,result.status);}
+    if(require('../supabase/functions/data-api/driver-offboarding.mjs').offboardingActions.includes(body.action)){const result=await getOffboarding().handle(body,session);return send(res,result.body,result.status);}
     if(String(body.action).startsWith('inspection_')){const result=await getInspections().handle(body,session);return send(res,result.body,result.status);}
     if(['save_driver_onboarding','complete_driver_onboarding'].includes(body.action)) {
       const {createOnboardingHandler}=require('../supabase/functions/data-api/onboarding-workflow.mjs');

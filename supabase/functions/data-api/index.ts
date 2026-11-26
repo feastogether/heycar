@@ -1,3 +1,4 @@
+import {createOffboardingHandler,offboardingActions} from './driver-offboarding.mjs';
 import {createNotificationHandler,notificationActions} from './staff-notifications.mjs';
 import {createOfficeHandler,officeActions} from './office-operations.mjs';
 import {createVehicleChangeHandler,vehicleChangeActions} from './vehicle-changes.mjs';
@@ -243,7 +244,7 @@ function driverOwnsVehicle(vehicle:Record<string,any>,driver:Record<string,any>,
  let history=vehicle.driver_history,malformed=false;try{if(typeof history==='string')history=JSON.parse(history);}catch{malformed=true;history=[];}
  if(history!=null&&!Array.isArray(history))malformed=true;const named=(Array.isArray(history)?history:[]).filter(row=>String(row.driver_name||row.driver_id||'').trim());
  const valid=(raw:any)=>{if(!raw)return true;const d=String(raw).slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(d)&&Number.isFinite(Date.parse(d))&&new Date(d).toISOString().slice(0,10)===d;};
- if(named.length||malformed)return named.some(row=>valid(row.start_at)&&valid(row.end_at)&&(!row.start_at||String(row.start_at).slice(0,10)<=day)&&(!row.end_at||String(row.end_at).slice(0,10)>=day)&&(row.driver_id?String(row.driver_id)===String(driver.id):String(row.driver_name||'').trim()===driver.name));
+ if(named.length||malformed)return named.some(row=>!(row.returned_at&&day===new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date())&&Number.isFinite(Date.parse(row.returned_at))&&Date.parse(row.returned_at)<=Date.now())&&valid(row.start_at)&&valid(row.end_at)&&(!row.start_at||String(row.start_at).slice(0,10)<=day)&&(!row.end_at||String(row.end_at).slice(0,10)>=day)&&(row.driver_id?String(row.driver_id)===String(driver.id):String(row.driver_name||'').trim()===driver.name));
  return vehicle.current_driver_id===driver.id||String(vehicle.assigned_driver_names||'').split('/').map(name=>name.trim()).includes(driver.name);
 }
 async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date())) {
@@ -302,7 +303,8 @@ async function loadDriverData(driverId: string, dispatchDate = new Intl.DateTime
   });
   const currentDay=new Intl.DateTimeFormat('sv-SE',{timeZone:'Asia/Taipei'}).format(new Date());
   result.vehicles=(result.vehicles||[]).filter(vehicle=>driverOwnsVehicle(vehicle,driver,currentDay));
-  return { data: result, user: driver, dispatch_date:dispatchDate,vehicle_stamp:assignmentSnapshot?.stamp,vehicle_day:assignmentSnapshot?.day };
+  const offboarding=await db.from('driver_offboarding_cases').select('id,leave_on').eq('driver_id',driverId).eq('status','approved').limit(1);if(offboarding.error)throw offboarding.error;
+  return { data: result, user: {...driver,pending_offboarding:offboarding.data?.[0]||null}, dispatch_date:dispatchDate,vehicle_stamp:assignmentSnapshot?.stamp,vehicle_day:assignmentSnapshot?.day };
 }
 
 async function loadAdminChatGroups(userId: string) {
@@ -1770,6 +1772,8 @@ Deno.serve(async (req) => {
       if (error) throw error;
       return json(await signStorageUrls({ user: data }));
     }
+    if(offboardingActions.includes(body.action)){const result=await createOffboardingHandler({db,adminCan,media:operationalMediaStore()})(body,session);return json(result.body,result.status);}
+    if(['driver_offboarding_cases','driver_offboarding_vehicles','driver_offboarding_audit'].includes(body.table))return json({error:'請使用下線管理操作'},403);
     if(notificationActions.includes(body.action)){const result=await createNotificationHandler({db,adminCan})(body,session);return json(result.body,result.status);}
     if(['staff_notification_settings','staff_notification_audit'].includes(body.table))return json({error:'請使用通知管理操作'},403);
     if(['department_save','department_delete','title_save','title_delete'].includes(body.action)||(['insert','update'].includes(body.action)&&body.table==='admin_users')){

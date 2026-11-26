@@ -134,13 +134,14 @@
     const libraries = {
       officeOrders:["HeycarOfficeOrders","./assets/office-orders.js?v=20261125-1"],
       vehicleChanges:["HeycarVehicleChanges","./assets/vehicle-changes.js?v=20261124-7"],
+      offboarding:["HeycarOffboarding","./assets/driver-offboarding.js?v=20261126-6"],
       staff:["HeycarStaffManagement","./assets/staff-management.js?v=20261126-1"],
       notifications:["HeycarStaffNotifications","./assets/staff-notifications.js?v=20261126-1"],
       office:["HeycarOfficeTodos","./assets/office-todos.js?v=20261121-4"],
       payments:["HeycarPayments","./assets/admin-payments.js?v=20261123-4"],
       benefits:["HeycarBenefits","./assets/driver-benefits.js?v=20261125-5"],
       inspections:["HeycarVehicleInspections","./assets/vehicle-inspections.js?v=20261125-7"],
-      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261126-1"],
+      reporting:["HeycarDriverReporting","./assets/driver-reporting.js?v=20261126-6"],
       archive:["HeycarArchive","./assets/archive-download.js?v=20261120-1"],
       board:["HeycarBoardManagement","./assets/board-management.js?v=20261123-2"],
       excel: ["XLSX", "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"],
@@ -1613,6 +1614,7 @@
     if(view==='adminUsers'&&state.admin)names.push(['staff','HeycarStaffManagement']);
     if(view==='payments'&&state.admin)names.push(['payments','HeycarPayments']);
     if(['heyPoints','equipmentManagement','equipmentLoans','maintenance','maintenanceManagement','serviceRecords','calendar','storage'].includes(view))names.push(['inspections','HeycarVehicleInspections'],['benefits','HeycarBenefits']);
+    if(view==='driverOffboarding')names.push(['offboarding','HeycarOffboarding']);
     if(view==='vehicleInspections')names.push(['inspections','HeycarVehicleInspections'],['archive','HeycarArchive']);
     if(['driverReporting','driverRoster'].includes(view))names.push(['reporting','HeycarDriverReporting']);
     if(['mealOrdering','navigationManagement'].includes(view))names.push(['officeOrders','HeycarOfficeOrders']);
@@ -2202,6 +2204,7 @@
 
   function canShowDriverFeature(view) {
     if (view === "links")return false;
+    if (view === "vehicleInspections" && state.user?.pending_offboarding) return true;
     if (view === "driverReporting") return reportingEnabledForDealer(driverDealer()) && ["跑趟中", "待上線"].includes(state.user?.driver_status);
     const permissions = driverFrontendPermissions();
     return !permissions || permissions[view] !== false;
@@ -2413,10 +2416,13 @@
 
   function vehicleHasDriverHistory(vehicle={}){const raw=vehicle.driver_history;if(raw&&typeof raw==='string'){try{const parsed=JSON.parse(raw);if(!Array.isArray(parsed))return true;}catch{return true;}}else if(raw!=null&&!Array.isArray(raw))return true;return parseVehicleDriverHistory(vehicle).some(item=>String(item.driver_name||item.driver_id||'').trim());}
   function vehicleMatchesDriver(vehicle = {}, driver = {}) {
-    const activeHistory=vehicleActiveDriverRecords(vehicle);
-    if(vehicleHasDriverHistory(vehicle))return activeHistory.some(item=>item.driver_id?String(item.driver_id)===String(driver.id):String(item.driver_name||'').trim()===driver.name);
-    return vehicle.current_driver_id===driver.id||parseAssignedDriverIds(vehicle).includes(driver.id)||String(vehicle.assigned_driver_names||'').split('/').map(n=>n.trim()).includes(driver.name||'');
+    const id = String(driver.id || '').trim(), name = String(driver.name || '').trim();
+    if (!id && !name) return false;
+    const activeHistory = vehicleActiveDriverRecords(vehicle);
+    if (vehicleHasDriverHistory(vehicle)) return activeHistory.some(item => item.driver_id ? Boolean(id) && String(item.driver_id) === id : Boolean(name) && String(item.driver_name || '').trim() === name);
+    return Boolean(id) && (String(vehicle.current_driver_id || '') === id || parseAssignedDriverIds(vehicle).includes(id)) || Boolean(name) && String(vehicle.assigned_driver_names || '').split('/').map(n => n.trim()).filter(Boolean).includes(name);
   }
+
   function parseAssignedDriverIds(vehicle = {}) {
     const raw = vehicle.assigned_driver_ids;
     if (Array.isArray(raw)) return raw.map(String);
@@ -5657,7 +5663,7 @@
     idleManagement: "怠速管理",
     fleetPolicies: "保單資料",
     vehicleLoans: "車輛租借",
-    driverOnboarding: "上線管理",
+    driverOnboarding: "上線管理",driverOffboarding:"下線管理",
     dispatchCenter: "派趟中心",
     serviceRecords: "車輛履歷",
     insuranceCenter: "保險中心",
@@ -5686,7 +5692,7 @@
   const adminNavDepartments = [
     ["員工辦公室", ["home","mealOrdering"]],
     ["車商管理", ["insurancePartners"]],
-    ["禮賓司機", ["heyPoints", "equipmentManagement", "drivers", "driverOnboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
+    ["禮賓司機", ["heyPoints", "equipmentManagement", "drivers", "driverOnboarding", "driverOffboarding", "hiringManagement", "driverHelperArticles", "feedbacks"]],
     ["行控中心", ["boardManagement", "dispatchCenter", "driverReporting", "driverRoster", "vehicleLoans", "announcements", "personalMessages", "payments", "marquee"]],
     ["車輛事業", ["vehicleTypes", "vehicles", "vehicleInspections", "maintenanceManagement", "idleManagement", "fleetCases", "serviceRecords", "insuranceCenter", "emergencyEvents"]],
     ["系統管理", ["navigationManagement","adminUsers", "loginHistory", "mailManagement", "bom", "storage", "trafficMonitor", "satelliteMonitor"]]
@@ -5695,7 +5701,7 @@
   adminNavDepartments.find(([, keys]) => keys.includes("marquee"))?.[1].push("loginSlogans");
 
   function adminPermissionCatalog() {
-    return [["internalAnnouncements", "內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
+    return [["driverOffboardingApprove","退隊車輛部核准／結案","下線管理"],["internalAnnouncements", "內部公告發布", "員工首頁"], ["internalCalendar", "員工行事曆編輯", "員工首頁"], ...adminNavDepartments.flatMap(([department, keys]) =>
       keys
         .filter((key) => !["home", "mealOrdering", "navigationManagement", "adminUsers", "loginHistory", "trafficMonitor", "satelliteMonitor"].includes(key))
         .map((key) => [key, adminNavLabels[key] || key, department])
@@ -6213,6 +6219,7 @@
       ["loginHistory", "登入紀錄", "🕘", "super"],
       ["drivers", "駕駛管理", "👤", "drivers"],
       ["driverOnboarding", "上線管理", "🛫", "driverOnboarding"],
+      ["driverOffboarding", "下線管理", "🛬", "driverOffboarding"],
 
       ["hiringManagement", "招募管理", "🧲", "hiringManagement"],
       ["vehicleTypes", "車種管理", "🚘", "vehicleTypes"],
@@ -6260,6 +6267,7 @@
       loginHistory: adminLoginHistory,
       drivers: adminDrivers,
       driverOnboarding: adminDriverOnboarding,
+      driverOffboarding:()=>'<div id="driverOffboardingRoot"></div>',
       hiringManagement: adminHiringManagement,
       vehicleTypes: adminVehicleTypes,
       dispatchCenter: adminDispatchCenter,
@@ -6316,6 +6324,7 @@
     if (sidebarOuter) sidebarOuter.scrollTop = sidebarOuterScroll;
     const noticeRoot=document.getElementById('staffNotificationRoot');if(noticeRoot)ensureOptionalLibrary('notifications').then(()=>{if(noticeRoot.isConnected)window.HeycarStaffNotifications.mountBell(noticeRoot,{api:apiRequest,identity:state.apiSession,navigate:view=>document.querySelector('[data-admin-view="'+view+'"]')?.click()});}).catch(()=>{if(noticeRoot.isConnected){noticeRoot.innerHTML='<button class="ghost-btn" type="button" aria-label="通知載入失敗，點選重試">通知重試</button>';noticeRoot.querySelector('button').onclick=render;}});
     if(state.adminView==='adminUsers')window.HeycarStaffManagement.mount(document.getElementById('staffDepartmentsRoot'),{data:state.data,api:apiRequest,catalog:adminPermissionCatalog(),enabled:adminPermissionEnabled,confirm:showConfirm,alert:showAlert,mountNotifications:root=>ensureOptionalLibrary('notifications').then(()=>window.HeycarStaffNotifications.mountManagement(root,{api:apiRequest,users:state.data.admin_users||[],confirm:showConfirm,enabled:adminPermissionEnabled,catalog:{departments:state.data.staff_departments||[]}})),onReload:async()=>{workspaceReady.delete('adminUsers');await ensureAdminWorkspaceData('adminUsers');render();}});
+    if(state.adminView==='driverOffboarding')window.HeycarOffboarding.mount(document.getElementById('driverOffboardingRoot'),{api:apiRequest,canApprove:adminCan('driverOffboardingApprove'),alert:showAlert});
     if(state.adminView==='payments')window.HeycarPayments.mount(document.getElementById('paymentsRoot'),{api:apiRequest,identity:state.apiSession,escapeHtml,fmtDate,table,statusBadge,rowActions,attachmentLink,today,alert:showAlert,onRows:rows=>{state.data.payment_notices=rows;}});
     if(state.adminView==="dispatchCenter")void refreshDispatchDay();
     if(state.adminView==="boardManagement")window.HeycarBoardManagement.mount(document.getElementById("boardManagementRoot"),{token:state.apiSession,confirm:showConfirm});
@@ -7239,7 +7248,7 @@
           </div>
         </div>
         <dl class="vehicle-row-facts">
-          <div><dt>目前使用人</dt><dd>${escapeHtml(vehicleAssignedDriverLabel(vehicle))}</dd></div>
+          <div><dt>目前使用人</dt><dd>${escapeHtml(vehicleAssignedDriverLabel(vehicle))}${vehicleLastUseMarkup(vehicle)}</dd></div>
           <div><dt>油品</dt><dd>${escapeHtml(vehicle.fuel_type || "-")}</dd></div>
           <div class="vehicle-status-fact"><dt>目前狀態</dt><dd>${vehicleStatusBadge(vehicle.status)}</dd></div>
           <div class="vehicle-status-fact"><dt>租賃狀態</dt><dd>${leaseStatusBadge(vehicle.lease_status)}</dd></div>
@@ -7265,6 +7274,11 @@
     `;
   }
 
+  function vehicleLastUseMarkup(vehicle) {
+    const returned = parseVehicleDriverHistory(vehicle).filter(row => row.returned_at && row.end_at).sort((a,b) => String(b.returned_at).localeCompare(String(a.returned_at)))[0];
+    return returned ? '<small class="vehicle-last-use">最後使用日：' + escapeHtml(formDate(returned.end_at)) + ' · ' + escapeHtml(returned.driver_name || driverName(returned.driver_id)) + '</small>' : '';
+  }
+
   function vehicleManagementCards(vehicles) {
     if (!vehicles.length) return `<div class="empty">找不到符合的車輛</div>`;
     return `<div class="vehicle-visual-grid">${vehicles.map((vehicle) => {
@@ -7277,7 +7291,7 @@
         ${vehicleVisualArt(vehicle, drivers)}
         <div class="vehicle-visual-info">
           <strong>${escapeHtml([vehicle.brand, vehicle.model].filter(Boolean).join(" ") || "-")}</strong>
-          <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>
+          <small>目前使用人：${escapeHtml(vehicleAssignedDriverLabel(vehicle) || "-")}</small>${vehicleLastUseMarkup(vehicle)}
           <small>油品：${escapeHtml(vehicle.fuel_type || "-")} ｜ 租賃：${escapeHtml(vehicle.lease_status || "-")} ｜ 保險：${escapeHtml(vehicle.insurance_company || "-")}</small>
           <small>道路救援：${escapeHtml(vehicle.roadside_assistance_phone || "-")}</small>
           <dl class="vehicle-visual-expiries">${vehicleInsuranceDates(vehicle)}</dl>
@@ -7322,6 +7336,7 @@
     return parseVehicleDriverHistory(vehicle)
       .filter((item) => String(item.driver_name || item.driver_id || "").trim())
       .filter((item) => {
+        if (currentDate === today() && item.returned_at && Number.isFinite(Date.parse(item.returned_at)) && Date.parse(item.returned_at) <= Date.now()) return false;
         const startDate = formDate(item.start_at);
         const endDate = formDate(item.end_at);
         const valid=raw=>!raw||(/^\d{4}-\d{2}-\d{2}$/.test(String(raw).slice(0,10))&&Number.isFinite(Date.parse(String(raw).slice(0,10)))&&new Date(String(raw).slice(0,10)).toISOString().slice(0,10)===String(raw).slice(0,10));return valid(item.start_at)&&valid(item.end_at)&&(!startDate||startDate<=currentDate)&&(!endDate||endDate>=currentDate);
@@ -7353,7 +7368,9 @@
     return rows.map((row) => {
       const nameInput = row.querySelector("[data-driver-history-search]");
       const idInput = row.querySelector("[data-driver-history-id]");
+      let original = {}; try { original = JSON.parse(row.dataset.historyRecord || '{}'); } catch {}
       return {
+        ...original,
         id: row.dataset.historyId || uid(),
         start_at: row.querySelector('[name="driver_history_start_at"]')?.value || "",
         end_at: row.querySelector('[name="driver_history_end_at"]')?.value || "",
@@ -9022,7 +9039,7 @@
   }
 
   function driverForm(d) {
-    const assignedVehicles = (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d));
+    const assignedVehicles = d.id ? (state.data.vehicles || []).filter((v) => vehicleMatchesDriver(v, d)) : [];
     return `
       <div class="driver-login-permission field full">
         ${checkbox("login_enabled", "允許手機登入", d.login_enabled !== false)}
@@ -9133,7 +9150,7 @@
   function vehicleDriverHistoryRow(item = {}, index = 0) {
     const driver = item.driver_id ? (state.data.drivers || []).find((row) => String(row.id) === String(item.driver_id)) : null;
     const driverNameValue = item.driver_name || driver?.name || "";
-    return `<div class="vehicle-driver-history-row" data-vehicle-driver-row data-history-id="${escapeHtml(item.id || uid())}">
+    return `<div class="vehicle-driver-history-row" data-vehicle-driver-row data-history-record="${escapeHtml(JSON.stringify(item))}" data-history-id="${escapeHtml(item.id || uid())}">
       <div class="field">
         <label>開始日期</label>
         <input name="driver_history_start_at" type="date" value="${escapeHtml(formDate(item.start_at))}">
